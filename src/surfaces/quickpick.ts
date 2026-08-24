@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { refreshIndex } from '../core/cache.js';
+import { deepSearch } from '../core/deep.js';
 import { parseQuery, search, snippet, withWindow, type SessionHit } from '../core/query.js';
 import { planOpen } from '../core/resolve.js';
 import type { SearchIndex } from '../core/types.js';
@@ -58,9 +59,25 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
   }
   qp.busy = false;
 
-  const render = (value: string) => {
+  // Monotonic token: a slow deep scan that resolves after a newer keystroke's render
+  // must not clobber the newer (already-rendered) items.
+  let renderToken = 0;
+
+  const render = async (value: string) => {
+    const token = ++renderToken;
+    qp.busy = false;                                 // cancel any spinner left by a superseded deep scan
     if (!value.trim()) { qp.items = []; return; }
     const q = parseQuery(value, defaultWindow, Date.now());
+
+    if (q.deep) {
+      qp.busy = true;
+      const hits = await deepSearch(index, q, Date.now());
+      if (token !== renderToken) return;             // a newer render has already taken over
+      qp.busy = false;
+      qp.items = hits.slice(0, 50).map(toRow);
+      return;
+    }
+
     const hits = search(index, q, Date.now()).filter(h => !removedIds.has(h.session.sessionId));
     const rows: Row[] = hits.slice(0, 50).map(toRow);
     if (hits.length <= 2 && q.sinceMs !== null) {
@@ -73,7 +90,7 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
     qp.items = rows;
   };
 
-  qp.onDidChangeValue(render);                      // 6-10 ms: synchronous, no debounce needed
+  qp.onDidChangeValue(v => { void render(v); });     // prose path: 6-10 ms sync; deep path: async, token-guarded
 
   qp.onDidTriggerItemButton(async e => {
     const m = (e.item as Row).hit?.session;
@@ -99,14 +116,14 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
       // I3: withWindow owns quote-aware since: replacement — a local regex here previously
       // reached inside quoted phrases and corrupted them.
       qp.value = withWindow(qp.value, 'all');
-      render(qp.value);
+      await render(qp.value);
       return;
     }
     if (picked.action === 'deep') {
       // I3: never produce "!!" — this action row only appears while !q.deep, but guard anyway.
       const trimmed = qp.value.trim();
       qp.value = trimmed.startsWith('!') ? trimmed : `!${trimmed}`;
-      render(qp.value);
+      await render(qp.value);
       return;
     }
     if (!picked.hit) return;
@@ -118,7 +135,7 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
     if (!existsSync(picked.hit.session.file)) {
       removedIds.add(picked.hit.session.sessionId);
       vscode.window.showWarningMessage('That session transcript no longer exists on disk.');
-      render(qp.value);
+      await render(qp.value);
       return;
     }
 
