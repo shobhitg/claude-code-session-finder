@@ -7,6 +7,13 @@
 //     is data-derived (e.g. a real file path used as a map key) and is
 //     replaced with a deterministic redactedKeyN placeholder, numbered per
 //     object so re-runs are byte-identical.
+//   - DATA_KEYED_MAPS: objects whose keys are ALWAYS data, never a schema
+//     identifier, even when a key happens to look like one (e.g. a bare
+//     filename like "Makefile" or "Dockerfile" passes the identifier
+//     regex). Every key of such an object is force-redacted regardless of
+//     shape. Keep this set identical to the one in check-fixtures.mjs — the
+//     checker verifies exactly this rule, so if the two drift the checker
+//     stops being able to catch a regression here.
 //   - Objects/arrays are recursed into (image blocks are stubbed).
 //   - Numbers/booleans pass through unchanged. prUrl is dropped entirely.
 //   - Unparseable lines are skipped, and the count is reported to stderr —
@@ -18,6 +25,7 @@ const STRUCTURAL = new Set(['type','role','userType','version','sessionId','uuid
                             'parentUuid','leafUuid','timestamp','requestId','model',
                             'cwd','gitBranch','isSidechain']);
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const DATA_KEYED_MAPS = new Set(['trackedFileBackups']);
 
 function scrubText(s, i) {
   // deterministic filler that preserves length class but not content
@@ -28,20 +36,24 @@ function scrubText(s, i) {
 
 // `structural` is true only for a string reached through a STRUCTURAL key;
 // bare strings reached any other way (array elements have no key of their
-// own) are scrubbed by default.
-function scrub(node, i = 0, structural = false) {
-  if (Array.isArray(node)) return node.map((v, k) => scrub(v, i + k, false));
+// own) are scrubbed by default. `forceKeys` is true when this object's own
+// keys came from a DATA_KEYED_MAPS field — every key gets redacted then,
+// skipping the identifier test entirely.
+function scrub(node, i = 0, structural = false, forceKeys = false) {
+  if (Array.isArray(node)) return node.map((v, k) => scrub(v, i + k, false, false));
   if (node && typeof node === 'object') {
     if (node.type === 'image') return { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'XX' } };
     const out = {};
     let redactedKeyCount = 0;
     for (const [k, v] of Object.entries(node)) {
       if (k === 'prUrl') continue; // drop entirely: embeds a real repo URL
-      const key = IDENT.test(k) ? k : `redactedKey${redactedKeyCount++}`; // data-derived key (e.g. a real file path)
+      const mustRedact = forceKeys || !IDENT.test(k);
+      const key = mustRedact ? `redactedKey${redactedKeyCount++}` : k; // data-derived key (e.g. a real file path or filename)
+      const childForceKeys = DATA_KEYED_MAPS.has(k);
       if (typeof v === 'string') {
         out[key] = STRUCTURAL.has(k) ? v : scrubText(v, i);
       } else if (v && typeof v === 'object') {
-        out[key] = scrub(v, i, false);
+        out[key] = scrub(v, i, false, childForceKeys);
       } else {
         out[key] = v; // numbers, booleans, null pass through unchanged
       }
