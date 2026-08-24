@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { refreshIndex } from '../src/core/cache.js';
@@ -67,6 +67,35 @@ describe('refreshIndex', () => {
       JSON.stringify({ type: 'assistant', timestamp: '2026-08-01T00:00:00Z',
                        message: { content: [{ type: 'text', text: 'agent finding' }] } }) + '\n');
     const { index } = await refreshIndex(opts());
+    const hit = index.prose.find(p => p.x === 'agent finding')!;
+    expect(hit.r).toBe('sub');
+    expect(index.sessions[hit.s]!.sessionId).toBe('s1');
+  });
+
+  it('does not persist a flat prose array on disk', async () => {
+    await refreshIndex(opts());
+    const onDisk = JSON.parse(readFileSync(cacheFile, 'utf8'));
+    expect(onDisk.prose).toBeUndefined();
+    expect(onDisk.sessions).toBeUndefined();
+    expect(onDisk.files).toBeDefined();
+  });
+
+  it('derives an equivalent index from files on a warm run', async () => {
+    const first = await refreshIndex(opts());
+    const second = await refreshIndex(opts());
+    expect(second.stats.reExtracted).toBe(0);
+    expect(second.index.sessions).toEqual(first.index.sessions);
+    expect(second.index.prose).toEqual(first.index.prose);
+  });
+
+  it('prose from a subagent points at its parent session, including on a warm refresh', async () => {
+    mkdirSync(join(root, 'projects', '-w-a', 's1', 'subagents'), { recursive: true });
+    writeFileSync(join(root, 'projects', '-w-a', 's1', 'subagents', 'agent-1.jsonl'),
+      JSON.stringify({ type: 'assistant', timestamp: '2026-08-01T00:00:00Z',
+                       message: { content: [{ type: 'text', text: 'agent finding' }] } }) + '\n');
+    await refreshIndex(opts());                          // cold build, populates the cache
+    const { index, stats } = await refreshIndex(opts());  // warm: must derive from `files`
+    expect(stats.reExtracted).toBe(0);
     const hit = index.prose.find(p => p.x === 'agent finding')!;
     expect(hit.r).toBe('sub');
     expect(index.sessions[hit.s]!.sessionId).toBe('s1');
