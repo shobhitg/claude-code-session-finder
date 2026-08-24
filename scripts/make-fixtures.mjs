@@ -1,12 +1,16 @@
 // scripts/make-fixtures.mjs
 // Derives small, redacted fixtures from real ~/.claude/projects transcripts.
-// Redaction: replaces all prose text with lorem tokens EXCEPT an allow-list of
-// structural fields, and drops every base64 image payload.
+// Redaction: scrub-by-default. Only a fixed set of STRUCTURAL keys keep their
+// string values verbatim (tests assert on cwd/gitBranch/etc); every other
+// string value is replaced with lorem filler. Objects/arrays are recursed
+// into (except image blocks, which are stubbed). Numbers/booleans pass
+// through unchanged. prUrl is dropped entirely (embeds a real repo URL).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-const KEEP = new Set(['type','cwd','gitBranch','timestamp','sessionId','uuid',
-                      'parentUuid','isSidechain','aiTitle','prNumber','prUrl','message','role','content']);
+const STRUCTURAL = new Set(['type','role','userType','version','sessionId','uuid',
+                            'parentUuid','leafUuid','timestamp','requestId','model',
+                            'cwd','gitBranch','isSidechain']);
 
 function scrubText(s, i) {
   // deterministic filler that preserves length class but not content
@@ -15,18 +19,27 @@ function scrubText(s, i) {
   return Array.from({ length: n }, (_, k) => words[(i + k) % words.length]).join(' ');
 }
 
-function scrub(node, i = 0) {
-  if (Array.isArray(node)) return node.map((v, k) => scrub(v, i + k));
+// `structural` is true only for a string reached through a STRUCTURAL key;
+// bare strings reached any other way (array elements have no key of their
+// own) are scrubbed by default.
+function scrub(node, i = 0, structural = false) {
+  if (Array.isArray(node)) return node.map((v, k) => scrub(v, i + k, false));
   if (node && typeof node === 'object') {
     if (node.type === 'image') return { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'XX' } };
     const out = {};
     for (const [k, v] of Object.entries(node)) {
-      if (!KEEP.has(k) && typeof v === 'object') continue;      // drop bulky non-structural objects
-      if (!KEEP.has(k) && typeof v === 'string' && v.length > 100) continue; // drop long non-structural blobs (e.g. thinking signatures)
-      out[k] = (k === 'text' || (k === 'content' && typeof v === 'string')) ? scrubText(v, i) : scrub(v, i);
+      if (k === 'prUrl') continue; // drop entirely: embeds a real repo URL
+      if (typeof v === 'string') {
+        out[k] = STRUCTURAL.has(k) ? v : scrubText(v, i);
+      } else if (v && typeof v === 'object') {
+        out[k] = scrub(v, i, false);
+      } else {
+        out[k] = v; // numbers, booleans, null pass through unchanged
+      }
     }
     return out;
   }
+  if (typeof node === 'string') return structural ? node : scrubText(node, i);
   return node;
 }
 
