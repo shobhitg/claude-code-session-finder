@@ -1,0 +1,45 @@
+{
+  "name": "claude-code-session-finder",
+  "displayName": "Claude Code Session Finder",
+  "description": "Search the contents of your Claude Code sessions and jump straight to one.",
+  "version": "0.0.1",
+  "license": "MIT",
+  "publisher": "<tbd>",
+  "repository": { "type": "git", "url": "https://github.com/shobhitg/claude-code-session-finder" },
+  "engines": { "vscode": "^1.94.0" },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "extensionDependencies": ["anthropic.claude-code"],
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      { "command": "sessionFinder.search", "title": "Claude: Search Sessions" }
+    ],
+    "configuration": {
+      "title": "Claude Code Session Finder",
+      "properties": {
+        "sessionFinder.defaultWindow": {
+          "type": "string",
+          "default": "7d",
+          "description": "Default recency window for searches. e.g. 7d, 30d, all"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "test": "vitest run",
+    "lint": "eslint src test --ext .ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.94.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "esbuild": "^0.21.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}
