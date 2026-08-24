@@ -46,6 +46,9 @@ export function parseQuery(input: string, defaultWindow: string, now: number): P
       rest = rest.slice(0, openIdx);
     }
   }
+  // Only the first quote-delimited (or unterminated) region becomes the phrase;
+  // any further " characters are noise and must never reach the term tokenizer.
+  rest = rest.replace(/"/g, ' ');
 
   let pr: number | null = null;
   rest = rest.replace(/(?:^|\s)pr:#?(\d+)(?=\s|$)/i, (_, n: string) => { pr = Number(n); return ' '; });

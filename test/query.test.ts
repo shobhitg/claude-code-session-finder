@@ -51,6 +51,24 @@ describe('parseQuery', () => {
   it('falls back to the default window on a malformed since: value', () => {
     expect(parseQuery('x since:xyz', '7d', NOW).sinceMs).toBe(NOW - 7 * DAY);
   });
+  it('only the first quoted region becomes the phrase; a second quoted group leaves no stray quote', () => {
+    const q = parseQuery('"foo" "bar"', '7d', NOW);
+    expect(q.phrase).toBe('foo');
+    expect(q.terms).toEqual(['bar']);
+  });
+  it('strips every remaining quote when more than two appear', () => {
+    expect(parseQuery('""""', '7d', NOW).terms).not.toContain('"');
+  });
+  it('never lets a bare quote reach terms, and phrase is null or non-empty, across awkward inputs', () => {
+    const inputs = [
+      '"', '""', '""""', 'a"b', '"foo" "bar"', '"foo" bar" baz', '!"a" "b"', 'pr:1 "x" "y"',
+    ];
+    for (const input of inputs) {
+      const q = parseQuery(input, '7d', NOW);
+      for (const term of q.terms) expect(term).not.toContain('"');
+      expect(q.phrase === null || q.phrase.length > 0).toBe(true);
+    }
+  });
 });
 
 describe('search', () => {
@@ -106,6 +124,16 @@ describe('search', () => {
 
   it('finds a match via an unterminated-quote query typed mid-phrase', () => {
     const hits = search(index, parseQuery('"paste image', '7d', NOW), NOW);
+    expect(hits.map(h => h.session.sessionId)).toContain('s1');
+  });
+
+  // Chosen semantics for a second quoted group: only the first quoted region becomes
+  // `phrase`; any further quoted text is stripped to plain (space-separated) terms.
+  // matchQuality() checks `phrase` first and ignores `terms` whenever a phrase is set,
+  // so a second quoted group does not add an extra match constraint -- the query still
+  // matches on the first phrase alone, rather than silently returning zero results.
+  it('a second quoted group does not suppress a real match on the first phrase', () => {
+    const hits = search(index, parseQuery('"paste image" "npm run"', '7d', NOW), NOW);
     expect(hits.map(h => h.session.sessionId)).toContain('s1');
   });
 });
