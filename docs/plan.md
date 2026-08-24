@@ -24,6 +24,13 @@ Every task's requirements implicitly include these. Values copied verbatim from 
 - **A session's folder is the LAST `cwd` recorded in its file** (F6), never derived from the directory name.
 - **Index cache key is `(mtimeMs, size)`;** schema mismatch on `INDEX_VERSION` discards and rebuilds (0.76 s, so never be clever).
 - **Config prefix is `sessionFinder.`** (e.g. `sessionFinder.defaultWindow`, default `"7d"`).
+- **macOS and Linux are both first-class targets.** Never hand-build paths with `/`
+  concatenation — use `node:path`. **All path equality MUST go through
+  `src/core/paths.ts` (Task 7)**, never `===`. macOS returns filenames in NFD from some
+  APIs and its default APFS volume is case-insensitive; Linux is NFC and case-sensitive.
+  Claude Code itself does `process.platform === "darwin" ? p.normalize("NFC") : p`, and
+  disagreeing with it means our folder comparisons silently differ from its own.
+  Windows is explicitly **not** a target.
 
 **Deviation from the spec, deliberate:** the spec names the cache module `core/index.ts`. That filename is resolved by Node/bundlers as the directory's barrel, which makes `import ... from './core'` ambiguous. It is named **`core/cache.ts`** throughout this plan.
 
@@ -1158,13 +1165,18 @@ git commit -m "feat(core): query parsing, matching and ranking"
 The hardest logic in the extension, kept in `core/` so it is testable without an extension host. Read spec §9 before starting.
 
 **Files:**
-- Create: `src/core/resolve.ts`
-- Test: `test/resolve.test.ts`
+- Create: `src/core/paths.ts`, `src/core/resolve.ts`
+- Test: `test/paths.test.ts`, `test/resolve.test.ts`
 
 **Interfaces:**
 - Consumes: `SessionMeta` (Task 1)
 - Produces:
   ```ts
+  // src/core/paths.ts — the ONE definition of path equality, shared with Task 9
+  export function normalizePath(p: string, platform?: NodeJS.Platform): string;
+  export function samePath(a: string, b: string, platform?: NodeJS.Platform): boolean;
+  export function isInside(child: string, parent: string, platform?: NodeJS.Platform): boolean;
+
   export type OpenPlan =
     | { kind: 'here'; sessionId: string; note?: string }
     | { kind: 'handoff'; sessionId: string; targetCwd: string }
@@ -1172,7 +1184,90 @@ The hardest logic in the extension, kept in `core/` so it is testable without an
   export function planOpen(session: SessionMeta, workspaceFolders: string[]): OpenPlan;
   ```
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1a: Write the failing path-equality test**
+
+```ts
+// test/paths.test.ts
+import { describe, it, expect } from 'vitest';
+import { normalizePath, samePath, isInside } from '../src/core/paths.js';
+
+describe('paths on linux (case-sensitive, NFC)', () => {
+  const L: NodeJS.Platform = 'linux';
+  it('is case-sensitive', () => {
+    expect(samePath('/w/Foo', '/w/foo', L)).toBe(false);
+  });
+  it('ignores a trailing slash', () => {
+    expect(samePath('/w/a/', '/w/a', L)).toBe(true);
+  });
+  it('does not treat a sibling prefix as inside', () => {
+    expect(isInside('/w/ab', '/w/a', L)).toBe(false);
+    expect(isInside('/w/a/b', '/w/a', L)).toBe(true);
+    expect(isInside('/w/a', '/w/a', L)).toBe(true);
+  });
+});
+
+describe('paths on darwin (case-insensitive, NFD source)', () => {
+  const D: NodeJS.Platform = 'darwin';
+  it('folds case, because the default APFS volume does', () => {
+    expect(samePath('/Users/Shobhit/src', '/users/shobhit/src', D)).toBe(true);
+  });
+  it('normalizes NFD to NFC, matching Claude Code itself', () => {
+    const nfd = '/w/cafe\u0301';        // e + combining acute — what macOS may hand back
+    const nfc = '/w/caf\u00e9';          // precomposed e-acute
+    expect(nfd).not.toBe(nfc);
+    expect(samePath(nfd, nfc, D)).toBe(true);
+    expect(normalizePath(nfd, D)).toBe(normalizePath(nfc, D));
+  });
+  it('still respects segment boundaries', () => {
+    expect(isInside('/W/AB', '/w/a', D)).toBe(false);
+    expect(isInside('/W/A/B', '/w/a', D)).toBe(true);
+  });
+});
+```
+
+- [ ] **Step 1b: Run it to verify it fails**
+
+Run: `npx vitest run test/paths.test.ts`
+Expected: FAIL — cannot resolve `../src/core/paths.js`
+
+- [ ] **Step 1c: Write `src/core/paths.ts`**
+
+```ts
+// src/core/paths.ts
+// The single definition of path equality for this extension. Task 9's baton and
+// Task 7's planner MUST both use it: if they disagree, a hand-off writes a baton
+// the target window refuses to claim, and the click does nothing at all.
+
+/**
+ * macOS hands back NFD from some filesystem APIs and its default APFS volume is
+ * case-insensitive. Claude Code normalizes with
+ * `process.platform === 'darwin' ? p.normalize('NFC') : p`; we match that and
+ * additionally fold case on darwin so two spellings of one real folder compare equal.
+ * Linux is left byte-exact.
+ */
+export function normalizePath(p: string, platform: NodeJS.Platform = process.platform): string {
+  const trimmed = p.length > 1 ? p.replace(/\/+$/, '') : p;
+  return platform === 'darwin' ? trimmed.normalize('NFC').toLowerCase() : trimmed;
+}
+
+export function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
+  return normalizePath(a, platform) === normalizePath(b, platform);
+}
+
+/** True when `child` is `parent` or lives beneath it. Segment-aware: /w/ab is NOT inside /w/a. */
+export function isInside(child: string, parent: string, platform: NodeJS.Platform = process.platform): boolean {
+  const c = normalizePath(child, platform);
+  const p = normalizePath(parent, platform);
+  return c === p || c.startsWith(p.endsWith('/') ? p : p + '/');
+}
+```
+
+- [ ] **Step 1d: Run it to verify it passes**
+
+Run: `npx vitest run test/paths.test.ts`
+Expected: 6 PASS
+
+- [ ] **Step 1: Write the failing resolve test**
 
 ```ts
 // test/resolve.test.ts
@@ -1232,18 +1327,12 @@ Expected: FAIL — cannot resolve `../src/core/resolve.js`
 ```ts
 // src/core/resolve.ts
 import type { SessionMeta } from './types.js';
+import { samePath, isInside } from './paths.js';
 
 export type OpenPlan =
   | { kind: 'here'; sessionId: string; note?: string }
   | { kind: 'handoff'; sessionId: string; targetCwd: string }
   | { kind: 'transcript'; file: string; reason: string };
-
-/** True when `child` is `parent` or lives beneath it. Segment-aware: /w/ab is NOT inside /w/a. */
-function isInside(child: string, parent: string): boolean {
-  if (child === parent) return true;
-  const p = parent.endsWith('/') ? parent : parent + '/';
-  return child.startsWith(p);
-}
 
 export function planOpen(session: SessionMeta, workspaceFolders: string[]): OpenPlan {
   const { sessionId, cwd, cwdExists, file } = session;
@@ -1252,7 +1341,7 @@ export function planOpen(session: SessionMeta, workspaceFolders: string[]): Open
   if (!cwd) return { kind: 'here', sessionId, note: 'unknown folder — resuming in this window' };
 
   const primary = workspaceFolders[0];
-  if (primary && cwd === primary) return { kind: 'here', sessionId };
+  if (primary && samePath(cwd, primary)) return { kind: 'here', sessionId };
 
   // F5: every workspace folder is passed as additionalDirectories, so a session
   // under any of them is safe to resume here; only the cwd differs.
@@ -1265,14 +1354,14 @@ export function planOpen(session: SessionMeta, workspaceFolders: string[]): Open
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx vitest run test/resolve.test.ts && npm run lint`
-Expected: 7 PASS, lint clean
+Run: `npx vitest run test/paths.test.ts test/resolve.test.ts && npm run lint`
+Expected: 13 PASS, lint clean
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/core/resolve.ts test/resolve.test.ts
-git commit -m "feat(core): pure open-planning for same-window vs hand-off"
+git add src/core/paths.ts src/core/resolve.ts test/paths.test.ts test/resolve.test.ts
+git commit -m "feat(core): cross-platform path equality and open-planning"
 ```
 
 ---
@@ -1560,6 +1649,10 @@ describe('claimBaton', () => {
     expect(claimBaton(raw({ sessionId: 's', targetCwd: '/w/a', expiresAt: NOW + 1000 }), undefined, NOW))
       .toEqual({ leave: true });
   });
+  it('claims a baton whose folder differs only by trailing slash', () => {
+    const r = claimBaton(raw({ sessionId: 's', targetCwd: '/w/a/', expiresAt: NOW + 1000 }), '/w/a', NOW);
+    expect('claim' in r).toBe(true);
+  });
 });
 ```
 
@@ -1572,6 +1665,8 @@ Expected: FAIL — cannot resolve `../src/baton.js`
 
 ```ts
 // src/baton.ts
+import { samePath } from './core/paths.js';
+
 export interface Baton { sessionId: string; targetCwd: string; expiresAt: number }
 
 export function claimBaton(raw: string | null, myFolder: string | undefined, now: number):
@@ -1582,14 +1677,16 @@ export function claimBaton(raw: string | null, myFolder: string | undefined, now
   if (typeof b?.sessionId !== 'string' || typeof b?.targetCwd !== 'string') return { discard: true };
   if (!(b.expiresAt > now)) return { discard: true };
   if (!myFolder) return { leave: true };
-  return b.targetCwd === myFolder ? { claim: b } : { leave: true };
+  // MUST use samePath, not ===. On macOS the planner may hand off to a differently
+  // cased or NFD spelling of the same folder; a strict compare would silently no-op.
+  return samePath(b.targetCwd, myFolder) ? { claim: b } : { leave: true };
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run test/baton.test.ts && npm run lint`
-Expected: 5 PASS, lint clean
+Expected: 6 PASS, lint clean
 
 - [ ] **Step 5: Wire the claim into activation**
 
