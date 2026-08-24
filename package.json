@@ -10,7 +10,7 @@
   "categories": ["Other"],
   "main": "./dist/extension.js",
   "extensionDependencies": ["anthropic.claude-code"],
-  "activationEvents": [],
+  "activationEvents": ["onStartupFinished"],
   "contributes": {
     "commands": [
       { "command": "sessionFinder.search", "title": "Claude: Search Sessions" }
