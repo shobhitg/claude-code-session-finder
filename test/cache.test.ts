@@ -100,4 +100,47 @@ describe('refreshIndex', () => {
     expect(hit.r).toBe('sub');
     expect(index.sessions[hit.s]!.sessionId).toBe('s1');
   });
+
+  // C2: the same sessionId genuinely appears in two project dirs once a session moves
+  // worktree. Which copy wins must not be decided by readdir order.
+  it('resolves a duplicate sessionId to the copy with the later lastTs, keeping both files searchable', async () => {
+    const line = (cwd: string, ts: string, text: string) =>
+      JSON.stringify({ type: 'user', cwd, timestamp: ts, message: { content: text } });
+    mkdirSync(join(root, 'projects', '-w-old'), { recursive: true });
+    mkdirSync(join(root, 'projects', '-w-new'), { recursive: true });
+    writeFileSync(join(root, 'projects', '-w-old', 'dup.jsonl'),
+      line('/w/old', '2026-08-01T00:00:00Z', 'older half of the conversation') + '\n');
+    writeFileSync(join(root, 'projects', '-w-new', 'dup.jsonl'),
+      line('/w/new', '2026-08-05T00:00:00Z', 'newer half of the conversation') + '\n');
+
+    const { index } = await refreshIndex(opts());
+    const dup = index.sessions.filter(s => s.sessionId === 'dup');
+    expect(dup).toHaveLength(1);                                  // one row, not two
+    expect(dup[0]!.cwd).toBe('/w/new');                           // the LATER copy's cwd wins
+    expect(dup[0]!.lastTs).toBe(Date.parse('2026-08-05T00:00:00Z'));
+    expect(dup[0]!.firstTs).toBe(Date.parse('2026-08-01T00:00:00Z'));
+    expect(dup[0]!.msgCount).toBe(2);                             // both files counted
+    expect(dup[0]!.extraFiles).toContain(join(root, 'projects', '-w-old', 'dup.jsonl'));
+
+    // BOTH files' prose survives, attributed to the surviving session.
+    const at = index.sessions.indexOf(dup[0]!);
+    const texts = index.prose.filter(p => p.s === at).map(p => p.x);
+    expect(texts).toContain('older half of the conversation');
+    expect(texts).toContain('newer half of the conversation');
+  });
+
+  it('picks the same duplicate winner regardless of which copy is seen first', async () => {
+    const line = (cwd: string, ts: string) =>
+      JSON.stringify({ type: 'user', cwd, timestamp: ts, message: { content: 'x' } });
+    mkdirSync(join(root, 'projects', 'aaa'), { recursive: true });
+    mkdirSync(join(root, 'projects', 'zzz'), { recursive: true });
+    // 'aaa' sorts FIRST but is the later session: a readdir-ordered last-write-wins
+    // would pick 'zzz', so this is differential, not merely stable.
+    writeFileSync(join(root, 'projects', 'aaa', 'dup.jsonl'), line('/w/aaa', '2026-08-09T00:00:00Z') + '\n');
+    writeFileSync(join(root, 'projects', 'zzz', 'dup.jsonl'), line('/w/zzz', '2026-08-01T00:00:00Z') + '\n');
+    const first = await refreshIndex(opts());
+    const second = await refreshIndex(opts());                    // warm: derived from `files`
+    expect(first.index.sessions.find(s => s.sessionId === 'dup')!.cwd).toBe('/w/aaa');
+    expect(second.index.sessions).toEqual(first.index.sessions);
+  });
 });

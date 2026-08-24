@@ -2,7 +2,7 @@ import type { ProseMsg, SessionMeta, Role } from './types.js';
 import type { SourceFile } from './discover.js';
 
 export type BareProse = Omit<ProseMsg, 's'>;
-export type BareMeta = Omit<SessionMeta, 'cwdExists'>;
+export type BareMeta = Omit<SessionMeta, 'cwdExists' | 'extraFiles'>;
 
 interface Part { type?: string; text?: string }
 interface Line {

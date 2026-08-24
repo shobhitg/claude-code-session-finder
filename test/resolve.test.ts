@@ -3,7 +3,7 @@ import { planOpen } from '../src/core/resolve.js';
 import type { SessionMeta } from '../src/core/types.js';
 
 const s = (over: Partial<SessionMeta> = {}): SessionMeta => ({
-  sessionId: 'sid', file: '/p/sid.jsonl', projectDir: '-w-a', cwd: '/w/a', cwdExists: true,
+  sessionId: 'sid', file: '/p/sid.jsonl', extraFiles: [], projectDir: '-w-a', cwd: '/w/a', cwdExists: true,
   title: null, branches: [], prLinks: [], firstTs: 0, lastTs: 0, msgCount: 0, mtimeMs: 0, size: 0, ...over,
 });
 

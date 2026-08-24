@@ -10,7 +10,7 @@ describe('types', () => {
 
   it('a SearchIndex is structurally assignable', () => {
     const meta: SessionMeta = {
-      sessionId: 'a', file: '/a.jsonl', projectDir: '-a',
+      sessionId: 'a', file: '/a.jsonl', extraFiles: [], projectDir: '-a',
       cwd: '/a', cwdExists: true, title: null, branches: [], prLinks: [],
       firstTs: 1, lastTs: 2, msgCount: 0, mtimeMs: 1, size: 1,
     };

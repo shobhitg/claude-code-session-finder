@@ -6,6 +6,12 @@ export type Role = 'u' | 'a' | 't' | 'sub';
 export interface SessionMeta {
   sessionId: string;
   file: string;
+  /**
+   * Further transcript files that belong to this session: its subagent transcripts, plus
+   * any duplicate-sessionId copy that lost the merge in cache.ts. Deep search reads these
+   * as well as `file`; assembled from the cache's `files` map, never persisted.
+   */
+  extraFiles: string[];
   /** Sanitized ~/.claude/projects dir name. GROUPING HINT ONLY — never a path (F6). */
   projectDir: string;
   /** LAST cwd recorded in the file (F6). */

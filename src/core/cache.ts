@@ -7,7 +7,9 @@ import { extractSession, extractSubagent, type BareProse } from './extract.js';
 
 export interface RefreshStats { scanned: number; reExtracted: number; ms: number }
 
-interface CachedFile { key: string; sessionId: string; meta?: SessionMeta; prose: BareProse[] }
+/** What the on-disk cache holds. `extraFiles` is derived at assemble time, never stored. */
+type PersistedMeta = Omit<SessionMeta, 'extraFiles'>;
+interface CachedFile { key: string; sessionId: string; meta?: PersistedMeta; prose: BareProse[] }
 interface PersistedCache { v: number; builtAt: number; files?: Record<string, CachedFile> }
 
 const keyOf = (f: SourceFile) => `${f.mtimeMs}:${f.size}`;
@@ -21,6 +23,40 @@ async function loadCache(cacheFile: string): Promise<Record<string, CachedFile>>
 }
 
 /**
+ * C2: the same sessionId really does appear in two project dirs (17 of 100 on the author's
+ * corpus, after a session moves worktree). Picking by `Object.values()` order means readdir
+ * order decides whose `cwd` wins, and a stale cwd opens the wrong window. Total order,
+ * strongest signal first: latest activity, then the longer file, then the more recently
+ * written one, then the path as a final deterministic tie-break.
+ */
+function beats(a: PersistedMeta, b: PersistedMeta): boolean {
+  if (a.lastTs !== b.lastTs) return a.lastTs > b.lastTs;
+  if (a.size !== b.size) return a.size > b.size;
+  if (a.mtimeMs !== b.mtimeMs) return a.mtimeMs > b.mtimeMs;
+  return a.file > b.file;
+}
+
+/**
+ * The loser is merged into the winner, never dropped: its prose is attributed to the
+ * winner for free (pass 2 keys on sessionId, which both copies share) and its file joins
+ * `extraFiles` so deep search still reads it. Counts and the timestamp span cover both.
+ */
+function mergeDuplicate(cur: SessionMeta, other: PersistedMeta): SessionMeta {
+  const otherWins = beats(other, cur);
+  const base: SessionMeta = otherWins ? { ...other, extraFiles: cur.extraFiles } : cur;
+  const lost: PersistedMeta = otherWins ? cur : other;
+  return {
+    ...base,
+    extraFiles: [...base.extraFiles, lost.file],
+    firstTs: Math.min(cur.firstTs || other.firstTs, other.firstTs || cur.firstTs),
+    lastTs: Math.max(cur.lastTs, other.lastTs),
+    msgCount: cur.msgCount + other.msgCount,
+    branches: [...new Set([...base.branches, ...lost.branches])],
+    prLinks: [...new Set([...base.prLinks, ...lost.prLinks])],
+  };
+}
+
+/**
  * Sessions first so subagent prose can resolve its parent's index. This is the ONLY place
  * `sessions`/`prose` are produced — never persisted, always recomputed from `files` so the
  * on-disk cache doesn't duplicate prose text.
@@ -30,13 +66,19 @@ function assemble(files: Record<string, CachedFile>): { sessions: SessionMeta[];
   const bySessionId = new Map<string, number>();
   for (const entry of Object.values(files)) {
     if (!entry.meta) continue;
-    bySessionId.set(entry.meta.sessionId, sessions.length);
-    sessions.push(entry.meta);
+    const at = bySessionId.get(entry.meta.sessionId);
+    if (at === undefined) {
+      bySessionId.set(entry.meta.sessionId, sessions.length);
+      sessions.push({ ...entry.meta, extraFiles: [] });
+    } else {
+      sessions[at] = mergeDuplicate(sessions[at]!, entry.meta);
+    }
   }
   const prose: ProseMsg[] = [];
-  for (const entry of Object.values(files)) {
+  for (const [path, entry] of Object.entries(files)) {
     const s = bySessionId.get(entry.sessionId);
     if (s === undefined) continue;                 // orphan subagent — parent file is gone
+    if (!entry.meta) sessions[s]!.extraFiles.push(path);   // subagent transcript, for deep search
     for (const p of entry.prose) prose.push({ ...p, s });
   }
   return { sessions, prose };
