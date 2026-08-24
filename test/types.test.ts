@@ -16,6 +16,6 @@ describe('types', () => {
     };
     const prose: ProseMsg = { s: 0, r: 'u', t: 1, x: 'hello' };
     const idx: SearchIndex = { v: INDEX_VERSION, builtAt: 0, sessions: [meta], prose: [prose] };
-    expect(idx.sessions[0].sessionId).toBe('a');
+    expect(idx.sessions[0]!.sessionId).toBe('a');
   });
 });

@@ -29,6 +29,7 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint src test --ext .ts",
     "package": "vsce package"
   },
