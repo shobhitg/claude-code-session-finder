@@ -264,45 +264,27 @@ Spec §11 requires fixtures derived from real sessions — every surprise in the
 
 - [ ] **Step 1: Write the redaction script**
 
-```js
-// scripts/make-fixtures.mjs
-// Derives small, redacted fixtures from real ~/.claude/projects transcripts.
-// Redaction: replaces all prose text with lorem tokens EXCEPT an allow-list of
-// structural fields, and drops every base64 image payload.
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-
-const KEEP = new Set(['type','cwd','gitBranch','timestamp','sessionId','uuid',
-                      'parentUuid','isSidechain','aiTitle','prNumber','prUrl','message','role','content']);
-
-function scrubText(s, i) {
-  // deterministic filler that preserves length class but not content
-  const words = ['alpha','bravo','charlie','delta','echo','foxtrot'];
-  const n = Math.max(1, Math.min(12, Math.round(s.length / 20)));
-  return Array.from({ length: n }, (_, k) => words[(i + k) % words.length]).join(' ');
-}
-
-function scrub(node, i = 0) {
-  if (Array.isArray(node)) return node.map((v, k) => scrub(v, i + k));
-  if (node && typeof node === 'object') {
-    if (node.type === 'image') return { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'XX' } };
-    const out = {};
-    for (const [k, v] of Object.entries(node)) {
-      if (!KEEP.has(k) && typeof v === 'object') continue;      // drop bulky non-structural objects
-      out[k] = (k === 'text' || (k === 'content' && typeof v === 'string')) ? scrubText(v, i) : scrub(v, i);
-    }
-    return out;
-  }
-  return node;
-}
-
-const [, , src, dest, maxLines = '40'] = process.argv;
-if (!src || !dest) { console.error('usage: make-fixtures.mjs <src.jsonl> <dest.jsonl> [maxLines]'); process.exit(1); }
-mkdirSync(new URL('.', `file://${dest}`).pathname, { recursive: true });
-const lines = readFileSync(src, 'utf8').split('\n').filter(Boolean).slice(0, Number(maxLines));
-const out = lines.map((l, i) => { try { return JSON.stringify(scrub(JSON.parse(l), i)); } catch { return null; } }).filter(Boolean);
-writeFileSync(dest, out.join('\n') + '\n');
-console.log(`${dest}: ${out.length} lines`);
-```
+> **This step's original code block has been removed.** It carried a `scrub()` whose
+> allow-list was the *inverted* policy — keep-listed keys survived and everything else
+> was assumed safe — and implementing it proved that it leaks: verbatim user prompts,
+> session titles and internal file paths all passed straight through. It sat here in the
+> file that reads as the authoritative plan, ready to be copied. The shipped policy is
+> the opposite, **scrub by default**, for keys and for every kind of value:
+>
+> - a short `STRUCTURAL` allow-list of keys keeps its *string* values verbatim (the
+>   tests assert on `cwd`, `gitBranch`, `timestamp`, …); every other string becomes
+>   deterministic lorem filler;
+> - numbers are replaced with `0` (a PR number identifies a private repo; diff line
+>   ranges fingerprint real files), except a `NUMERIC_STRUCTURAL` list whose values must
+>   stay a *number* and get a placeholder instead of the real one;
+> - booleans are replaced with `false` except the one flag extraction reads;
+> - object keys that are data rather than schema (a real path used as a map key) become
+>   numbered `redactedKeyN` placeholders;
+> - `prUrl` is dropped, image payloads are stubbed.
+>
+> **`scripts/make-fixtures.mjs` is the source of truth**; `scripts/check-fixtures.mjs`
+> is its adversarial twin and must be kept in sync with it, and
+> `test/fixtures/README.md` documents the policy for reviewers.
 
 - [ ] **Step 2: Generate the three fixtures**
 
@@ -552,17 +534,17 @@ describe('extractSession', () => {
   it('captures title, pr links, branches and real timestamps', () => {
     const text = [
       line({ type: 'user', gitBranch: 'main', timestamp: '2026-08-01T00:00:00Z', message: { content: 'a' } }),
-      line({ type: 'pr-link', prNumber: 18942, timestamp: '2026-08-01T00:00:01Z' }),
+      line({ type: 'pr-link', prNumber: 1234, timestamp: '2026-08-01T00:00:01Z' }),
       line({ type: 'user', gitBranch: 'feat/x', timestamp: '2026-08-02T00:00:00Z', message: { content: 'b' } }),
-      line({ type: 'ai-title', aiTitle: 'Email submission on calls page' }),
+      line({ type: 'ai-title', aiTitle: 'Paste-image handling in the composer' }),
     ].join('\n');
     const { meta, prose } = extractSession(f(), text);
-    expect(meta.title).toBe('Email submission on calls page');
-    expect(meta.prLinks).toEqual([18942]);
+    expect(meta.title).toBe('Paste-image handling in the composer');
+    expect(meta.prLinks).toEqual([1234]);
     expect(meta.branches.sort()).toEqual(['feat/x', 'main']);
     expect(meta.firstTs).toBe(Date.parse('2026-08-01T00:00:00Z'));
     expect(meta.lastTs).toBe(Date.parse('2026-08-02T00:00:00Z'));
-    expect(prose.some(p => p.r === 't' && p.x.includes('Email submission'))).toBe(true);
+    expect(prose.some(p => p.r === 't' && p.x.includes('Paste-image handling'))).toBe(true);
   });
 
   it('marks sidechain turns as subagent prose', () => {
@@ -959,8 +941,8 @@ describe('parseQuery', () => {
     expect(parseQuery('"paste image"', '7d', NOW).phrase).toBe('paste image');
   });
   it('extracts pr: and removes it from the terms', () => {
-    const q = parseQuery('pr:18942', '7d', NOW);
-    expect(q.pr).toBe(18942);
+    const q = parseQuery('pr:1234', '7d', NOW);
+    expect(q.pr).toBe(1234);
     expect(q.terms).toEqual([]);
   });
   it('honours since: overrides including all', () => {
@@ -978,7 +960,7 @@ describe('parseQuery', () => {
 describe('search', () => {
   const index: SearchIndex = {
     v: INDEX_VERSION, builtAt: NOW,
-    sessions: [meta('s1'), meta('s2'), meta('s3', { prLinks: [18942] }),
+    sessions: [meta('s1'), meta('s2'), meta('s3', { prLinks: [1234] }),
                meta('s4', { title: 'Paste image handling' })],
     prose: [
       { s: 0, r: 'u', t: NOW - DAY, x: 'the paste image bug is annoying' },
@@ -1000,7 +982,7 @@ describe('search', () => {
   });
 
   it('pr: short-circuits to the owning session', () => {
-    const hits = search(index, parseQuery('pr:18942', '7d', NOW), NOW);
+    const hits = search(index, parseQuery('pr:1234', '7d', NOW), NOW);
     expect(hits[0]!.session.sessionId).toBe('s3');
   });
 
@@ -1906,7 +1888,7 @@ This extension indexes what you and Claude actually **said** and opens the match
 |---|---|
 | `paste image` | sessions containing both words |
 | `"paste image"` | that exact phrase |
-| `pr:18942` | the session that opened that PR |
+| `pr:1234` | the session that opened that PR |
 | `since:30d`, `since:all` | widen past the default 7-day window |
 | `!npm run build` | also search tool calls and results (slower) |
 
@@ -2032,7 +2014,7 @@ suite('Quick Pick surface', () => {
     // A label that deliberately does NOT contain the typed value. Without
     // alwaysShow, VS Code's built-in label filter removes it and the assertion fails.
     const qp = vscode.window.createQuickPick();
-    qp.items = [{ label: 'Email submission on calls page', alwaysShow: true }];
+    qp.items = [{ label: 'Paste-image handling in the composer', alwaysShow: true }];
     qp.value = 'zzz-not-in-the-label';
     qp.show();
     await new Promise(r => setTimeout(r, 250));

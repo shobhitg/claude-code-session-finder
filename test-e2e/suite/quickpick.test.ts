@@ -47,7 +47,7 @@ suite('Quick Pick surface', () => {
   // second (control) case would fail and say so.
   test('alwaysShow:true keeps a non-matching item active after VS Code filters', async () => {
     const qp = vscode.window.createQuickPick();
-    qp.items = [{ label: 'Email submission on calls page', alwaysShow: true }];
+    qp.items = [{ label: 'Paste-image handling in the composer', alwaysShow: true }];
     qp.show();
     qp.value = 'zzz-not-in-the-label';
     await delay(500);
@@ -57,7 +57,7 @@ suite('Quick Pick surface', () => {
 
   test('control: the same item WITHOUT alwaysShow is filtered out of active', async () => {
     const qp = vscode.window.createQuickPick();
-    qp.items = [{ label: 'Email submission on calls page' }]; // no alwaysShow
+    qp.items = [{ label: 'Paste-image handling in the composer' }]; // no alwaysShow
     qp.show();
     qp.value = 'zzz-not-in-the-label';
     await delay(500);

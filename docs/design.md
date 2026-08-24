@@ -186,7 +186,7 @@ Syntax — five things, no query language:
 |---|---|
 | `paste image` | all terms present, case-insensitive substring, AND |
 | `"paste image"` | exact phrase |
-| `pr:18942` | session that opened/touched that PR |
+| `pr:1234` | session that opened/touched that PR |
 | `since:30d`, `since:all` | override the default window for this query |
 | `!npm run build` | widen to tool calls and results (live scan) |
 
@@ -209,9 +209,9 @@ is discounted but present.
 Row rendering (`QuickPickItem`, `alwaysShow: true` per F7):
 
 ```
-label        ✻ Email submission on calls page
-description  aida · shobhit/assist-paste-image-attach · 2d ago · PR #18942
-detail       …sorry my bad.. Multitasking. I meant image, not email…   3 matches
+label        ✻ Paste-image handling in the composer
+description  acme-app · alex/paste-image-attach · 2d ago · PR #1234
+detail       …I meant the image paste path, not the email one…   3 matches
 ```
 
 Sessions with a missing cwd render `⚠ folder missing` and open read-only.
@@ -264,7 +264,7 @@ Row actions:
 | Action | Behavior |
 |---|---|
 | Enter | the decision tree above |
-| Cmd/Ctrl+Enter | open the raw `.jsonl` transcript in an editor tab |
+| Open transcript (button) | open the raw `.jsonl` transcript in an editor tab. Specified as Cmd/Ctrl+Enter; shipped as a row button because the Quick Pick API has no modifier-accept hook |
 | Copy link (button) | `vscode://anthropic.claude-code/open?session=<id>` to clipboard |
 | Reveal folder (button) | reveal the session's cwd in the explorer |
 

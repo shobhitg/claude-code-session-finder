@@ -22,8 +22,8 @@ describe('parseQuery', () => {
     expect(parseQuery('"paste image"', '7d', NOW).phrase).toBe('paste image');
   });
   it('extracts pr: and removes it from the terms', () => {
-    const q = parseQuery('pr:18942', '7d', NOW);
-    expect(q.pr).toBe(18942);
+    const q = parseQuery('pr:1234', '7d', NOW);
+    expect(q.pr).toBe(1234);
     expect(q.terms).toEqual([]);
   });
   // M6: the strip regexes are global, like withWindow's. Non-global left the second
@@ -146,7 +146,7 @@ describe('withWindow', () => {
 describe('search', () => {
   const index: SearchIndex = {
     v: INDEX_VERSION, builtAt: NOW,
-    sessions: [meta('s1'), meta('s2'), meta('s3', { prLinks: [18942] }),
+    sessions: [meta('s1'), meta('s2'), meta('s3', { prLinks: [1234] }),
                meta('s4', { title: 'Paste image handling' })],
     prose: [
       { s: 0, r: 'u', t: NOW - DAY, x: 'the paste image bug is annoying' },
@@ -168,7 +168,7 @@ describe('search', () => {
   });
 
   it('pr: short-circuits to the owning session', () => {
-    const hits = search(index, parseQuery('pr:18942', '7d', NOW), NOW);
+    const hits = search(index, parseQuery('pr:1234', '7d', NOW), NOW);
     expect(hits[0]!.session.sessionId).toBe('s3');
   });
 

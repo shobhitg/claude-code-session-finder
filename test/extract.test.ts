@@ -45,17 +45,17 @@ describe('extractSession', () => {
   it('captures title, pr links, branches and real timestamps', () => {
     const text = [
       line({ type: 'user', gitBranch: 'main', timestamp: '2026-08-01T00:00:00Z', message: { content: 'a' } }),
-      line({ type: 'pr-link', prNumber: 18942, timestamp: '2026-08-01T00:00:01Z' }),
+      line({ type: 'pr-link', prNumber: 1234, timestamp: '2026-08-01T00:00:01Z' }),
       line({ type: 'user', gitBranch: 'feat/x', timestamp: '2026-08-02T00:00:00Z', message: { content: 'b' } }),
-      line({ type: 'ai-title', aiTitle: 'Email submission on calls page' }),
+      line({ type: 'ai-title', aiTitle: 'Paste-image handling in the composer' }),
     ].join('\n');
     const { meta, prose } = extractSession(f(), text);
-    expect(meta.title).toBe('Email submission on calls page');
-    expect(meta.prLinks).toEqual([18942]);
+    expect(meta.title).toBe('Paste-image handling in the composer');
+    expect(meta.prLinks).toEqual([1234]);
     expect(meta.branches.sort()).toEqual(['feat/x', 'main']);
     expect(meta.firstTs).toBe(Date.parse('2026-08-01T00:00:00Z'));
     expect(meta.lastTs).toBe(Date.parse('2026-08-02T00:00:00Z'));
-    expect(prose.some(p => p.r === 't' && p.x.includes('Email submission'))).toBe(true);
+    expect(prose.some(p => p.r === 't' && p.x.includes('Paste-image handling'))).toBe(true);
   });
 
   it('marks sidechain turns as subagent prose', () => {
