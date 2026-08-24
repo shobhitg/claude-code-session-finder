@@ -4,19 +4,32 @@ import { join } from 'node:path';
 import type { OpenPlan } from './core/resolve.js';
 
 export const BATON_TTL_MS = 60_000;
-export const batonPath = (ctx: vscode.ExtensionContext) => join(ctx.globalStorageUri.fsPath, 'pending-open.json');
+export const BATON_FILE = 'pending-open.json';
+export const batonPath = (ctx: vscode.ExtensionContext) => join(ctx.globalStorageUri.fsPath, BATON_FILE);
 
-/** F8: never Uri.file() — derive from an existing folder URI to keep the remote authority. */
-export function folderUri(path: string): vscode.Uri {
-  const base = vscode.workspace.workspaceFolders?.[0]?.uri;
-  if (!base) throw new Error('No workspace folder is open — cannot derive a remote-safe folder URI.');
+const TRANSCRIPT_ACTION = 'Open transcript';
+
+/** Spec §9/§10: a session you cannot resume must still be inspectable. */
+export async function openTranscript(file: string): Promise<void> {
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+  await vscode.window.showTextDocument(doc, { preview: true });
+}
+
+/**
+ * F8: never Uri.file() — derive from a URI that already carries the right remote authority.
+ * I3: with no folder open there is no workspaceFolders[0], and throwing here made EVERY
+ * open fail in a folderless window (measured 100/100 sessions plan as `handoff` there).
+ * globalStorageUri is always present and carries the same authority; ctx.extensionUri
+ * would do equally well.
+ */
+export function folderUri(path: string, ctx: vscode.ExtensionContext): vscode.Uri {
+  const base = vscode.workspace.workspaceFolders?.[0]?.uri ?? ctx.globalStorageUri;
   return base.with({ path });
 }
 
 export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext): Promise<void> {
   if (plan.kind === 'transcript') {
-    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(plan.file));
-    await vscode.window.showTextDocument(doc, { preview: true });
+    await openTranscript(plan.file);
     vscode.window.showInformationMessage(`Cannot resume this session: ${plan.reason}. Showing the transcript.`);
     return;
   }
@@ -28,18 +41,24 @@ export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext):
     try {
       await vscode.commands.executeCommand('claude-vscode.editor.open', plan.sessionId, undefined);
     } catch {
-      vscode.window.showErrorMessage('Claude Code did not accept the session. Is the extension enabled?');
+      // Spec §10: offer the transcript rather than surfacing a bare error.
+      const choice = await vscode.window.showErrorMessage(
+        'Claude Code did not accept the session. Is the extension enabled?', TRANSCRIPT_ACTION);
+      if (choice === TRANSCRIPT_ACTION) await openTranscript(plan.file);
     }
     return;
   }
 
   // handoff
   try {
+    // I3: derive the target BEFORE writing the baton — a failure here used to leave a
+    // stale baton on disk for its full 60 s TTL.
+    const target = folderUri(plan.targetCwd, ctx);
     await vscode.workspace.fs.createDirectory(ctx.globalStorageUri);
     await writeFile(batonPath(ctx), JSON.stringify({
       sessionId: plan.sessionId, targetCwd: plan.targetCwd, expiresAt: Date.now() + BATON_TTL_MS,
     }));
-    await vscode.commands.executeCommand('vscode.openFolder', folderUri(plan.targetCwd), { forceNewWindow: true });
+    await vscode.commands.executeCommand('vscode.openFolder', target, { forceNewWindow: true });
   } catch (err) {
     vscode.window.showErrorMessage(`Could not open the session's folder: ${String(err)}`);
   }

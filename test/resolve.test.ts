@@ -9,7 +9,7 @@ const s = (over: Partial<SessionMeta> = {}): SessionMeta => ({
 
 describe('planOpen', () => {
   it('opens here when cwd is the primary folder', () => {
-    expect(planOpen(s(), ['/w/a'])).toEqual({ kind: 'here', sessionId: 'sid' });
+    expect(planOpen(s(), ['/w/a'])).toEqual({ kind: 'here', sessionId: 'sid', file: '/p/sid.jsonl' });
   });
 
   it('opens here when cwd is inside any workspace folder (multi-root, F5)', () => {

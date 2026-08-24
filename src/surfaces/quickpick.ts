@@ -6,9 +6,16 @@ import { deepSearch } from '../core/deep.js';
 import { parseQuery, search, snippet, withWindow, type SessionHit } from '../core/query.js';
 import { planOpen } from '../core/resolve.js';
 import type { SearchIndex } from '../core/types.js';
-import { executePlan, folderUri } from '../open.js';
+import { executePlan, folderUri, openTranscript } from '../open.js';
 
 interface Row extends vscode.QuickPickItem { hit?: SessionHit; action?: 'all' | 'deep' }
+
+const COPY_LINK = 'Copy deep link';
+const REVEAL_FOLDER = 'Reveal folder';
+const OPEN_TRANSCRIPT = 'Open transcript';
+
+/** Idle time before a deep scan starts. Long enough that typing never queues scans. */
+const DEEP_DEBOUNCE_MS = 275;
 
 const ago = (ts: number) => {
   const d = Math.floor((Date.now() - ts) / 86_400_000);
@@ -25,9 +32,12 @@ function toRow(hit: SessionHit): Row {
     description: bits.filter(Boolean).join(' · '),
     detail: hit.best ? `${snippet(hit.best.text, hit.best.index)}   (${hit.matchCount} matches)` : undefined,
     alwaysShow: true,                    // F7 — MUST be set or VS Code re-filters on label
+    // I5: VS Code's QuickPick has no modifier-accept API, so spec §9's Cmd/Ctrl+Enter
+    // "open the raw transcript" action is a third item button instead.
     buttons: [
-      { iconPath: new vscode.ThemeIcon('link'), tooltip: 'Copy deep link' },
-      { iconPath: new vscode.ThemeIcon('folder'), tooltip: 'Reveal folder' },
+      { iconPath: new vscode.ThemeIcon('link'), tooltip: COPY_LINK },
+      { iconPath: new vscode.ThemeIcon('folder'), tooltip: REVEAL_FOLDER },
+      { iconPath: new vscode.ThemeIcon('file-code'), tooltip: OPEN_TRANSCRIPT },
     ],
     hit,
   };
@@ -36,6 +46,11 @@ function toRow(hit: SessionHit): Row {
 export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise<void> {
   const cacheFile = join(ctx.globalStorageUri.fsPath, 'index.json');
   const defaultWindow = vscode.workspace.getConfiguration('sessionFinder').get<string>('defaultWindow', '7d');
+
+  // Monotonic token: a slow deep scan that resolves after a newer keystroke's render must
+  // neither clobber the newer items NOR keep running. Declared before qp.show() so the
+  // onDidHide handler below can bump it — disposal must cancel in-flight work too.
+  let renderToken = 0;
 
   const qp = vscode.window.createQuickPick<Row>();
   qp.placeholder = `Search Claude sessions (last ${defaultWindow}) — "phrase", pr:123, since:all, !tools`;
@@ -46,7 +61,7 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
   // C1: register the hide->dispose listener BEFORE the first await. Escape during the
   // cold refreshIndex() below still fires onDidHide, and with no listener attached yet
   // the QuickPick (and the SearchIndex it closes over) would leak for the extension's life.
-  qp.onDidHide(() => qp.dispose());
+  qp.onDidHide(() => { renderToken++; qp.dispose(); });   // bump FIRST: cancels any live deep scan
 
   const removedIds = new Set<string>();         // sessions confirmed gone from disk; filtered at render time
   let index: SearchIndex;
@@ -59,10 +74,6 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
   }
   qp.busy = false;
 
-  // Monotonic token: a slow deep scan that resolves after a newer keystroke's render
-  // must not clobber the newer (already-rendered) items.
-  let renderToken = 0;
-
   const render = async (value: string) => {
     const token = ++renderToken;
     qp.busy = false;                                 // cancel any spinner left by a superseded deep scan
@@ -71,7 +82,14 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
 
     if (q.deep) {
       qp.busy = true;
-      const hits = await deepSearch(index, q, Date.now());
+      // C1: the deep path is a full-corpus live scan (~0.7 s, hundreds of MB). Firing one
+      // per keystroke overlapped 29 scans and 3+ GB of RSS in the shared extension host.
+      // Debounce the DEEP path only — the prose path below stays synchronous and
+      // undebounced, because its 1-30 ms responsiveness is a design property (spec §8).
+      await new Promise<void>(r => setTimeout(r, DEEP_DEBOUNCE_MS));
+      if (token !== renderToken) return;             // superseded while idle — no scan starts
+      const hits = await deepSearch(index, q, Date.now(),
+        { cancelled: () => token !== renderToken }); // superseded mid-scan, or picker disposed
       if (token !== renderToken) return;             // a newer render has already taken over
       qp.busy = false;
       qp.items = hits.slice(0, 50).map(toRow);
@@ -90,19 +108,24 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
     qp.items = rows;
   };
 
-  qp.onDidChangeValue(v => { void render(v); });     // prose path: 6-10 ms sync; deep path: async, token-guarded
+  qp.onDidChangeValue(v => {                        // prose path: 6-10 ms sync; deep path: debounced + cancellable
+    render(v).catch(err => vscode.window.showErrorMessage(`Search failed: ${String(err)}`));
+  });
 
   qp.onDidTriggerItemButton(async e => {
     const m = (e.item as Row).hit?.session;
     if (!m) return;
     try {
-      if ((e.button.tooltip ?? '').startsWith('Copy')) {
+      const tooltip = e.button.tooltip ?? '';
+      if (tooltip === COPY_LINK) {
         await vscode.env.clipboard.writeText(`vscode://anthropic.claude-code/open?session=${m.sessionId}`);
         vscode.window.setStatusBarMessage('Deep link copied', 3000);
+      } else if (tooltip === OPEN_TRANSCRIPT) {
+        await openTranscript(m.file);
       } else if (m.cwd) {
         // Same authority-preserving derivation as open.ts — revealInExplorer is a
         // workbench-level command like openFolder, not a plain file read.
-        await vscode.commands.executeCommand('revealInExplorer', folderUri(m.cwd));
+        await vscode.commands.executeCommand('revealInExplorer', folderUri(m.cwd, ctx));
       }
     } catch (err) {
       vscode.window.showErrorMessage(`Action failed: ${String(err)}`);
