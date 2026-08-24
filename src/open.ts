@@ -7,9 +7,10 @@ export const BATON_TTL_MS = 60_000;
 export const batonPath = (ctx: vscode.ExtensionContext) => join(ctx.globalStorageUri.fsPath, 'pending-open.json');
 
 /** F8: never Uri.file() — derive from an existing folder URI to keep the remote authority. */
-function folderUri(path: string): vscode.Uri {
+export function folderUri(path: string): vscode.Uri {
   const base = vscode.workspace.workspaceFolders?.[0]?.uri;
-  return base ? base.with({ path }) : vscode.Uri.file(path);
+  if (!base) throw new Error('No workspace folder is open — cannot derive a remote-safe folder URI.');
+  return base.with({ path });
 }
 
 export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext): Promise<void> {
@@ -33,9 +34,13 @@ export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext):
   }
 
   // handoff
-  await vscode.workspace.fs.createDirectory(ctx.globalStorageUri);
-  await writeFile(batonPath(ctx), JSON.stringify({
-    sessionId: plan.sessionId, targetCwd: plan.targetCwd, expiresAt: Date.now() + BATON_TTL_MS,
-  }));
-  await vscode.commands.executeCommand('vscode.openFolder', folderUri(plan.targetCwd), { forceNewWindow: true });
+  try {
+    await vscode.workspace.fs.createDirectory(ctx.globalStorageUri);
+    await writeFile(batonPath(ctx), JSON.stringify({
+      sessionId: plan.sessionId, targetCwd: plan.targetCwd, expiresAt: Date.now() + BATON_TTL_MS,
+    }));
+    await vscode.commands.executeCommand('vscode.openFolder', folderUri(plan.targetCwd), { forceNewWindow: true });
+  } catch (err) {
+    vscode.window.showErrorMessage(`Could not open the session's folder: ${String(err)}`);
+  }
 }
