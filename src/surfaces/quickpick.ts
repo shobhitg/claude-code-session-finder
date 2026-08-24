@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { refreshIndex } from '../core/cache.js';
-import { parseQuery, search, snippet, type SessionHit } from '../core/query.js';
+import { parseQuery, search, snippet, withWindow, type SessionHit } from '../core/query.js';
 import { planOpen } from '../core/resolve.js';
 import type { SearchIndex } from '../core/types.js';
 import { executePlan, folderUri } from '../open.js';
@@ -96,10 +96,9 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
     const picked = qp.selectedItems[0];
     if (!picked) return;
     if (picked.action === 'all') {
-      // I3: strip any existing since: clause first so this is idempotent — appending
-      // blindly left a stale window in place and fed "since:all" to the term tokenizer.
-      const stripped = qp.value.replace(/(?:^|\s)since:\S+(?=\s|$)/i, ' ').trim();
-      qp.value = stripped ? `${stripped} since:all` : 'since:all';
+      // I3: withWindow owns quote-aware since: replacement — a local regex here previously
+      // reached inside quoted phrases and corrupted them.
+      qp.value = withWindow(qp.value, 'all');
       render(qp.value);
       return;
     }

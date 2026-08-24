@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseQuery, search, snippet } from '../src/core/query.js';
+import { parseQuery, search, snippet, withWindow } from '../src/core/query.js';
 import { INDEX_VERSION, type SearchIndex, type SessionMeta } from '../src/core/types.js';
 
 const NOW = Date.parse('2026-08-24T00:00:00Z');
@@ -68,6 +68,50 @@ describe('parseQuery', () => {
       for (const term of q.terms) expect(term).not.toContain('"');
       expect(q.phrase === null || q.phrase.length > 0).toBe(true);
     }
+  });
+});
+
+describe('withWindow', () => {
+  it('replaces an existing since: clause', () => {
+    expect(withWindow('foo since:14d', 'all')).toBe('foo since:all');
+  });
+  it('is idempotent', () => {
+    expect(withWindow('foo since:all', 'all')).toBe('foo since:all');
+  });
+  it('collapses multiple since: clauses to exactly one', () => {
+    const result = withWindow('foo since:14d since:30d', 'all');
+    expect(result.match(/since:/g)).toHaveLength(1);
+    expect(result).toBe('foo since:all');
+  });
+  it('leaves no leading/trailing whitespace artefacts when there is nothing else', () => {
+    expect(withWindow('since:14d', 'all')).toBe('since:all');
+  });
+  it('is case-insensitive', () => {
+    expect(withWindow('foo SINCE:14d', 'all')).toBe('foo since:all');
+  });
+  it('regression guard: a quoted phrase containing "since:" is left byte-identical', () => {
+    const input = '"deploy since:v2 notes"';
+    expect(withWindow(input, 'all')).toBe(`${input} since:all`);
+  });
+  it('strips an outside since: clause while preserving one inside quotes', () => {
+    expect(withWindow('"a since:1d" since:14d', 'all')).toBe('"a since:1d" since:all');
+  });
+
+  const NOW2 = Date.parse('2026-08-24T00:00:00Z');
+  const cases: Array<[string, string | null]> = [
+    ['foo since:14d', null],
+    ['foo since:all', null],
+    ['foo since:14d since:30d', null],
+    ['since:14d', null],
+    ['foo SINCE:14d', null],
+    ['"deploy since:v2 notes"', 'deploy since:v2 notes'],
+    ['"a since:1d" since:14d', 'a since:1d'],
+  ];
+  it.each(cases)('round-trips through parseQuery: %s', (input, expectedPhrase) => {
+    const result = withWindow(input, 'all');
+    const q = parseQuery(result, '7d', NOW2);
+    expect(q.sinceMs).toBeNull();
+    expect(q.phrase).toBe(expectedPhrase);
   });
 });
 

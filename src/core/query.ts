@@ -25,6 +25,19 @@ function resolveSince(spec: string, defaultWindow: string, now: number): number 
   return fallback === undefined ? null : fallback;
 }
 
+/**
+ * The one owner of "where is the quoted phrase" — both parseQuery (below) and withWindow
+ * need it, and having two independent implementations of this boundary is what let an
+ * earlier since: strip in the QuickPick surface reach inside a quoted phrase.
+ * `closed: false` means an unterminated quote, treated as running to the end of the string.
+ */
+function quoteRegion(s: string): { start: number; end: number; closed: boolean } | null {
+  const start = s.indexOf('"');
+  if (start < 0) return null;
+  const close = s.indexOf('"', start + 1);
+  return close >= 0 ? { start, end: close + 1, closed: true } : { start, end: s.length, closed: false };
+}
+
 export function parseQuery(input: string, defaultWindow: string, now: number): ParsedQuery {
   const raw = input;
   let rest = input.trim();
@@ -32,18 +45,17 @@ export function parseQuery(input: string, defaultWindow: string, now: number): P
   if (deep) rest = rest.slice(1).trim();
 
   let phrase: string | null = null;
-  const openIdx = rest.indexOf('"');
-  if (openIdx >= 0) {
-    const closeIdx = rest.indexOf('"', openIdx + 1);
-    if (closeIdx >= 0) {
-      const inner = rest.slice(openIdx + 1, closeIdx);
+  const region = quoteRegion(rest);
+  if (region) {
+    if (region.closed) {
+      const inner = rest.slice(region.start + 1, region.end - 1);
       phrase = inner.length ? inner.toLowerCase() : null;
-      rest = rest.slice(0, openIdx) + ' ' + rest.slice(closeIdx + 1);
+      rest = rest.slice(0, region.start) + ' ' + rest.slice(region.end);
     } else {
       // Unterminated quote: treat as a phrase still being typed.
-      const inner = rest.slice(openIdx + 1).trim();
+      const inner = rest.slice(region.start + 1).trim();
       phrase = inner.length ? inner.toLowerCase() : null;
-      rest = rest.slice(0, openIdx);
+      rest = rest.slice(0, region.start);
     }
   }
   // Only the first quote-delimited (or unterminated) region becomes the phrase;
@@ -61,6 +73,25 @@ export function parseQuery(input: string, defaultWindow: string, now: number): P
     sinceMs: resolveSince(sinceSpec ?? defaultWindow, defaultWindow, now),
     terms: rest.toLowerCase().split(/\s+/).filter(Boolean),
   };
+}
+
+const SINCE_CLAUSE = /(?:^|\s)since:\S+(?=\s|$)/gi;
+
+/**
+ * Set the recency window on a raw query string, replacing any existing since: clause(s).
+ * The quoted-phrase region (if any) is located first via quoteRegion and copied through
+ * byte-identical — since: is only ever stripped OUTSIDE it. Idempotent: calling this twice
+ * yields the same result as calling it once, and it never leaves more than one since: clause.
+ */
+export function withWindow(input: string, spec: string): string {
+  const region = quoteRegion(input);
+  const before = region ? input.slice(0, region.start) : input;
+  const quoted = region ? input.slice(region.start, region.end) : '';
+  const after = region ? input.slice(region.end) : '';
+
+  const strip = (s: string) => s.replace(SINCE_CLAUSE, ' ').trim();
+  const parts = [strip(before), quoted, strip(after)].filter(p => p.length > 0);
+  return [...parts, `since:${spec}`].join(' ');
 }
 
 const ROLE_WEIGHT: Record<Role, number> = { t: 3.0, u: 2.0, a: 1.0, sub: 0.7 };
