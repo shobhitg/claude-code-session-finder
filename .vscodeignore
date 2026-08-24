@@ -1,4 +1,5 @@
 .vscode/**
+.vscode-test/**
 src/**
 test/**
 test-e2e/**
@@ -13,3 +14,5 @@ tsconfig.e2e.json
 vitest.config.ts
 esbuild.mjs
 **/*.map
+.gitignore
+*.vsix

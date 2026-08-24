@@ -8,5 +8,7 @@ await build({
   platform: 'node',
   target: 'node20',
   minify: process.argv.includes('--minify'),
-  sourcemap: true,
+  // M10: dist/extension.js must not reference a .map the VSIX does not ship.
+  // `--no-sourcemap` is what vscode:prepublish uses; local builds keep the map.
+  sourcemap: !process.argv.includes('--no-sourcemap'),
 });

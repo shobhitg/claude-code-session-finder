@@ -5,17 +5,37 @@
   "version": "0.0.1",
   "license": "MIT",
   "publisher": "local-placeholder",
-  "repository": { "type": "git", "url": "https://github.com/shobhitg/claude-code-session-finder" },
-  "engines": { "vscode": "^1.94.0" },
-  "categories": ["Other"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shobhitg/claude-code-session-finder"
+  },
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Other"
+  ],
   "icon": "resources/icon.png",
-  "keywords": ["claude", "claude code", "search", "sessions", "history"],
+  "keywords": [
+    "claude",
+    "claude code",
+    "search",
+    "sessions",
+    "history"
+  ],
   "main": "./dist/extension.js",
-  "extensionDependencies": ["anthropic.claude-code"],
-  "activationEvents": ["onStartupFinished"],
+  "extensionDependencies": [
+    "anthropic.claude-code"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
-      { "command": "sessionFinder.search", "title": "Claude: Search Sessions" }
+      {
+        "command": "sessionFinder.search",
+        "title": "Claude: Search Sessions"
+      }
     ],
     "configuration": {
       "title": "Claude Code Session Finder",
@@ -28,7 +48,11 @@
       }
     },
     "keybindings": [
-      { "command": "sessionFinder.search", "key": "ctrl+alt+s", "mac": "cmd+alt+s" }
+      {
+        "command": "sessionFinder.search",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s"
+      }
     ]
   },
   "scripts": {
@@ -39,7 +63,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test --ext .ts",
     "check:fixtures": "node scripts/check-fixtures.mjs test/fixtures",
-    "package": "vsce package"
+    "vscode:prepublish": "node esbuild.mjs --no-sourcemap",
+    "package": "npx --no @vscode/vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -48,6 +73,7 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.21.0",
     "eslint": "^8.57.0",
     "glob": "^13.0.6",
