@@ -8,12 +8,21 @@ export interface ParsedQuery {
 const DAY = 86_400_000;
 const UNIT: Record<string, number> = { d: DAY, w: 7 * DAY, m: 30 * DAY };
 
-function windowToMs(spec: string, now: number): number | null {
+/** null = explicit "all time"; undefined = unparseable (caller should fall back) */
+function windowToMs(spec: string, now: number): number | null | undefined {
   const s = spec.trim().toLowerCase();
   if (!s || s === 'all') return null;
   const m = /^(\d+)([dwm])?$/.exec(s);
-  if (!m) return null;
+  if (!m) return undefined;
   return now - Number(m[1]) * (UNIT[m[2] ?? 'd'] ?? DAY);
+}
+
+/** Resolve a since: spec, falling back to defaultWindow when spec is unparseable. */
+function resolveSince(spec: string, defaultWindow: string, now: number): number | null {
+  const primary = windowToMs(spec, now);
+  if (primary !== undefined) return primary;
+  const fallback = windowToMs(defaultWindow, now);
+  return fallback === undefined ? null : fallback;
 }
 
 export function parseQuery(input: string, defaultWindow: string, now: number): ParsedQuery {
@@ -23,7 +32,20 @@ export function parseQuery(input: string, defaultWindow: string, now: number): P
   if (deep) rest = rest.slice(1).trim();
 
   let phrase: string | null = null;
-  rest = rest.replace(/"([^"]+)"/, (_, p: string) => { phrase = p.toLowerCase(); return ' '; });
+  const openIdx = rest.indexOf('"');
+  if (openIdx >= 0) {
+    const closeIdx = rest.indexOf('"', openIdx + 1);
+    if (closeIdx >= 0) {
+      const inner = rest.slice(openIdx + 1, closeIdx);
+      phrase = inner.length ? inner.toLowerCase() : null;
+      rest = rest.slice(0, openIdx) + ' ' + rest.slice(closeIdx + 1);
+    } else {
+      // Unterminated quote: treat as a phrase still being typed.
+      const inner = rest.slice(openIdx + 1).trim();
+      phrase = inner.length ? inner.toLowerCase() : null;
+      rest = rest.slice(0, openIdx);
+    }
+  }
 
   let pr: number | null = null;
   rest = rest.replace(/(?:^|\s)pr:#?(\d+)(?=\s|$)/i, (_, n: string) => { pr = Number(n); return ' '; });
@@ -33,7 +55,7 @@ export function parseQuery(input: string, defaultWindow: string, now: number): P
 
   return {
     raw, deep, phrase, pr,
-    sinceMs: windowToMs(sinceSpec ?? defaultWindow, now),
+    sinceMs: resolveSince(sinceSpec ?? defaultWindow, defaultWindow, now),
     terms: rest.toLowerCase().split(/\s+/).filter(Boolean),
   };
 }
@@ -93,6 +115,7 @@ export function search(index: SearchIndex, q: ParsedQuery, now: number): Session
 
 export function snippet(text: string, at: number, pad = 60): string {
   const flat = text.replace(/\s+/g, ' ').trim();
-  const start = Math.max(0, at - pad), end = Math.min(flat.length, at + pad);
+  const clampedAt = Math.min(Math.max(at, 0), flat.length);
+  const start = Math.max(0, clampedAt - pad), end = Math.min(flat.length, clampedAt + pad);
   return (start > 0 ? '…' : '') + flat.slice(start, end) + (end < flat.length ? '…' : '');
 }

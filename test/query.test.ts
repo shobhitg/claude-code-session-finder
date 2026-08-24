@@ -36,6 +36,21 @@ describe('parseQuery', () => {
     expect(q.deep).toBe(true);
     expect(q.terms).toEqual(['npm', 'run', 'build']);
   });
+  it('treats an unterminated quote as a phrase still being typed', () => {
+    expect(parseQuery('"paste image', '7d', NOW).phrase).toBe('paste image');
+  });
+  it('treats empty quotes as no phrase and leaves no stray quote in terms', () => {
+    const q = parseQuery('""', '7d', NOW);
+    expect(q.phrase).toBeNull();
+    expect(q.terms).not.toContain('"');
+  });
+  it('treats a lone quote as no phrase and leaves no stray quote in terms', () => {
+    const q = parseQuery('"', '7d', NOW);
+    expect(q.terms).not.toContain('"');
+  });
+  it('falls back to the default window on a malformed since: value', () => {
+    expect(parseQuery('x since:xyz', '7d', NOW).sinceMs).toBe(NOW - 7 * DAY);
+  });
 });
 
 describe('search', () => {
@@ -88,6 +103,11 @@ describe('search', () => {
     expect(hits).toHaveLength(1);
     expect(hits[0]!.matchCount).toBe(2);
   });
+
+  it('finds a match via an unterminated-quote query typed mid-phrase', () => {
+    const hits = search(index, parseQuery('"paste image', '7d', NOW), NOW);
+    expect(hits.map(h => h.session.sessionId)).toContain('s1');
+  });
 });
 
 describe('snippet', () => {
@@ -96,5 +116,10 @@ describe('snippet', () => {
     expect(s).toContain('NEEDLE');
     expect(s.startsWith('…')).toBe(true);
     expect(s.endsWith('…')).toBe(true);
+  });
+
+  it('clamps an out-of-range negative index instead of returning most of the string', () => {
+    const s = snippet('y'.repeat(10000), -100, 10);
+    expect(s.length).toBeLessThanOrEqual(25);
   });
 });
