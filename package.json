@@ -24,7 +24,10 @@
           "description": "Default recency window for searches. e.g. 7d, 30d, all"
         }
       }
-    }
+    },
+    "keybindings": [
+      { "command": "sessionFinder.search", "key": "ctrl+alt+s", "mac": "cmd+alt+s" }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",
