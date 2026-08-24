@@ -38,7 +38,7 @@ describe('planOpen', () => {
     expect(planOpen(s({ cwd: '/w/ab' }), ['/w/a']).kind).toBe('handoff');
   });
 
-  it('opens here when there is no workspace open at all', () => {
+  it('hands off when there is no workspace open at all', () => {
     expect(planOpen(s(), []).kind).toBe('handoff');
   });
 });

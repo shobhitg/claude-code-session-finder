@@ -10,6 +10,9 @@
  * Linux is left byte-exact.
  */
 export function normalizePath(p: string, platform: NodeJS.Platform = process.platform): string {
+  // An all-slash string ('/', '//', '///', ...) is the root, never the empty string —
+  // the trailing-slash strip below would otherwise consume '//' down to ''.
+  if (/^\/+$/.test(p)) return '/';
   const trimmed = p.length > 1 ? p.replace(/\/+$/, '') : p;
   return platform === 'darwin' ? trimmed.normalize('NFC').toLowerCase() : trimmed;
 }
@@ -22,5 +25,8 @@ export function samePath(a: string, b: string, platform: NodeJS.Platform = proce
 export function isInside(child: string, parent: string, platform: NodeJS.Platform = process.platform): boolean {
   const c = normalizePath(child, platform);
   const p = normalizePath(parent, platform);
+  // An empty path is not a container and is not contained — but '/' (the root) legitimately
+  // contains every absolute path, so that exception is preserved below.
+  if (c === '' || p === '') return false;
   return c === p || c.startsWith(p.endsWith('/') ? p : p + '/');
 }
