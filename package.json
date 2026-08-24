@@ -35,18 +35,23 @@
     "build": "node esbuild.mjs",
     "pretest": "npm run check:fixtures",
     "test": "vitest run",
+    "test:e2e": "tsc -p tsconfig.e2e.json && node out/test-e2e/runTest.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test --ext .ts",
     "check:fixtures": "node scripts/check-fixtures.mjs test/fixtures/*.jsonl",
     "package": "vsce package"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.94.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/test-electron": "^3.1.0",
     "esbuild": "^0.21.0",
     "eslint": "^8.57.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.8.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   }

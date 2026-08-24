@@ -1,6 +1,7 @@
 .vscode/**
 src/**
 test/**
+test-e2e/**
 scripts/**
 docs/**
 out/**
@@ -8,6 +9,7 @@ node_modules/**
 .superpowers/**
 .eslintrc.json
 tsconfig.json
+tsconfig.e2e.json
 vitest.config.ts
 esbuild.mjs
 **/*.map
