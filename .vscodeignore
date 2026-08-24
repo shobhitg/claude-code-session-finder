@@ -1,0 +1,13 @@
+.vscode/**
+src/**
+test/**
+scripts/**
+docs/**
+out/**
+node_modules/**
+.superpowers/**
+.eslintrc.json
+tsconfig.json
+vitest.config.ts
+esbuild.mjs
+**/*.map
