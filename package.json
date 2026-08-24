@@ -38,7 +38,7 @@
     "test:e2e": "tsc -p tsconfig.e2e.json && node out/test-e2e/runTest.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test --ext .ts",
-    "check:fixtures": "node scripts/check-fixtures.mjs test/fixtures/*.jsonl",
+    "check:fixtures": "node scripts/check-fixtures.mjs test/fixtures",
     "package": "vsce package"
   },
   "devDependencies": {

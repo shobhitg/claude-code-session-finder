@@ -1,8 +1,17 @@
 // scripts/make-fixtures.mjs
 // Derives small, redacted fixtures from real ~/.claude/projects transcripts.
-// Redaction: scrub-by-default, for both values and keys.
+// Redaction: scrub-by-default, for keys AND for every kind of value.
 //   - STRUCTURAL keys' string values survive verbatim (tests assert on
 //     cwd/gitBranch/etc); every other string value becomes lorem filler.
+//   - NUMBERS are scrubbed to PLACEHOLDER_ZERO. Verbatim numbers are content:
+//     a PR number identifies a private repo, and structuredPatch line ranges
+//     (oldStart/newStart/…) plus totalLines/startLine/numLines fingerprint a
+//     real diff to real private files, correlatable with the verbatim
+//     timestamps. NUMERIC_STRUCTURAL names the keys whose value must stay a
+//     NUMBER for the tests to work (prNumber has to keep parsing as a
+//     pr-link); those get PLACEHOLDER_NUM — a number, but never the real one.
+//   - BOOLEANS are scrubbed to false except BOOLEAN_STRUCTURAL, which is the
+//     one flag extraction reads (isSidechain, which decides subagent prose).
 //   - Any object key that isn't a plain identifier (/^[A-Za-z_][A-Za-z0-9_]*$/)
 //     is data-derived (e.g. a real file path used as a map key) and is
 //     replaced with a deterministic redactedKeyN placeholder, numbered per
@@ -11,21 +20,27 @@
 //     identifier, even when a key happens to look like one (e.g. a bare
 //     filename like "Makefile" or "Dockerfile" passes the identifier
 //     regex). Every key of such an object is force-redacted regardless of
-//     shape. Keep this set identical to the one in check-fixtures.mjs — the
-//     checker verifies exactly this rule, so if the two drift the checker
-//     stops being able to catch a regression here.
+//     shape.
 //   - Objects/arrays are recursed into (image blocks are stubbed).
-//   - Numbers/booleans pass through unchanged. prUrl is dropped entirely.
+//   - prUrl is dropped entirely.
 //   - Unparseable lines are skipped, and the count is reported to stderr —
 //     never dropped silently.
+// Keep STRUCTURAL / NUMERIC_STRUCTURAL / BOOLEAN_STRUCTURAL / DATA_KEYED_MAPS
+// and the placeholders identical to the ones in check-fixtures.mjs — that
+// checker verifies exactly these rules, so if the two drift the checker stops
+// being able to catch a regression here.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const STRUCTURAL = new Set(['type','role','userType','version','sessionId','uuid',
                             'parentUuid','leafUuid','timestamp','requestId','model',
                             'cwd','gitBranch','isSidechain']);
+const NUMERIC_STRUCTURAL = new Set(['prNumber']);
+const BOOLEAN_STRUCTURAL = new Set(['isSidechain']);
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DATA_KEYED_MAPS = new Set(['trackedFileBackups']);
+const PLACEHOLDER_ZERO = 0;
+const PLACEHOLDER_NUM = 1;
 
 function scrubText(s, i) {
   // deterministic filler that preserves length class but not content
@@ -52,15 +67,22 @@ function scrub(node, i = 0, structural = false, forceKeys = false) {
       const childForceKeys = DATA_KEYED_MAPS.has(k);
       if (typeof v === 'string') {
         out[key] = STRUCTURAL.has(k) ? v : scrubText(v, i);
+      } else if (typeof v === 'number') {
+        out[key] = NUMERIC_STRUCTURAL.has(k) ? PLACEHOLDER_NUM : PLACEHOLDER_ZERO;
+      } else if (typeof v === 'boolean') {
+        out[key] = BOOLEAN_STRUCTURAL.has(k) ? v : false;
       } else if (v && typeof v === 'object') {
         out[key] = scrub(v, i, false, childForceKeys);
       } else {
-        out[key] = v; // numbers, booleans, null pass through unchanged
+        out[key] = v; // null
       }
     }
     return out;
   }
+  // Bare primitives (array elements) have no key, so nothing can allow-list them.
   if (typeof node === 'string') return structural ? node : scrubText(node, i);
+  if (typeof node === 'number') return PLACEHOLDER_ZERO;
+  if (typeof node === 'boolean') return false;
   return node;
 }
 

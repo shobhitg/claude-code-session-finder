@@ -14,15 +14,27 @@ sensitive unless it's on a short allow-list.
   is data-derived (e.g. a real file path used as a map key, as in
   `trackedFileBackups`) and is replaced with a numbered `redactedKeyN`
   placeholder, per object, so regeneration is byte-for-byte deterministic.
-- `prUrl` is dropped entirely (it embeds a real repository URL); `prNumber`
-  survives as a plain JSON number.
+- **Numbers are scrubbed too**, to `0`. Verbatim numbers are content: a PR
+  number identifies a private repository, and `structuredPatch` line ranges
+  (`oldStart`/`newStart`/`oldLines`/`newLines`) plus
+  `totalLines`/`startLine`/`numLines` fingerprint a real diff to real private
+  files — correlatable with the verbatim timestamps. A short
+  **NUMERIC_STRUCTURAL** list (`prNumber`) names the keys whose value must stay
+  a *number* for extraction to keep working; those get the placeholder `1`, a
+  number but never the real one.
+- **Booleans are scrubbed to `false`** except **BOOLEAN_STRUCTURAL**
+  (`isSidechain`), the one flag extraction reads.
+- `prUrl` is dropped entirely (it embeds a real repository URL).
 - Every base64 image payload is stubbed to a fixed placeholder.
 - Unparseable source lines are skipped, and the count is reported to stderr
   — never dropped silently.
 
 Run `npm run check:fixtures` to verify a fixture has no leaks (non-filler
-strings, non-identifier keys, oversized blobs, or a `prUrl`); it's the same
-check CI/reviewers should run before trusting a regenerated fixture.
+strings, unscrubbed numbers or booleans, non-identifier keys, oversized blobs,
+or a `prUrl`); it's the same check CI/reviewers should run before trusting a
+regenerated fixture. It walks `test/fixtures/` **recursively**, so a fixture in
+a subdirectory can't slip past, and it **fails on a line it cannot parse**
+rather than skipping it — unreviewable content counts as a leak.
 
 | File | Why it exists |
 |---|---|
