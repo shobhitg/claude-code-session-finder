@@ -62,11 +62,13 @@ export function parseQuery(input: string, defaultWindow: string, now: number): P
   // any further " characters are noise and must never reach the term tokenizer.
   rest = rest.replace(/"/g, ' ');
 
+  // M6: /g, like withWindow's SINCE_CLAUSE. Non-global left `foo pr:1 pr:2` with a
+  // literal "pr:2" in the search terms; last clause wins, and none survives as a term.
   let pr: number | null = null;
-  rest = rest.replace(/(?:^|\s)pr:#?(\d+)(?=\s|$)/i, (_, n: string) => { pr = Number(n); return ' '; });
+  rest = rest.replace(/(?:^|\s)pr:#?(\d+)(?=\s|$)/gi, (_, n: string) => { pr = Number(n); return ' '; });
 
   let sinceSpec: string | null = null;
-  rest = rest.replace(/(?:^|\s)since:(\S+)(?=\s|$)/i, (_, v: string) => { sinceSpec = v; return ' '; });
+  rest = rest.replace(/(?:^|\s)since:(\S+)(?=\s|$)/gi, (_, v: string) => { sinceSpec = v; return ' '; });
 
   return {
     raw, deep, phrase, pr,
@@ -79,19 +81,25 @@ const SINCE_CLAUSE = /(?:^|\s)since:\S+(?=\s|$)/gi;
 
 /**
  * Set the recency window on a raw query string, replacing any existing since: clause(s).
- * The quoted-phrase region (if any) is located first via quoteRegion and copied through
- * byte-identical — since: is only ever stripped OUTSIDE it. Idempotent: calling this twice
- * yields the same result as calling it once, and it never leaves more than one since: clause.
+ * The quoted-phrase region is located with the SAME quoteRegion parseQuery uses, and — I1
+ * — read with the same semantics: an UNCLOSED region is a phrase that runs to the end of
+ * the string, so appending after it would swallow the clause into the phrase
+ * (`"paste image` -> `"paste image since:all"`, which matches nothing and grows on every
+ * press). For that case the clause goes in FRONT of the region instead. Chosen over
+ * closing the quote because it leaves the half-typed phrase byte-identical and keeps the
+ * caret at its end, so the user can carry on typing into the phrase.
+ * Idempotent in both cases, and never leaves more than one since: clause.
  */
 export function withWindow(input: string, spec: string): string {
-  const region = quoteRegion(input);
-  const before = region ? input.slice(0, region.start) : input;
-  const quoted = region ? input.slice(region.start, region.end) : '';
-  const after = region ? input.slice(region.end) : '';
-
+  const clause = `since:${spec}`;
   const strip = (s: string) => s.replace(SINCE_CLAUSE, ' ').trim();
-  const parts = [strip(before), quoted, strip(after)].filter(p => p.length > 0);
-  return [...parts, `since:${spec}`].join(' ');
+  const region = quoteRegion(input);
+  if (!region) return [strip(input), clause].filter(Boolean).join(' ');
+
+  const before = strip(input.slice(0, region.start));
+  const quoted = input.slice(region.start, region.end);      // copied through byte-identical
+  if (!region.closed) return [before, clause, quoted].filter(Boolean).join(' ');
+  return [before, quoted, strip(input.slice(region.end)), clause].filter(Boolean).join(' ');
 }
 
 const ROLE_WEIGHT: Record<Role, number> = { t: 3.0, u: 2.0, a: 1.0, sub: 0.7 };

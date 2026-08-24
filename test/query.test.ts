@@ -6,7 +6,7 @@ const NOW = Date.parse('2026-08-24T00:00:00Z');
 const DAY = 86_400_000;
 
 const meta = (id: string, over: Partial<SessionMeta> = {}): SessionMeta => ({
-  sessionId: id, file: `/${id}.jsonl`, projectDir: '-w-a', cwd: '/w/a', cwdExists: true,
+  sessionId: id, file: `/${id}.jsonl`, extraFiles: [], projectDir: '-w-a', cwd: '/w/a', cwdExists: true,
   title: null, branches: [], prLinks: [], firstTs: NOW - DAY, lastTs: NOW - DAY,
   msgCount: 1, mtimeMs: 1, size: 1, ...over,
 });
@@ -25,6 +25,16 @@ describe('parseQuery', () => {
     const q = parseQuery('pr:18942', '7d', NOW);
     expect(q.pr).toBe(18942);
     expect(q.terms).toEqual([]);
+  });
+  // M6: the strip regexes are global, like withWindow's. Non-global left the second
+  // clause behind as a literal search term that matched nothing.
+  it('strips EVERY pr:/since: clause, not just the first', () => {
+    const q = parseQuery('foo pr:1 pr:2', '7d', NOW);
+    expect(q.terms).toEqual(['foo']);
+    expect(q.pr).toBe(2);
+    const w = parseQuery('foo since:14d since:all', '7d', NOW);
+    expect(w.terms).toEqual(['foo']);
+    expect(w.sinceMs).toBeNull();
   });
   it('honours since: overrides including all', () => {
     expect(parseQuery('x since:30d', '7d', NOW).sinceMs).toBe(NOW - 30 * DAY);
@@ -89,6 +99,21 @@ describe('withWindow', () => {
   it('is case-insensitive', () => {
     expect(withWindow('foo SINCE:14d', 'all')).toBe('foo since:all');
   });
+
+  // I1: an unterminated quote is the state for the ENTIRE duration of typing a phrase, so
+  // this is the common case, not an edge case. Appending after the region put the clause
+  // INSIDE the phrase; the clause goes in front of the region instead.
+  it('never appends the clause inside an unterminated phrase', () => {
+    expect(withWindow('"paste image', 'all')).toBe('since:all "paste image');
+  });
+  it('is idempotent for an unterminated phrase', () => {
+    const once = withWindow('"paste image', 'all');
+    expect(withWindow(once, 'all')).toBe(once);
+    expect(withWindow(withWindow(once, 'all'), 'all').match(/since:/g)).toHaveLength(1);
+  });
+  it('keeps terms before an unterminated phrase, and replaces their since: clause', () => {
+    expect(withWindow('foo since:14d "paste image', 'all')).toBe('foo since:all "paste image');
+  });
   it('regression guard: a quoted phrase containing "since:" is left byte-identical', () => {
     const input = '"deploy since:v2 notes"';
     expect(withWindow(input, 'all')).toBe(`${input} since:all`);
@@ -106,6 +131,9 @@ describe('withWindow', () => {
     ['foo SINCE:14d', null],
     ['"deploy since:v2 notes"', 'deploy since:v2 notes'],
     ['"a since:1d" since:14d', 'a since:1d'],
+    ['"paste image', 'paste image'],
+    ['since:all "paste image', 'paste image'],
+    ['foo since:14d "paste image', 'paste image'],
   ];
   it.each(cases)('round-trips through parseQuery: %s', (input, expectedPhrase) => {
     const result = withWindow(input, 'all');
