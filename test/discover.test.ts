@@ -7,19 +7,19 @@ import { discover } from '../src/core/discover.js';
 let root: string;
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'ccsf-'));
-  mkdirSync(join(root, '-w-aida'), { recursive: true });
-  writeFileSync(join(root, '-w-aida', 'aaaa-1111.jsonl'), '{}\n');
-  mkdirSync(join(root, '-w-aida', 'aaaa-1111', 'subagents'), { recursive: true });
-  writeFileSync(join(root, '-w-aida', 'aaaa-1111', 'subagents', 'agent-x.jsonl'), '{}\n');
+  mkdirSync(join(root, '-w-proj'), { recursive: true });
+  writeFileSync(join(root, '-w-proj', 'aaaa-1111.jsonl'), '{}\n');
+  mkdirSync(join(root, '-w-proj', 'aaaa-1111', 'subagents'), { recursive: true });
+  writeFileSync(join(root, '-w-proj', 'aaaa-1111', 'subagents', 'agent-x.jsonl'), '{}\n');
   // Deep nesting within subagents/ — should be discovered
-  mkdirSync(join(root, '-w-aida', 'aaaa-1111', 'subagents', 'workflows', 'wf_abc'), { recursive: true });
-  writeFileSync(join(root, '-w-aida', 'aaaa-1111', 'subagents', 'workflows', 'wf_abc', 'agent-1.jsonl'), '{}\n');
+  mkdirSync(join(root, '-w-proj', 'aaaa-1111', 'subagents', 'workflows', 'wf_abc'), { recursive: true });
+  writeFileSync(join(root, '-w-proj', 'aaaa-1111', 'subagents', 'workflows', 'wf_abc', 'agent-1.jsonl'), '{}\n');
   // must be ignored: tool-results sidecar directory with .jsonl
-  mkdirSync(join(root, '-w-aida', 'aaaa-1111', 'tool-results'), { recursive: true });
-  writeFileSync(join(root, '-w-aida', 'aaaa-1111', 'tool-results', 'x.jsonl'), 'ignored');
+  mkdirSync(join(root, '-w-proj', 'aaaa-1111', 'tool-results'), { recursive: true });
+  writeFileSync(join(root, '-w-proj', 'aaaa-1111', 'tool-results', 'x.jsonl'), 'ignored');
   // must be ignored: workflows directory as sibling of subagents (not inside it)
-  mkdirSync(join(root, '-w-aida', 'aaaa-1111', 'workflows', 'wf_abc'), { recursive: true });
-  writeFileSync(join(root, '-w-aida', 'aaaa-1111', 'workflows', 'wf_abc', 'x.jsonl'), 'ignored');
+  mkdirSync(join(root, '-w-proj', 'aaaa-1111', 'workflows', 'wf_abc'), { recursive: true });
+  writeFileSync(join(root, '-w-proj', 'aaaa-1111', 'workflows', 'wf_abc', 'x.jsonl'), 'ignored');
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -31,7 +31,7 @@ describe('discover', () => {
     const session = found.find(f => f.kind === 'session')!;
     const subs = found.filter(f => f.kind === 'subagent');
     expect(session.sessionId).toBe('aaaa-1111');
-    expect(session.projectDir).toBe('-w-aida');
+    expect(session.projectDir).toBe('-w-proj');
     expect(subs).toHaveLength(2);
     subs.forEach(sub => {
       expect(sub.sessionId).toBe('aaaa-1111');   // attributed to the PARENT (spec §6)

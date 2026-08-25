@@ -87,7 +87,7 @@ describe('extract against redacted real fixtures', () => {
   it('resolves cwd from content even when the directory name disagrees (F6)', () => {
     const path = join(__dirname, 'fixtures', 'moved-cwd.jsonl');
     const src: SourceFile = { path, sessionId: 'fixture', kind: 'session',
-      projectDir: '-workspaces-aida--claude-worktrees-draft-dialog-continuity', mtimeMs: 1, size: 1 };
+      projectDir: '-dir-proj--claude-wt-feature-branch', mtimeMs: 1, size: 1 };
     const { meta } = extractSession(src, readFileSync(path, 'utf8'));
     expect(meta.cwd).toBeTruthy();
     // the whole point: the resolved cwd is NOT reconstructible from projectDir

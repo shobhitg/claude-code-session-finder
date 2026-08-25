@@ -32,6 +32,29 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+// PATH_SHAPED structural keys keep their SHAPE (absolute, nesting depth, and whether
+// one path is nested inside another) because tests assert on those properties — but
+// their SEGMENTS are pseudonymised, because real cwd/branch values disclose private
+// project, worktree and customer names. Mapping is deterministic and order-stable, so
+// two files that shared a real path still share the pseudonym and stay distinguishable.
+const PATH_SHAPED = new Set(['cwd', 'gitBranch']);
+// Deliberately short: a deeply nested real path must still pseudonymise to under the
+// 100-character ceiling the gate enforces on every string value.
+const SAFE_SEGMENTS = ['dir', 'proj', 'wt', 'sub'];
+const segmentMap = new Map();
+function pseudonymSegment(seg) {
+  if (seg === '' || seg === '.' || seg === '..') return seg;
+  if (/^\.[a-z]+$/i.test(seg)) return seg;              // keep dot-dirs like .claude structural
+  if (!segmentMap.has(seg)) {
+    segmentMap.set(seg, SAFE_SEGMENTS[segmentMap.size % SAFE_SEGMENTS.length] + (segmentMap.size + 1));
+  }
+  return segmentMap.get(seg);
+}
+function pseudonymPath(v) {
+  if (v === 'HEAD' || v === 'main' || v === 'master') return v;   // generic, disclose nothing
+  return v.split('/').map(pseudonymSegment).join('/');
+}
+
 const STRUCTURAL = new Set(['type','role','userType','version','sessionId','uuid',
                             'parentUuid','leafUuid','timestamp','requestId','model',
                             'cwd','gitBranch','isSidechain']);
@@ -66,7 +89,9 @@ function scrub(node, i = 0, structural = false, forceKeys = false) {
       const key = mustRedact ? `redactedKey${redactedKeyCount++}` : k; // data-derived key (e.g. a real file path or filename)
       const childForceKeys = DATA_KEYED_MAPS.has(k);
       if (typeof v === 'string') {
-        out[key] = STRUCTURAL.has(k) ? v : scrubText(v, i);
+        out[key] = STRUCTURAL.has(k)
+          ? (PATH_SHAPED.has(k) ? pseudonymPath(v) : v)
+          : scrubText(v, i);
       } else if (typeof v === 'number') {
         out[key] = NUMERIC_STRUCTURAL.has(k) ? PLACEHOLDER_NUM : PLACEHOLDER_ZERO;
       } else if (typeof v === 'boolean') {

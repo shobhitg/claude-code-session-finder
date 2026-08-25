@@ -291,9 +291,20 @@ Spec §11 requires fixtures derived from real sessions — every surprise in the
 ```bash
 mkdir -p test/fixtures
 P=~/.claude/projects
+# Pick sources by SHAPE, never by hard-coded project-dir name — those name real
+# private projects and must not appear in this repo. Choose: (a) any session that
+# contains a pr-link record, (b) a session whose recorded cwd differs from its
+# project-dir name (the F6 case), and (c) a subagent transcript plus its parent.
+SIMPLE=$(grep -l '"type":"pr-link"' $P/*/*.jsonl | head -1)
+MOVED=$(for f in $P/*/*.jsonl; do [ "$(grep -o '"cwd":"[^"]*"' "$f" | sort -u | wc -l)" -ge 2 ] && echo "$f" && break; done)
+CHILD=$(find $P -path '*/subagents/*.jsonl' | head -1)
+PARENT="$(echo "$CHILD" | sed -E 's|/subagents/.*||').jsonl"
+node scripts/make-fixtures.mjs "$SIMPLE" test/fixtures/simple.jsonl 80
+node scripts/make-fixtures.mjs "$MOVED"  test/fixtures/moved-cwd.jsonl 60
+node scripts/make-fixtures.mjs "$CHILD"  test/fixtures/subagent-child.jsonl 50
+node scripts/make-fixtures.mjs "$PARENT" test/fixtures/subagent-parent.jsonl 50
 # pick a session whose dir name disagrees with its cwd (spec §3 F6 measured 47% do)
-node scripts/make-fixtures.mjs "$P/-workspaces-aida/$(ls $P/-workspaces-aida | grep '\.jsonl$' | head -1)" test/fixtures/simple.jsonl 40
-node scripts/make-fixtures.mjs "$P/-workspaces-aida--claude-worktrees-draft-dialog-continuity/$(ls $P/-workspaces-aida--claude-worktrees-draft-dialog-continuity | grep '\.jsonl$' | head -1)" test/fixtures/moved-cwd.jsonl 60
+
 ```
 
 - [ ] **Step 3: Hand-verify the fixtures are actually redacted**
@@ -364,13 +375,13 @@ import { discover } from '../src/core/discover.js';
 let root: string;
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'ccsf-'));
-  mkdirSync(join(root, '-w-aida'), { recursive: true });
-  writeFileSync(join(root, '-w-aida', 'aaaa-1111.jsonl'), '{}\n');
-  mkdirSync(join(root, '-w-aida', 'aaaa-1111', 'subagents'), { recursive: true });
-  writeFileSync(join(root, '-w-aida', 'aaaa-1111', 'subagents', 'agent-x.jsonl'), '{}\n');
+  mkdirSync(join(root, '-w-proj'), { recursive: true });
+  writeFileSync(join(root, '-w-proj', 'aaaa-1111.jsonl'), '{}\n');
+  mkdirSync(join(root, '-w-proj', 'aaaa-1111', 'subagents'), { recursive: true });
+  writeFileSync(join(root, '-w-proj', 'aaaa-1111', 'subagents', 'agent-x.jsonl'), '{}\n');
   // must be ignored: not a .jsonl, and a tool-results sidecar
-  mkdirSync(join(root, '-w-aida', 'aaaa-1111', 'tool-results'), { recursive: true });
-  writeFileSync(join(root, '-w-aida', 'aaaa-1111', 'tool-results', 'x.txt'), 'noise');
+  mkdirSync(join(root, '-w-proj', 'aaaa-1111', 'tool-results'), { recursive: true });
+  writeFileSync(join(root, '-w-proj', 'aaaa-1111', 'tool-results', 'x.txt'), 'noise');
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -381,7 +392,7 @@ describe('discover', () => {
     const session = found.find(f => f.kind === 'session')!;
     const sub = found.find(f => f.kind === 'subagent')!;
     expect(session.sessionId).toBe('aaaa-1111');
-    expect(session.projectDir).toBe('-w-aida');
+    expect(session.projectDir).toBe('-w-proj');
     expect(sub.sessionId).toBe('aaaa-1111');   // attributed to the PARENT (spec §6)
     expect(sub.size).toBeGreaterThan(0);
   });
@@ -681,7 +692,7 @@ describe('extract against redacted real fixtures', () => {
   it('resolves cwd from content even when the directory name disagrees (F6)', () => {
     const path = join(__dirname, 'fixtures', 'moved-cwd.jsonl');
     const src: SourceFile = { path, sessionId: 'fixture', kind: 'session',
-      projectDir: '-workspaces-aida--claude-worktrees-draft-dialog-continuity', mtimeMs: 1, size: 1 };
+      projectDir: '-dir-proj--claude-wt-feature-branch', mtimeMs: 1, size: 1 };
     const { meta } = extractSession(src, readFileSync(path, 'utf8'));
     expect(meta.cwd).toBeTruthy();
     // the whole point: the resolved cwd is NOT reconstructible from projectDir

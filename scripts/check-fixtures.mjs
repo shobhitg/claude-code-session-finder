@@ -27,6 +27,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+const PATH_SHAPED = new Set(['cwd', 'gitBranch']);
 const STRUCTURAL = new Set(['type','role','userType','version','sessionId','uuid',
                             'parentUuid','leafUuid','timestamp','requestId','model',
                             'cwd','gitBranch','isSidechain']);
@@ -141,6 +142,16 @@ for (const file of files) {
         if (f.value.length >= 100) {
           leakCount++;
           console.error(`${where}: string >=100 chars under key ${label}`);
+        } else if (f.key && PATH_SHAPED.has(f.key)) {
+          // Keep in sync with make-fixtures.mjs: every segment must be a generated
+          // pseudonym (safeword + digits), a dot-dir, or a generic branch name.
+          const ok = f.value === 'HEAD' || f.value === 'main' || f.value === 'master' ||
+            f.value.split('/').every(seg => seg === '' || /^\.[a-z]+$/i.test(seg) ||
+                                            /^[a-z]+[0-9]+$/.test(seg));
+          if (!ok) {
+            leakCount++;
+            console.error(`${where}: un-pseudonymised path value under key ${f.key}: ${JSON.stringify(f.value)}`);
+          }
         } else if (f.key && STRUCTURAL.has(f.key)) {
           // verbatim allowed for STRUCTURAL keys
         } else if (f.safe) {
