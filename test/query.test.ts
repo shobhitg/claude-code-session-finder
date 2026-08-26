@@ -167,6 +167,18 @@ describe('search', () => {
     expect(hits[0]!.session.sessionId).toBe('s4');
   });
 
+  it('pr: ignores the recency window — an exact id is not a recency query', () => {
+    const DAY2 = 86_400_000;
+    const old: SearchIndex = {
+      v: INDEX_VERSION, builtAt: NOW,
+      sessions: [meta('old', { prLinks: [18942], lastTs: NOW - 90 * DAY2, firstTs: NOW - 90 * DAY2 })],
+      prose: [],
+    };
+    // 90 days old, default window 7d: a term search must not find it, but pr: must.
+    expect(search(old, parseQuery('pr:18942', '7d', NOW), NOW)).toHaveLength(1);
+    expect(search(old, parseQuery('pr:18942 since:1d', '7d', NOW), NOW)).toHaveLength(1);
+  });
+
   it('pr: short-circuits to the owning session', () => {
     const hits = search(index, parseQuery('pr:1234', '7d', NOW), NOW);
     expect(hits[0]!.session.sessionId).toBe('s3');

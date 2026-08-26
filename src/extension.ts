@@ -35,11 +35,21 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // that window's extension host is already activated — activate() never runs again. Watch
   // the baton file so a running window claims too. Both paths go through claimPendingOpen,
   // which deletes before opening, so whichever fires first wins and the other finds nothing.
-  const watcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(ctx.globalStorageUri, BATON_FILE));   // F8: not Uri.file()
-  watcher.onDidCreate(() => void claim(ctx));
-  watcher.onDidChange(() => void claim(ctx));
-  ctx.subscriptions.push(watcher);
+  // VS Code creates globalStorageUri lazily. A non-recursive watcher whose base directory
+  // does not exist is not reliably re-armed when it appears, which would silently degrade
+  // the hand-off back to activate-only — the exact failure this watcher was added to fix.
+  // activate() stays synchronous (VS Code should not wait on us), so the directory is
+  // ensured on a detached promise and the watcher is registered once it exists.
+  void (async () => {
+    try {
+      await vscode.workspace.fs.createDirectory(ctx.globalStorageUri);
+    } catch { /* already exists, or unwritable — createFileSystemWatcher still worth trying */ }
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(ctx.globalStorageUri, BATON_FILE));   // F8: not Uri.file()
+    watcher.onDidCreate(() => void claim(ctx));
+    watcher.onDidChange(() => void claim(ctx));
+    ctx.subscriptions.push(watcher);
+  })();
 
   void claim(ctx);
 }

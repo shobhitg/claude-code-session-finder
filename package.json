@@ -2,7 +2,7 @@
   "name": "claude-code-session-finder",
   "displayName": "Claude Code Session Finder",
   "description": "Search the contents of your Claude Code sessions and jump straight to one.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {
@@ -42,8 +42,8 @@
       "properties": {
         "sessionFinder.defaultWindow": {
           "type": "string",
-          "default": "7d",
-          "description": "Default recency window for searches. e.g. 7d, 30d, all"
+          "default": "60d",
+          "description": "Default recency window for searches, e.g. 30d, 60d, all. Exact-identifier queries such as pr:123 ignore it entirely. Widen any search inline with since:all."
         }
       }
     },

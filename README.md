@@ -18,7 +18,9 @@ This extension indexes what you and Claude actually **said** and opens the match
 | `paste image` | sessions containing both words |
 | `"paste image"` | that exact phrase |
 | `pr:1234` | the session that opened that PR |
-| `since:30d`, `since:all` | widen past the default 7-day window |
+| `since:30d`, `since:all` | narrow or widen the default 60-day window |
+
+`pr:` ignores the recency window entirely — a PR number is an exact identifier, so its age is irrelevant.
 | `!"npm run build"` | also search tool calls and results, including subagents (slower) |
 
 A `!` search matches whole transcripts, so quote a phrase (`!"npm run build"`) unless

@@ -45,7 +45,7 @@ function toRow(hit: SessionHit): Row {
 
 export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise<void> {
   const cacheFile = join(ctx.globalStorageUri.fsPath, 'index.json');
-  const defaultWindow = vscode.workspace.getConfiguration('sessionFinder').get<string>('defaultWindow', '7d');
+  const defaultWindow = vscode.workspace.getConfiguration('sessionFinder').get<string>('defaultWindow', '60d');
 
   // Monotonic token: a slow deep scan that resolves after a newer keystroke's render must
   // neither clobber the newer items NOR keep running. Declared before qp.show() so the
@@ -62,6 +62,20 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
   // cold refreshIndex() below still fires onDidHide, and with no listener attached yet
   // the QuickPick (and the SearchIndex it closes over) would leak for the extension's life.
   qp.onDidHide(() => { renderToken++; qp.dispose(); });   // bump FIRST: cancels any live deep scan
+
+  // The cold build below takes ~1.6 s over a large corpus, and the picker is already
+  // visible and accepting input. Register the change listener BEFORE that await, or
+  // everything typed while it runs lands in qp.value with no listener attached — and
+  // once the listener is finally added it only fires on FUTURE changes, so the text
+  // already in the box never renders. The user sees "no results" from a healthy index.
+  // `pending` records those keystrokes; the post-build render below replays them.
+  let ready = false;
+  let pending = '';
+
+  qp.onDidChangeValue(v => {
+    if (!ready) { pending = v; return; }               // buffered; replayed once the index lands
+    render(v).catch(err => vscode.window.showErrorMessage(`Search failed: ${String(err)}`));
+  });
 
   const removedIds = new Set<string>();         // sessions confirmed gone from disk; filtered at render time
   let index: SearchIndex;
@@ -108,9 +122,13 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
     qp.items = rows;
   };
 
-  qp.onDidChangeValue(v => {                        // prose path: 6-10 ms sync; deep path: debounced + cancellable
-    render(v).catch(err => vscode.window.showErrorMessage(`Search failed: ${String(err)}`));
-  });
+  // Open the gate and replay anything typed during the cold build. Use qp.value rather
+  // than `pending` alone so a value set programmatically before this point is honoured too.
+  ready = true;
+  const typedDuringBuild = qp.value || pending;
+  if (typedDuringBuild.trim()) {
+    render(typedDuringBuild).catch(err => vscode.window.showErrorMessage(`Search failed: ${String(err)}`));
+  }
 
   qp.onDidTriggerItemButton(async e => {
     const m = (e.item as Row).hit?.session;
