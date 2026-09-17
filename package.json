@@ -35,6 +35,10 @@
       {
         "command": "sessionFinder.search",
         "title": "Claude: Search Sessions"
+      },
+      {
+        "command": "sessionFinder.showSessions",
+        "title": "Claude: Show Sessions"
       }
     ],
     "configuration": {
@@ -44,6 +48,24 @@
           "type": "string",
           "default": "60d",
           "description": "Default recency window for searches, e.g. 30d, 60d, all. Exact-identifier queries such as pr:123 ignore it entirely. Widen any search inline with since:all."
+        },
+        "sessionFinder.activeWindow": {
+          "type": "string",
+          "default": "4h",
+          "pattern": "^\\s*\\d+\\s*[hdwm]?\\s*$",
+          "description": "Sessions written within this window are ACTIVE and show a live state (running / needs you). Examples: 2h, 8h, 1d. Everything older is history."
+        },
+        "sessionFinder.toolQuietSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 5,
+          "description": "A session that has been waiting on a tool call for longer than this is shown as \"waiting on a tool or a permission prompt\". Raise it if your tests or builds run long."
+        },
+        "sessionFinder.stalledMinutes": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "description": "A session whose model has written nothing for this long is shown as stalled. Long answers are normal for several minutes, which is why the default is not lower."
         }
       }
     },

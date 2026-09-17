@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { readFile, unlink } from 'node:fs/promises';
 import { showSearchQuickPick } from './surfaces/quickpick.js';
+import { LiveHost } from './live-host.js';
+import { createStatusBar, SHOW_SESSIONS } from './surfaces/statusbar.js';
 import { claimPendingOpen } from './baton.js';
 import { BATON_FILE, batonPath, runOpen } from './open.js';
 
@@ -27,8 +29,15 @@ const claim = (ctx: vscode.ExtensionContext) =>
     vscode.window.showErrorMessage(`Could not open the handed-off session: ${String(err)}`));
 
 export function activate(ctx: vscode.ExtensionContext): void {
+  // Stage 1 (spec §9.2): the status bar is the glanceable answer to "which sessions are running?".
+  const log = vscode.window.createOutputChannel('Claude Code Sessions', { log: true });
+  const host = new LiveHost(ctx, log);
+  const status = createStatusBar(ctx);
+  ctx.subscriptions.push(log, host, host.onSnapshot(s => status.update(s)));
+  // Until the sidebar browser exists (Stage 2) the session list IS the Quick Pick.
+  ctx.subscriptions.push(vscode.commands.registerCommand(SHOW_SESSIONS, () => showSearchQuickPick(ctx, host.liveness)));
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('sessionFinder.search', () => showSearchQuickPick(ctx)),
+    vscode.commands.registerCommand('sessionFinder.search', () => showSearchQuickPick(ctx, host.liveness)),
   );
 
   // I2: openFolder focusing an ALREADY-OPEN window is the outcome spec §9 assumes, and
