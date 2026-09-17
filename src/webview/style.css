@@ -1,1 +1,147 @@
-/* replaced in Task 4 */
+/* Claude Code Sessions — sidebar browser.
+   Spec §10: no hex literal anywhere in this file. Every colour is a --vscode-* variable, so the
+   view is right in the user's theme, Light+, High Contrast and themes that do not exist yet.
+   The only values invented here are rhythm (spacing, radius, row height) and motion. */
+
+:root {
+  /* surface — inherited */
+  --s-bg:        var(--vscode-sideBar-background);
+  --s-fg:        var(--vscode-sideBar-foreground, var(--vscode-foreground));
+  --s-muted:     var(--vscode-descriptionForeground);
+  --s-hover:     var(--vscode-list-hoverBackground);
+  --s-sel:       var(--vscode-list-activeSelectionBackground);
+  --s-sel-fg:    var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+  --s-focus:     var(--vscode-focusBorder);
+  --s-header-fg: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
+  --s-badge-bg:  var(--vscode-badge-background);
+  --s-badge-fg:  var(--vscode-badge-foreground);
+  --s-skeleton:  var(--vscode-editorWidget-background);
+  --s-link:      var(--vscode-textLink-foreground);
+  --s-toolbar:   var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+
+  /* state — the theme's own semantic ramp */
+  --st-running:  var(--vscode-charts-blue);
+  --st-needs:    var(--vscode-charts-yellow);
+  --st-stalled:  var(--vscode-editorWarning-foreground);
+  --st-idle:     var(--vscode-descriptionForeground);
+
+  /* type — the IDE's */
+  --font:      var(--vscode-font-family);
+  --size:      var(--vscode-font-size);
+  --size-meta: calc(var(--vscode-font-size) - 2px);
+  --mono:      var(--vscode-editor-font-family);
+
+  /* rhythm — the only primitives we invent */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --radius: 4px;
+  --row: 44px;                       /* two 22px lines: VS Code's list row height, doubled */
+  --dur: 120ms; --ease: cubic-bezier(.2, 0, .2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur: 0ms; }
+  .skeleton__bar, .codicon-modifier-spin { animation: none; }
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--s-bg); color: var(--s-fg);
+  font-family: var(--font); font-size: var(--size); line-height: 1.4;
+}
+body { padding-bottom: var(--sp-3); }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+main:focus-visible { outline: none; }
+
+/* ─── sections ─────────────────────────────────────────────────────────────── */
+.section { margin-top: var(--sp-1); }
+.section__header {
+  display: flex; align-items: center; gap: var(--sp-1);
+  width: 100%; height: 22px; padding: 0 var(--sp-2) 0 var(--sp-1);
+  text-align: left; color: var(--s-header-fg);
+  font-size: var(--size-meta); font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+.section__header:hover { background: var(--s-hover); }
+.section__header:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+.section__chevron { transition: transform var(--dur) var(--ease); }
+.section[data-collapsed="true"] .section__chevron { transform: rotate(-90deg); }
+.section[data-collapsed="true"] .section__body { display: none; }
+.section__count {
+  margin-left: auto; min-width: 18px; padding: 0 6px; border-radius: 9px; text-align: center;
+  background: var(--s-badge-bg); color: var(--s-badge-fg);
+  font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+
+/* ─── rows ─────────────────────────────────────────────────────────────────── */
+.list { list-style: none; margin: 0; padding: 0; }
+.row {
+  position: relative;
+  display: grid; grid-template-columns: 16px 1fr auto; grid-template-rows: 22px 22px;
+  column-gap: var(--sp-2); align-items: center;
+  min-height: var(--row); padding: 0 var(--sp-2) 0 var(--sp-3);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+  animation: row-in var(--dur) var(--ease);
+}
+@keyframes row-in { from { opacity: 0; } to { opacity: 1; } }
+.row:hover { background: var(--s-hover); }
+.row:focus-visible, .row[aria-selected="true"] { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+.row[aria-selected="true"] { background: var(--s-sel); color: var(--s-sel-fg); }
+.row[aria-selected="true"] .row__meta,
+.row[aria-selected="true"] .row__time { color: inherit; opacity: .85; }
+
+.row__icon {
+  grid-row: 1 / span 2; font-size: 16px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: color var(--dur) var(--ease);
+}
+.row__title { grid-column: 2; grid-row: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row__time {
+  grid-column: 3; grid-row: 1;
+  font-family: var(--mono); font-size: var(--size-meta); font-variant-numeric: tabular-nums;
+  color: var(--s-muted); white-space: nowrap;
+}
+.row__meta {
+  grid-column: 2 / span 2; grid-row: 2;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: var(--size-meta); color: var(--s-muted);
+}
+.row__missing { margin-left: var(--sp-1); }
+
+/* ─── state language (spec §10 table) ──────────────────────────────────────── */
+.row[data-state="running"] .row__icon { color: var(--st-running); }
+.row[data-reason="tool-or-permission"] .row__icon { color: var(--st-needs); }
+.row[data-reason="tool-or-permission"] .row__title { font-weight: 600; }
+.row[data-reason="tool-or-permission"]::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--st-needs);
+}
+.row[data-reason="your-turn"] .row__icon { color: var(--s-fg); }
+.row[data-reason="stalled"] .row__icon { color: var(--st-stalled); }
+.row[data-reason="stalled"] { opacity: .7; }
+.row[data-state="history"] .row__icon { color: var(--st-idle); }
+
+/* ─── row actions: shown on hover AND on keyboard focus ────────────────────── */
+.row__actions { grid-column: 3; grid-row: 1; display: none; gap: 2px; margin-left: var(--sp-1); }
+.row:hover .row__actions, .row:focus-within .row__actions { display: flex; }
+.row:hover .row__time,    .row:focus-within .row__time    { display: none; }
+.action {
+  width: 22px; height: 22px; border-radius: var(--radius);
+  display: inline-flex; align-items: center; justify-content: center; color: inherit;
+}
+.action:hover { background: var(--s-toolbar); }
+.action:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+
+/* ─── the "search all…" row ────────────────────────────────────────────────── */
+.row--link { grid-template-rows: 22px; min-height: 22px; }
+.row--link .row__icon { grid-row: 1; }
+.row--link .row__title { color: var(--s-link); }
+.row--link .row__time { font-family: var(--mono); }
+
+/* ─── empty and loading ────────────────────────────────────────────────────── */
+.empty { padding: var(--sp-2) var(--sp-3); color: var(--s-muted); font-size: var(--size-meta); }
+.skeleton {
+  height: var(--row); display: grid; grid-template-columns: 16px 1fr; column-gap: var(--sp-2);
+  align-items: center; padding: 0 var(--sp-2) 0 var(--sp-3);
+}
+.skeleton__bar { height: 10px; border-radius: 5px; background: var(--s-skeleton); animation: shimmer 1.2s ease-in-out infinite; }
+.skeleton__bar--short { width: 55%; }
+@keyframes shimmer { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
