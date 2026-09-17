@@ -1,4 +1,4 @@
-export const INDEX_VERSION = 1;
+export const INDEX_VERSION = 2;
 
 /** 'u' your prompt · 'a' Claude prose · 't' session title · 'sub' subagent prose */
 export type Role = 'u' | 'a' | 't' | 'sub';
