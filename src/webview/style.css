@@ -59,8 +59,9 @@ main:focus-visible { outline: none; }
   min-height: var(--row); padding: 0 var(--sp-2) 0 var(--sp-3);
   cursor: pointer;
   transition: background var(--dur) var(--ease);
-  animation: row-in var(--dur) var(--ease);
 }
+/* only a row that has just appeared fades in; existing rows are updated in place and never blink */
+.row--new { animation: row-in 200ms var(--ease); }
 @keyframes row-in { from { opacity: 0; } to { opacity: 1; } }
 .row:hover { background: var(--s-hover); }
 .row:focus-visible, .row[aria-selected="true"] { outline: 1px solid var(--s-focus); outline-offset: -1px; }

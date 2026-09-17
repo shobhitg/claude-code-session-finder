@@ -101,6 +101,29 @@ export function viewModel(s: Snapshot, now: number, opts: ViewOpts): ViewModel {
 }
 
 /**
+ * Keep rows where they are. The host orders each urgency group by last write, so two running sessions
+ * swap every time one of them writes. Within each contiguous group of equal state the rows are ordered
+ * by first appearance instead (higher `seen` = newer = higher up); a row moves only when its state
+ * changes. Link rows stay put.
+ */
+export function stableOrder(rows: Array<RowVM | LinkVM>, seen: ReadonlyMap<string, number>): Array<RowVM | LinkVM> {
+  const out: Array<RowVM | LinkVM> = [];
+  let group: RowVM[] = []; let key: string | null = null;
+  const flush = (): void => {
+    out.push(...group.sort((a, b) => (seen.get(b.sessionId) ?? 0) - (seen.get(a.sessionId) ?? 0)));
+    group = [];
+  };
+  for (const r of rows) {
+    if (r.kind === 'link') { flush(); key = null; out.push(r); continue; }
+    const k = `${r.state}/${r.reason ?? ''}`;
+    if (k !== key) { flush(); key = k; }
+    group.push(r);
+  }
+  flush();
+  return out;
+}
+
+/**
  * The list while the inline filter has text: one RESULTS section in place of ACTIVE and HISTORY.
  * Rows keep their live glyph and time so a running match still reads as running; each carries the
  * matching line. `rows === null` means the host has not answered yet (skeleton).

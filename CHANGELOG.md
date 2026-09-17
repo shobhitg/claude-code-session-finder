@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.2
+
+**The Sessions view stopped flickering and stopped shuffling.** A snapshot
+arrives every two seconds while anything runs, and each one rebuilt the whole
+list: every row replayed its fade-in and the row under the pointer lost its
+hover state. Rows are now updated in place, keyed by session id; only a row
+that has just appeared fades in. Ordering within each urgency group is by
+first appearance rather than by last write, so two running sessions no longer
+swap whenever one of them writes — a row moves only when its state changes,
+and when it does it slides to its new place. While your pointer is over the
+list the order is held until it leaves.
+
 ## 0.5.1
 
 **Interrupted and asked-a-question are states of their own.** Pressing `Esc`

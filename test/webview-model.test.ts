@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel } from '../src/webview/model.js';
+import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder } from '../src/webview/model.js';
 import type { Snapshot, LiveRow, HistoryRow, SearchRow } from '../src/core/rows.js';
 
 const S = 1_000, M = 60 * S, H = 60 * M;
@@ -109,5 +109,36 @@ describe('resultsModel (the inline filter)', () => {
     expect(resultsModel(null, 'x', false, now, opts).sections[0]).toMatchObject({ skeleton: true, empty: null });
     expect(resultsModel([], 'zzz ', false, now, opts).sections[0]!.empty).toBe('No sessions match “zzz”.');
     expect(resultsModel([], '!npm', true, now, opts).sections[0]!.empty).toContain('picker (Ctrl+Alt+S)');
+  });
+});
+
+describe('stableOrder', () => {
+  const opts = { activeWindowLabel: '4h', searchKey: 'Ctrl+Alt+S' };
+  const snap: Snapshot = {
+    active: [
+      live({ sessionId: 'p', state: 'attention', reason: 'tool-or-permission' }),
+      live({ sessionId: 'r1', lastWriteMs: now - 1 * S }),          // host: most recently written running first
+      live({ sessionId: 'r2', lastWriteMs: now - 5 * S }),
+      live({ sessionId: 'r3', lastWriteMs: now - 9 * S }),
+    ],
+    history: [], totalSessions: 4, indexing: false, scope: 'all',
+  };
+  const ids = (rows: ReturnType<typeof stableOrder>) => rows.map(r => r.kind === 'link' ? r.action : r.sessionId);
+  it('reorders within a state group by first appearance, newest first, and never across groups', () => {
+    const rows = viewModel(snap, now, opts).sections[0]!.rows;
+    // seen: r1 appeared first, r3 most recently — newest-seen goes on top, whatever the host's write order says
+    const seen = new Map([['r3', 3], ['r2', 2], ['r1', 1], ['p', 9]]);
+    expect(ids(stableOrder(rows, seen))).toEqual(['p', 'r3', 'r2', 'r1']);
+  });
+  it('a session that just wrote does not jump: identical seen order keeps the rows put across snapshots', () => {
+    const seen = new Map([['r1', 1], ['r2', 2], ['r3', 3]]);
+    const before = viewModel(snap, now, opts).sections[0]!.rows;
+    const swapped: Snapshot = { ...snap, active: [snap.active[0]!, { ...snap.active[3]!, lastWriteMs: now }, snap.active[1]!, snap.active[2]!] };
+    const after = viewModel(swapped, now, opts).sections[0]!.rows;
+    expect(ids(stableOrder(before, seen))).toEqual(ids(stableOrder(after, seen)));
+  });
+  it('leaves link rows in place and keeps groups contiguous', () => {
+    const rows = viewModel({ ...snap, history: [hist({ sessionId: 'h' })] }, now, opts).sections[1]!.rows;
+    expect(ids(stableOrder(rows, new Map()))).toEqual(['h', 'search', 'scope']);
   });
 });
