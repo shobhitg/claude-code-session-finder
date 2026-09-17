@@ -33,6 +33,17 @@ export function folderUri(path: string, ctx: vscode.ExtensionContext): vscode.Ur
   return base.with({ path });
 }
 
+const RIGHT_PANEL_NOTICE = 'sessionFinder.rightPanelNoticeShown';
+
+/** Spec §11: opening in the right panel also changes Claude Code's default location. Say so once. */
+async function noticeRightPanelOnce(ctx: vscode.ExtensionContext): Promise<void> {
+  if (ctx.globalState.get<boolean>(RIGHT_PANEL_NOTICE)) return;
+  await ctx.globalState.update(RIGHT_PANEL_NOTICE, true);
+  void vscode.window.showInformationMessage(
+    'Opening in the right panel also makes it Claude Code\'s default location for new sessions. ' +
+    'Run "Claude Code: Open in New Tab" once to switch back.');
+}
+
 export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext, where: OpenWhere = 'tab'): Promise<void> {
   if (plan.kind === 'transcript') {
     await openTranscript(plan.file);
@@ -46,6 +57,7 @@ export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext, 
     // L10: openCommands() passes the programmatic flag; without it every open here silently
     // reset the user's Claude Code preferred location to "panel".
     try {
+      if (where === 'right') await noticeRightPanelOnce(ctx);
       await runOpen(plan.sessionId, where);
     } catch {
       // Spec §10: offer the transcript rather than surfacing a bare error.

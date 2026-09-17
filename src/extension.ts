@@ -4,7 +4,11 @@ import { showSearchQuickPick } from './surfaces/quickpick.js';
 import { LiveHost } from './live-host.js';
 import { createStatusBar, SHOW_SESSIONS } from './surfaces/statusbar.js';
 import { claimPendingOpen } from './baton.js';
-import { BATON_FILE, batonPath, runOpen } from './open.js';
+import { BATON_FILE, batonPath, runOpen, executePlan } from './open.js';
+import { LiveViewProvider, VIEW_ID } from './surfaces/live-view.js';
+import { stateIcon } from './core/rows.js';
+import { planOpen } from './core/resolve.js';
+import type { OpenWhere } from './core/open-args.js';
 
 async function tryClaimPendingOpen(ctx: vscode.ExtensionContext): Promise<void> {
   const path = batonPath(ctx);
@@ -35,7 +39,13 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const status = createStatusBar(ctx);
   ctx.subscriptions.push(log, host, host.onSnapshot(s => status.update(s)));
   // Until the sidebar browser exists (Stage 2) the session list IS the Quick Pick.
-  ctx.subscriptions.push(vscode.commands.registerCommand(SHOW_SESSIONS, () => showSearchQuickPick(ctx, host.liveness)));
+  ctx.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(VIEW_ID, new LiveViewProvider(ctx, host)),
+    vscode.commands.registerCommand(SHOW_SESSIONS, () => vscode.commands.executeCommand(`${VIEW_ID}.focus`)),
+    vscode.commands.registerCommand('sessionFinder.refresh', () => Promise.all([host.sweepNow(), host.refreshIndex()])),
+    vscode.commands.registerCommand('sessionFinder.openInTab', (id?: string) => openFromPalette(ctx, host, id, 'tab')),
+    vscode.commands.registerCommand('sessionFinder.openInRightPanel', (id?: string) => openFromPalette(ctx, host, id, 'right')),
+  );
   ctx.subscriptions.push(
     vscode.commands.registerCommand('sessionFinder.search', () => showSearchQuickPick(ctx, host.liveness)),
   );
@@ -64,3 +74,21 @@ export function activate(ctx: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void { /* nothing to tear down */ }
+
+/** Palette entry points: pick an ACTIVE session (or take an id) and open it where asked. */
+async function openFromPalette(ctx: vscode.ExtensionContext, host: LiveHost, sessionId: string | undefined, where: OpenWhere): Promise<void> {
+  let id = sessionId;
+  if (!id) {
+    const rows = host.snapshot.active;
+    const picked = await vscode.window.showQuickPick(
+      rows.map(r => ({ label: `$(${stateIcon(r)}) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '),
+                       id: r.sessionId, alwaysShow: true })),                                   // F7
+      { placeHolder: rows.length ? 'Open which session?' : 'No active sessions' });
+    id = picked?.id;
+  }
+  if (!id) return;
+  const m = host.session(id);
+  if (!m) { vscode.window.showWarningMessage('That session is not in the index yet — try again in a moment.'); return; }
+  const folders = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.path);
+  await executePlan(planOpen(m, folders), ctx, where);
+}

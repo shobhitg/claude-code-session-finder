@@ -4,7 +4,7 @@ import { LivenessTracker } from './core/live.js';
 import { refreshIndex } from './core/cache.js';
 import { durationMs } from './core/query.js';
 import { buildSnapshot, type Snapshot } from './core/rows.js';
-import type { SearchIndex } from './core/types.js';
+import type { SearchIndex, SessionMeta } from './core/types.js';
 import type { Liveness } from './core/state.js';
 
 const HOUR = 3_600_000;
@@ -78,6 +78,16 @@ export class LiveHost implements vscode.Disposable {
   private publish(): void {
     this.snapshot = buildSnapshot(this.index, this.liveness, { indexing: this.indexing !== null });
     this.emitter.fire(this.snapshot);
+  }
+
+  /** Index metadata for a session id, or undefined until the next refresh indexes it. */
+  session(sessionId: string): SessionMeta | undefined {
+    return this.index?.sessions.find(s => s.sessionId === sessionId);
+  }
+
+  /** The Refresh button: re-enumerate now instead of waiting for the 10 s sweep. */
+  sweepNow(): Promise<void> {
+    return this.tracker?.sweep() ?? Promise.resolve();
   }
 
   dispose(): void {
