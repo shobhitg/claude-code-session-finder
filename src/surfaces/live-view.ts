@@ -16,6 +16,7 @@ type Inbound =
   | { type: 'ready' }
   | { type: 'search' }
   | { type: 'open'; sessionId: string; where: OpenWhere }
+  | { type: 'view'; sessionId: string }
   | { type: 'transcript'; sessionId: string }
   | { type: 'copyLink'; sessionId: string }
   | { type: 'reveal'; sessionId: string };
@@ -27,7 +28,7 @@ function isInbound(m: unknown): m is Inbound {
   switch (o.type) {
     case 'ready': case 'search': return true;
     case 'open': return typeof o.sessionId === 'string' && (o.where === 'tab' || o.where === 'right');
-    case 'transcript': case 'copyLink': case 'reveal': return typeof o.sessionId === 'string';
+    case 'view': case 'transcript': case 'copyLink': case 'reveal': return typeof o.sessionId === 'string';
     default: return false;
   }
 }
@@ -81,6 +82,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
         vscode.window.setStatusBarMessage('Deep link copied', 3000);
         return;
       }
+      if (raw.type === 'view') { await vscode.commands.executeCommand('sessionFinder.openSessionView', raw.sessionId); return; }
       const m = this.host.session(raw.sessionId);
       if (!m) { vscode.window.showWarningMessage('That session is not in the index yet — try again in a moment.'); return; }
       if (raw.type === 'transcript') { await openTranscript(m.file); return; }
@@ -111,6 +113,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="${uri('codicons/codicon.css')}">
+<link rel="stylesheet" href="${uri('tokens.css')}">
 <link rel="stylesheet" href="${uri('style.css')}">
 <title>Claude Code Sessions</title>
 </head><body>

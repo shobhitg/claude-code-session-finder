@@ -1,9 +1,7 @@
 import { stat as fsStat } from 'node:fs/promises';
 import { discover as fsDiscover, defaultRoot, type SourceFile } from './discover.js';
-import {
-  readVerdict as fsReadVerdict, effectiveMtime, pickMainFile, resolveState,
-  DEFAULT_THRESHOLDS, type Liveness, type TailVerdict, type Thresholds,
-} from './state.js';
+import { effectiveMtime, pickMainFile, resolveState, DEFAULT_THRESHOLDS, type Liveness, type TailVerdict, type Thresholds } from './state.js';
+import { readVerdict as fsReadVerdict } from './tail-io.js';
 
 export interface TrackerDeps {
   discover: (root: string) => Promise<SourceFile[]>;

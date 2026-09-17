@@ -17,9 +17,16 @@ await build({
   format: 'iife', platform: 'browser', target: 'es2022', minify, sourcemap,
 });
 
+await build({
+  entryPoints: ['src/webview/session/main.ts'], bundle: true, outfile: 'dist/session.js',
+  format: 'iife', platform: 'browser', target: 'es2022', minify, sourcemap,
+});
+
 // Static assets the view loads by URI. Codicons are the IDE's own icon font (spec §10).
 mkdirSync('dist/codicons', { recursive: true });
 copyFileSync('src/webview/style.css', 'dist/style.css');
+copyFileSync('src/webview/tokens.css', 'dist/tokens.css');
+copyFileSync('src/webview/session.css', 'dist/session.css');
 for (const f of ['codicon.css', 'codicon.ttf']) {
   copyFileSync(`node_modules/@vscode/codicons/dist/${f}`, `dist/codicons/${f}`);
 }

@@ -2,45 +2,8 @@
    Spec §10: no hex literal anywhere in this file. Every colour is a --vscode-* variable, so the
    view is right in the user's theme, Light+, High Contrast and themes that do not exist yet.
    The only values invented here are rhythm (spacing, radius, row height) and motion. */
-
-:root {
-  /* surface — inherited */
-  --s-bg:        var(--vscode-sideBar-background);
-  --s-fg:        var(--vscode-sideBar-foreground, var(--vscode-foreground));
-  --s-muted:     var(--vscode-descriptionForeground);
-  --s-hover:     var(--vscode-list-hoverBackground);
-  --s-sel:       var(--vscode-list-activeSelectionBackground);
-  --s-sel-fg:    var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
-  --s-focus:     var(--vscode-focusBorder);
-  --s-header-fg: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
-  --s-badge-bg:  var(--vscode-badge-background);
-  --s-badge-fg:  var(--vscode-badge-foreground);
-  --s-skeleton:  var(--vscode-editorWidget-background);
-  --s-link:      var(--vscode-textLink-foreground);
-  --s-toolbar:   var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
-
-  /* state — the theme's own semantic ramp */
-  --st-running:  var(--vscode-charts-blue);
-  --st-needs:    var(--vscode-charts-yellow);
-  --st-stalled:  var(--vscode-editorWarning-foreground);
-  --st-idle:     var(--vscode-descriptionForeground);
-
-  /* type — the IDE's */
-  --font:      var(--vscode-font-family);
-  --size:      var(--vscode-font-size);
-  --size-meta: calc(var(--vscode-font-size) - 2px);
-  --mono:      var(--vscode-editor-font-family);
-
-  /* rhythm — the only primitives we invent */
-  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
-  --radius: 4px;
-  --row: 44px;                       /* two 22px lines: VS Code's list row height, doubled */
-  --dur: 120ms; --ease: cubic-bezier(.2, 0, .2, 1);
-}
-@media (prefers-reduced-motion: reduce) {
-  :root { --dur: 0ms; }
-  .skeleton__bar, .codicon-modifier-spin { animation: none; }
-}
+/* Tokens live in tokens.css (shared with the Session View); this file is components only. */
+@media (prefers-reduced-motion: reduce) { .skeleton__bar { animation: none; } }
 
 * { box-sizing: border-box; }
 html, body {

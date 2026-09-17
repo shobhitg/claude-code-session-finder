@@ -54,6 +54,10 @@
       {
         "command": "sessionFinder.openInRightPanel",
         "title": "Claude: Open Session in Right Panel"
+      },
+      {
+        "command": "sessionFinder.openSessionView",
+        "title": "Claude: Open Session View"
       }
     ],
     "configuration": {

@@ -6,6 +6,7 @@ import { createStatusBar, SHOW_SESSIONS } from './surfaces/statusbar.js';
 import { claimPendingOpen } from './baton.js';
 import { BATON_FILE, batonPath, runOpen, executePlan } from './open.js';
 import { LiveViewProvider, VIEW_ID } from './surfaces/live-view.js';
+import { SessionViewManager } from './surfaces/session-view.js';
 import { stateIcon } from './core/rows.js';
 import { planOpen } from './core/resolve.js';
 import type { OpenWhere } from './core/open-args.js';
@@ -50,6 +51,14 @@ export function activate(ctx: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('sessionFinder.search', () => showSearchQuickPick(ctx, host.liveness)),
   );
 
+  // Stage 3: the Session View — agent tree, timeline and a readable transcript for ANY session,
+  // read from disk without resuming it. Opened from a Sessions row, a Quick Pick button, or the palette.
+  const sessions = new SessionViewManager(ctx, host, log);
+  ctx.subscriptions.push(sessions, vscode.commands.registerCommand('sessionFinder.openSessionView', async (id?: string) => {
+    const sessionId = id ?? await pickSessionId(host);
+    if (sessionId) await sessions.open(sessionId);
+  }));
+
   // I2: openFolder focusing an ALREADY-OPEN window is the outcome spec §9 assumes, and
   // that window's extension host is already activated — activate() never runs again. Watch
   // the baton file so a running window claims too. Both paths go through claimPendingOpen,
@@ -91,4 +100,15 @@ async function openFromPalette(ctx: vscode.ExtensionContext, host: LiveHost, ses
   if (!m) { vscode.window.showWarningMessage('That session is not in the index yet — try again in a moment.'); return; }
   const folders = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.path);
   await executePlan(planOpen(m, folders), ctx, where);
+}
+
+/** Palette entry for the Session View: any ACTIVE or recent session. */
+async function pickSessionId(host: LiveHost): Promise<string | undefined> {
+  const { active, history } = host.snapshot;
+  const rows = [
+    ...active.map(r => ({ label: `$(${stateIcon(r)}) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '), id: r.sessionId, alwaysShow: true })),
+    ...history.map(r => ({ label: `$(history) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '), id: r.sessionId, alwaysShow: true })),
+  ];
+  const picked = await vscode.window.showQuickPick(rows, { placeHolder: rows.length ? 'Open the Session View for…' : 'No sessions indexed yet' });
+  return picked?.id;
 }

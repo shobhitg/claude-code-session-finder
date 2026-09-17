@@ -12,6 +12,7 @@ import type { Liveness } from '../core/state.js';
 
 interface Row extends vscode.QuickPickItem { hit?: SessionHit; action?: 'all' | 'deep' }
 
+const OPEN_VIEW = 'Open session view';
 const COPY_LINK = 'Copy deep link';
 const REVEAL_FOLDER = 'Reveal folder';
 const OPEN_TRANSCRIPT = 'Open transcript';
@@ -40,6 +41,7 @@ function toRow(hit: SessionHit, liveness: ReadonlyMap<string, Liveness>): Row {
     // I5: VS Code's QuickPick has no modifier-accept API, so spec §9's Cmd/Ctrl+Enter
     // "open the raw transcript" action is a third item button instead.
     buttons: [
+      { iconPath: new vscode.ThemeIcon('type-hierarchy'), tooltip: OPEN_VIEW },
       { iconPath: new vscode.ThemeIcon('link'), tooltip: COPY_LINK },
       { iconPath: new vscode.ThemeIcon('folder'), tooltip: REVEAL_FOLDER },
       { iconPath: new vscode.ThemeIcon('file-code'), tooltip: OPEN_TRANSCRIPT },
@@ -143,7 +145,10 @@ export async function showSearchQuickPick(
     if (!m) return;
     try {
       const tooltip = e.button.tooltip ?? '';
-      if (tooltip === COPY_LINK) {
+      if (tooltip === OPEN_VIEW) {
+        qp.hide();
+        await vscode.commands.executeCommand('sessionFinder.openSessionView', m.sessionId);
+      } else if (tooltip === COPY_LINK) {
         await vscode.env.clipboard.writeText(`vscode://anthropic.claude-code/open?session=${m.sessionId}`);
         vscode.window.setStatusBarMessage('Deep link copied', 3000);
       } else if (tooltip === OPEN_TRANSCRIPT) {

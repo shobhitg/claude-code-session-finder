@@ -2,10 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import {
-  classifyTail, resolveState, pickMainFile, effectiveMtime, readTail, readVerdict,
-  DEFAULT_THRESHOLDS, TAIL_WINDOW,
-} from '../src/core/state.js';
+import { classifyTail, resolveState, pickMainFile, effectiveMtime, DEFAULT_THRESHOLDS } from '../src/core/state.js';
+import { readTail, readVerdict, TAIL_WINDOW } from '../src/core/tail-io.js';
 import type { SourceFile } from '../src/core/discover.js';
 
 const line = (o: unknown) => JSON.stringify(o);

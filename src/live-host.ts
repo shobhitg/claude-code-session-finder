@@ -5,9 +5,17 @@ import { refreshIndex } from './core/cache.js';
 import { durationMs } from './core/query.js';
 import { buildSnapshot, type Snapshot } from './core/rows.js';
 import type { SearchIndex, SessionMeta } from './core/types.js';
-import type { Liveness } from './core/state.js';
+import type { Liveness, Thresholds } from './core/state.js';
 
 const HOUR = 3_600_000;
+
+/** The two live-state thresholds, from settings (spec D5). Shared with the Session View. */
+export function readThresholds(c: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration('sessionFinder')): Thresholds {
+  return {
+    toolQuietMs: Math.max(5, c.get<number>('toolQuietSeconds', 60)) * 1_000,
+    stalledMs: Math.max(1, c.get<number>('stalledMinutes', 15)) * 60_000,
+  };
+}
 
 /**
  * The vscode-aware owner of live state (spec D4, D6). Turns settings into a LivenessTracker,
@@ -45,10 +53,7 @@ export class LiveHost implements vscode.Disposable {
     const c = vscode.workspace.getConfiguration('sessionFinder');
     const tracker = new LivenessTracker({
       activeWindowMs: durationMs(c.get<string>('activeWindow', '4h'), 4 * HOUR),
-      thresholds: {
-        toolQuietMs: Math.max(5, c.get<number>('toolQuietSeconds', 60)) * 1_000,
-        stalledMs: Math.max(1, c.get<number>('stalledMinutes', 15)) * 60_000,
-      },
+      thresholds: readThresholds(c),
     });
     tracker.onError = err => this.log.warn(`live tracker: ${String(err)}`);
     this.unsubscribe = tracker.onChange(({ membershipChanged }) => {

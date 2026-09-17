@@ -52,6 +52,7 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
   const li = h('li', { class: 'row', role: 'option', tabindex: '-1', 'data-state': r.state, 'data-id': r.sessionId, title: r.title });
   if (r.reason) li.dataset.reason = r.reason;
   const actions = h('span', { class: 'row__actions' },
+    actionButton('type-hierarchy', 'Open session view', () => post({ type: 'view', sessionId: r.sessionId })),
     actionButton('window', 'Open in tab', () => post({ type: 'open', sessionId: r.sessionId, where: 'tab' })),
     actionButton('layout-sidebar-right', 'Open in right panel', () => post({ type: 'open', sessionId: r.sessionId, where: 'right' })),
     actionButton('link', 'Copy deep link', () => post({ type: 'copyLink', sessionId: r.sessionId })),
@@ -132,6 +133,7 @@ root.addEventListener('keydown', e => {
       else if (current?.dataset.action === 'search') post({ type: 'search' });
       break;
     case 't': case 'T': if (id) post({ type: 'transcript', sessionId: id }); break;
+    case 'v': case 'V': if (id) post({ type: 'view', sessionId: id }); break;
     case '/': e.preventDefault(); post({ type: 'search' }); break;
     case 'Escape': current?.blur(); break;
   }
