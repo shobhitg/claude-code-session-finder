@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0
+
+**You can now see which sessions are running.** The status bar shows how many
+Claude Code sessions are working and how many are waiting on you; hovering
+lists them. Search results carry the same glyph. State is read from the
+transcripts on disk — no hooks, no settings changes — by looking at the last
+*conversational* record of each recently written session: the model's
+`stop_reason` says whether it finished its turn or is waiting on a tool, and a
+`user` record means it is still generating. That last rule matters: a long
+answer writes nothing for minutes, and an earlier draft of this feature flagged
+the very session that was writing it as "blocked". Thresholds are settings
+(`sessionFinder.activeWindow`, `toolQuietSeconds`, `stalledMinutes`).
+
+**Opening a session no longer resets your Claude Code "preferred location".**
+`claude-vscode.editor.open` called without its sixth argument is treated by
+Claude Code as a user-initiated open and rewrites the preferred location to
+"panel". Every open from this extension had been doing that since 0.1.0. Calls
+now pass `{ programmatic: true }`.
+
+Also: `since:2h` works in searches (the window parser gained an hour unit).
+
 ## 0.1.1
 
 Three fixes, all found by real use rather than by tests.

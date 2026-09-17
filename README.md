@@ -38,6 +38,24 @@ you really do want every session that mentions all those words anywhere.
 The transcript action is a row button rather than `Cmd/Ctrl+Enter`: VS Code's Quick Pick
 API has no modifier-accept hook.
 
+## See what's running
+
+The status bar shows `⟳ 2  🔔 3`: two sessions working, three waiting on you.
+Hover for the list; click to open the session search. Rows in the search show
+the same glyph:
+
+| Glyph | Meaning |
+|---|---|
+| `⟳` spinning | the model is working (including long answers, which write nothing for a while) |
+| `🔔` | waiting on a tool call for a while — usually a **permission prompt**, sometimes just a slow tool |
+| `💬` | Claude finished its turn; it's your move |
+| `⚠` | nothing written for 15+ minutes mid-turn — probably abandoned |
+
+Only sessions written in the last `sessionFinder.activeWindow` (default 4 h)
+carry a state. `sessionFinder.toolQuietSeconds` (60) and
+`sessionFinder.stalledMinutes` (15) tune the two thresholds. Everything is read
+from `~/.claude/projects`; nothing is installed into Claude Code's settings.
+
 ## Why it activates at startup
 
 `activationEvents` is `["onStartupFinished"]` on purpose — **do not change it to `[]`.**

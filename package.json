@@ -2,7 +2,7 @@
   "name": "claude-code-session-finder",
   "displayName": "Claude Code Session Finder",
   "description": "Search the contents of your Claude Code sessions and jump straight to one.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {
