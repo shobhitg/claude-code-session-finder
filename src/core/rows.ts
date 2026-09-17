@@ -1,5 +1,6 @@
 import type { SearchIndex, SessionMeta } from './types.js';
 import type { Liveness, AttentionReason } from './state.js';
+import { isLocalCommand } from './transcript.js';
 
 export interface LiveRow {
   sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
@@ -51,7 +52,7 @@ export function buildSnapshot(
   if (index) {
     for (const s of index.sessions) byId.set(s.sessionId, s);
     for (const p of index.prose) {                       // file order, so the first 'u' per session is the first prompt
-      if (p.r !== 'u') continue;
+      if (p.r !== 'u' || isLocalCommand(p.x)) continue;   // a /clear or /model echo is not what the session is about
       const id = index.sessions[p.s]?.sessionId;
       if (id && !firstPrompt.has(id)) firstPrompt.set(id, p.x);
     }

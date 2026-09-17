@@ -66,6 +66,10 @@ describe('layoutTimeline', () => {
     const b = l.placed.find(p => p.bar.id === 'b')!;
     expect(b.x1 - b.x0).toBeGreaterThan(0);
   });
+  it('takes the tick count from the caller — a narrow pane asks for fewer', () => {
+    expect(layoutTimeline([bar('a', 0, 100)], 100, 2).ticks).toHaveLength(3);
+    expect(layoutTimeline([bar('a', 0, 100)], 100, 0).ticks).toHaveLength(2);
+  });
   it('is empty for no bars', () => {
     expect(layoutTimeline([], 5)).toEqual({ placed: [], lanes: 0, start: 5, end: 5, ticks: [] });
   });

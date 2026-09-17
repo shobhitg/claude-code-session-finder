@@ -75,7 +75,8 @@ function renderHeader(): HTMLElement {
 
 function renderTimeline(): HTMLElement {
   const g = graph!; const now = hostNow();
-  const layout = layoutTimeline(bars(g), now);
+  // a clock label is ~55px of 10px mono; below ~130px per interval the labels run into each other
+  const layout = layoutTimeline(bars(g), now, Math.max(1, Math.min(5, Math.floor((root.clientWidth || 800) / 130))));
   const H = 16, GAP = 4, TOP = 16, BOTTOM = 2;
   const height = TOP + layout.lanes * (H + GAP) + BOTTOM;
   const el = svg('svg', { class: 'timeline__svg', height, role: 'img', 'aria-label': 'Agent timeline' });
@@ -88,14 +89,15 @@ function renderTimeline(): HTMLElement {
   for (const p of layout.placed) {
     const y = TOP + p.lane * (H + GAP);
     const cls = `bar bar--${p.bar.status} bar--${p.bar.kind}${p.bar.id === selected ? ' bar--selected' : ''}`;
+    const name = p.bar.tag ? `${p.bar.label} · ${p.bar.tag}` : p.bar.label;
     const gEl = svg('g', { class: cls, 'data-id': p.bar.id });
     gEl.append(svg('rect', { x: `${(p.x0 * 100).toFixed(3)}%`, y, width: `${((p.x1 - p.x0) * 100).toFixed(3)}%`, height: H }));
     if (p.x1 - p.x0 > 0.08) {
       const text = svg('text', { x: `${(p.x0 * 100).toFixed(3)}%`, y: y + 12, dx: 5, class: 'bar__label' });
-      text.textContent = p.bar.label; gEl.append(text);
+      text.textContent = name; gEl.append(text);
     }
     const tip = svg('title');
-    tip.textContent = `${p.bar.label} · ${p.bar.status} · ${fmtClock(p.bar.start)}${p.bar.end ? ` – ${fmtClock(p.bar.end)} (${fmtDuration(p.bar.end - p.bar.start)})` : ' → now'}`;
+    tip.textContent = `${name} · ${p.bar.status} · ${fmtClock(p.bar.start)}${p.bar.end ? ` – ${fmtClock(p.bar.end)} (${fmtDuration(p.bar.end - p.bar.start)})` : ' → now'}`;
     gEl.append(tip);
     gEl.addEventListener('click', () => select(p.bar.id));
     el.append(gEl);
@@ -109,9 +111,9 @@ function renderTree(): HTMLElement {
   const nav = h('nav', { class: 'tree', role: 'listbox', 'aria-label': 'Agents' });
   for (const r of treeRows(g, hostNow(), reducedMotion)) {
     const row = h('button', { class: 'tree__row', role: 'option', 'aria-selected': String(r.id === selected), 'data-status': r.status, 'data-kind': r.kind,
-                              style: `--depth: ${r.depth}`, title: r.label },
+                              style: `--depth: ${r.depth}`, title: r.tag ? `${r.label} · ${r.tag}` : r.label },
       h('i', { class: `tree__icon ${iconClasses(r.icon)}`, 'aria-hidden': 'true' }),
-      h('span', { class: 'tree__label' }, r.label),
+      h('span', { class: 'tree__label' }, h('span', { class: 'tree__text' }, r.label), ...(r.tag ? [h('span', { class: 'tree__tag' }, r.tag)] : [])),
       h('span', { class: 'tree__meta' }, r.meta));
     row.addEventListener('click', () => select(r.id));
     nav.append(row);
@@ -184,8 +186,9 @@ function renderTurn(t: Turn): HTMLElement {
   const dur = t.durationMs ?? (t.endTs > t.startTs ? t.endTs - t.startTs : 0);
   const meta = [fmtClock(t.startTs), dur ? fmtDuration(dur) : undefined, t.outputTokens ? `${fmtTokens(t.outputTokens)} out` : undefined,
                 t.promptImages ? `${t.promptImages} image${t.promptImages > 1 ? 's' : ''}` : undefined].filter((x): x is string => !!x).join(' · ');
-  const who = t.promptKind === 'notification' ? 'background agent' : t.promptKind === 'meta' ? 'context' : 'you';
-  art.append(h('div', { class: 'turn__prompt' }, h('span', { class: 'turn__who' }, who), renderText(t.prompt || '(no text)', 'turn__prompt-text'), h('span', { class: 'turn__meta' }, meta)));
+  const who = t.promptKind === 'notification' ? 'background agent' : t.promptKind === 'meta' ? 'context' : t.promptKind === 'command' ? 'command' : 'you';
+  const prompt = t.prompt || (t.promptKind === 'meta' ? '' : '(no text)');    // a context-only turn has nothing to quote
+  art.append(h('div', { class: 'turn__prompt' }, h('span', { class: 'turn__who' }, who), renderText(prompt, 'turn__prompt-text'), h('span', { class: 'turn__meta' }, meta)));
   for (const it of t.items) art.append(renderItem(it));
   return art;
 }
@@ -196,7 +199,7 @@ function renderReader(): HTMLElement {
   const node: GraphNode | undefined = graph?.nodes[page.nodeId];
   sec.append(h('div', { class: 'reader__head' },
     h('span', { class: 'reader__title' }, node?.label ?? page.nodeId),
-    h('span', { class: 'reader__meta' }, `${page.total} turns${node?.model ? ` · ${node.model.replace(/^claude-/, '')}` : ''}${node?.file ? '' : ' · no transcript on disk'}`)));
+    h('span', { class: 'reader__meta' }, `${page.total} ${page.total === 1 ? 'turn' : 'turns'}${node?.model ? ` · ${node.model.replace(/^claude-/, '')}` : ''}${node?.file ? '' : ' · no transcript on disk'}`)));
   if (page.from > 0) {
     const more = h('button', { class: 'reader__more' }, `Show earlier turns (${page.from} more)`);
     more.addEventListener('click', () => post({ type: 'more', nodeId: page!.nodeId, from: Math.max(0, page!.from - 40) }));

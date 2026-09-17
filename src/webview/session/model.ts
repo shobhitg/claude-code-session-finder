@@ -39,7 +39,7 @@ export function nodeMeta(n: GraphNode, now: number): string {
   return bits.join(' · ');
 }
 
-export interface TreeRow { id: string; depth: number; label: string; meta: string; icon: string; status: NodeStatus; kind: NodeKind; live: boolean }
+export interface TreeRow { id: string; depth: number; label: string; tag?: string; meta: string; icon: string; status: NodeStatus; kind: NodeKind; live: boolean }
 
 export function treeRows(g: SessionGraph, now: number, reducedMotion = false): TreeRow[] {
   const depth = new Map<string, number>();
@@ -48,7 +48,7 @@ export function treeRows(g: SessionGraph, now: number, reducedMotion = false): T
     const n = g.nodes[id]; if (!n) continue;
     const d = n.parentId ? (depth.get(n.parentId) ?? 0) + 1 : 0;
     depth.set(id, d);
-    rows.push({ id, depth: d, label: n.label, meta: nodeMeta(n, now), icon: statusIcon(n.kind, n.status, reducedMotion),
+    rows.push({ id, depth: d, label: n.label, ...(n.tag ? { tag: n.tag } : {}), meta: nodeMeta(n, now), icon: statusIcon(n.kind, n.status, reducedMotion),
                 status: n.status, kind: n.kind, live: n.status === 'running' || n.status === 'launched' });
   }
   return rows;
@@ -60,9 +60,10 @@ export interface TimelineLayout { placed: PlacedBar[]; lanes: number; start: num
 /**
  * Greedy lane packing in start order: a bar takes the first lane whose last bar ended before it
  * started. The session bar spans everything and so keeps lane 0 to itself — a baseline the agents
- * hang under. x0/x1 are fractions of [start, end]; an open bar runs to `now`.
+ * hang under. x0/x1 are fractions of [start, end]; an open bar runs to `now`. `tickCount` is the
+ * number of intervals on the axis — the caller knows how wide the pane is, this function does not.
  */
-export function layoutTimeline(bars: Bar[], now: number): TimelineLayout {
+export function layoutTimeline(bars: Bar[], now: number, tickCount = 5): TimelineLayout {
   if (bars.length === 0) return { placed: [], lanes: 0, start: now, end: now, ticks: [] };
   const start = Math.min(...bars.map(b => b.start));
   const end = Math.max(...bars.map(b => b.end ?? now), start + 1);
@@ -78,7 +79,7 @@ export function layoutTimeline(bars: Bar[], now: number): TimelineLayout {
     placed.push({ bar, lane, x0, x1: Math.max((e - start) / span, x0 + 0.003), open: bar.end === null });
   }
   const ticks: Array<{ x: number; label: string }> = [];
-  const n = 5;
+  const n = Math.max(1, Math.round(tickCount));
   for (let i = 0; i <= n; i++) ticks.push({ x: i / n, label: fmtClock(start + (span * i) / n) });
   return { placed, lanes: laneEnds.length, start, end, ticks };
 }

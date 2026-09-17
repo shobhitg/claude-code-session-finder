@@ -13,6 +13,9 @@ compact rows with collapsed output, images inline, background-agent
 notifications. Click an agent's row or bar, or "open agent →" on the spawning
 tool call, to read that agent. While the session is active the view keeps up
 with the files every two seconds.
+Slash commands the CLI echoed into the transcript (`/model`, `/clear`) read as
+commands with their output, not as something you said, and never title a
+session. In a narrow pane the tree stacks above the reader.
 
 Two facts of the transcript format shaped this: a background agent's
 completion arrives as a `<task-notification>` user message whose task-id is the

@@ -24,6 +24,8 @@ export type NodeKind = 'session' | 'agent' | 'workflow' | 'failed-spawn';
 export type NodeStatus = 'running' | 'launched' | 'completed' | 'failed' | 'stopped' | 'unknown';
 export interface GraphNode {
   id: string; kind: NodeKind; parentId: string | null; label: string;
+  /** disambiguates siblings that share a label; surfaces show it after the label, outside any truncation */
+  tag?: string;
   subagentType?: string; model?: string; background: boolean;
   spawnTs?: number; launchedTs?: number; endTs?: number;
   status: NodeStatus;
@@ -184,13 +186,13 @@ export function buildGraph(input: GraphInput): SessionGraph {
   for (const n of Object.values(nodes)) if (n.parentId) nodes[n.parentId]?.children.push(n.id);
   const bySpawn = (a: string, b: string): number => (nodes[a]?.spawnTs ?? 0) - (nodes[b]?.spawnTs ?? 0);
   for (const n of Object.values(nodes)) n.children.sort(bySpawn);
-  // siblings that share a label (workflow agents often share one prompt) get a short id suffix
+  // siblings that share a label (workflow agents often share one prompt) get a short id tag
   for (const n of Object.values(nodes)) {
     const seen = new Map<string, number>();
     for (const id of n.children) { const l = nodes[id]!.label; seen.set(l, (seen.get(l) ?? 0) + 1); }
     for (const id of n.children) {
       const k = nodes[id]!;
-      if ((seen.get(k.label) ?? 0) > 1) k.label = `${k.label} · ${k.agentId?.slice(0, 4) ?? k.toolUseId?.slice(-4) ?? k.id.slice(-4)}`;
+      if ((seen.get(k.label) ?? 0) > 1) k.tag = k.agentId?.slice(0, 4) ?? k.toolUseId?.slice(-4) ?? k.id.slice(-4);
     }
   }
   // a workflow with children and no own outcome takes the worst child outcome
@@ -233,7 +235,7 @@ function applyResult(n: GraphNode, tr: ToolResultBlock, tur: unknown, t: number)
 }
 
 /** Timeline bars: one per node with a start; open-ended while running. */
-export interface Bar { id: string; start: number; end: number | null; kind: NodeKind; status: NodeStatus; label: string; depth: number }
+export interface Bar { id: string; start: number; end: number | null; kind: NodeKind; status: NodeStatus; label: string; tag?: string; depth: number }
 export function bars(g: SessionGraph): Bar[] {
   const depth = new Map<string, number>();
   const out: Bar[] = [];
@@ -243,7 +245,7 @@ export function bars(g: SessionGraph): Bar[] {
     depth.set(id, d);
     if (!n.spawnTs) continue;
     const end = n.endTs ?? (n.status === 'running' || n.status === 'launched' ? null : (n.launchedTs ?? n.spawnTs));
-    out.push({ id, start: n.spawnTs, end, kind: n.kind, status: n.status, label: n.label, depth: d });
+    out.push({ id, start: n.spawnTs, end, kind: n.kind, status: n.status, label: n.label, ...(n.tag ? { tag: n.tag } : {}), depth: d });
   }
   return out;
 }

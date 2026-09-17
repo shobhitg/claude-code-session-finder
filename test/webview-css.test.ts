@@ -26,6 +26,6 @@ describe('webview stylesheets (spec §10, D7)', () => {
   it('styles every state the models can emit', () => {
     const style = sheets[1]![1], session = sheets[2]![1];
     for (const sel of ['[data-state="running"]', '[data-reason="tool-or-permission"]', '[data-reason="your-turn"]', '[data-reason="stalled"]', '[data-state="history"]']) expect(style, sel).toContain(sel);
-    for (const sel of ['.bar--running', '.bar--completed', '.bar--failed', '.bar--stopped', '.bar--launched', '.tool--error', '.turn--notification']) expect(session, sel).toContain(sel);
+    for (const sel of ['.bar--running', '.bar--completed', '.bar--failed', '.bar--stopped', '.bar--launched', '.tool--error', '.turn--notification', '.turn--command', '.tree__tag']) expect(session, sel).toContain(sel);
   });
 });

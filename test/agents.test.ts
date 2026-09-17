@@ -152,9 +152,10 @@ describe('buildGraph — decay of file-less launched nodes', () => {
 });
 
 describe('buildGraph — labels', () => {
-  it('siblings sharing a label get a short id suffix', () => {
+  it('siblings sharing a label get a short id tag, kept apart from the label so truncation cannot eat it', () => {
     const g = base([user(1, 'go')], [agentFile('aaaa1111', [user(2, 'Same prompt')], 2), agentFile('bbbb2222', [user(3, 'Same prompt')], 3)]);
-    expect(g.nodes.session!.children.map(id => g.nodes[id]!.label)).toEqual(['Same prompt · aaaa', 'Same prompt · bbbb']);
+    expect(g.nodes.session!.children.map(id => [g.nodes[id]!.label, g.nodes[id]!.tag])).toEqual([['Same prompt', 'aaaa'], ['Same prompt', 'bbbb']]);
+    expect(bars(g).filter(b => b.kind === 'agent').map(b => b.tag)).toEqual(['aaaa', 'bbbb']);
   });
   it('a unique label is left alone', () => {
     const g = base([user(1, 'go')], [agentFile('aaaa1111', [user(2, 'Only child')], 2)]);

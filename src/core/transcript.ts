@@ -118,6 +118,18 @@ export function parseNotification(text: string): Notification {
 
 export const isNotification = (text: string): boolean => text.includes('<task-notification>');
 
+/**
+ * A slash command the CLI echoed into the transcript — `<command-name>/model</command-name>…`, its
+ * `<local-command-stdout>`, or the `<local-command-caveat>` that precedes them. Not a prompt: never a
+ * title, and shown in the reader as a command rather than as something "you" said.
+ */
+export const isLocalCommand = (text: string): boolean => /^\s*<(?:command-name|local-command-stdout|local-command-caveat)>/.test(text);
+const tagOf = (text: string, name: string): string => text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]?.trim() ?? '';
+/** `<command-name>/model</command-name>…<command-args>opus</command-args>` → "/model opus" */
+export function commandLine(text: string): string {
+  return [tagOf(text, 'command-name'), tagOf(text, 'command-args')].filter(Boolean).join(' ') || text.trim().slice(0, 120);
+}
+
 // ---------------------------------------------------------------- turns
 
 export interface ToolCall {
@@ -133,7 +145,7 @@ export type Item =
   | { kind: 'image'; ts: number; mediaType: string; dataUrl: string }
   /** an isMeta user record — a skill body, a system reminder — injected mid-turn; the turn goes on */
   | { kind: 'context'; ts: number; text: string };
-export type PromptKind = 'user' | 'notification' | 'meta';
+export type PromptKind = 'user' | 'notification' | 'meta' | 'command';
 export interface Turn {
   index: number; startTs: number; endTs: number;
   promptKind: PromptKind; prompt: string; promptImages: number;
@@ -170,6 +182,14 @@ export function buildTranscript(recs: Rec[]): Transcript {
     return cur;
   };
   const ensure = (t: number): Turn => cur ?? open(t, 'meta', '', 0);
+  // a slash command echoed by the CLI: the caveat is noise, the command opens a turn, its stdout is that turn's output
+  const localCommand = (text: string, t: number): void => {
+    if (text.trimStart().startsWith('<local-command-caveat>')) { hidden++; return; }
+    if (text.trimStart().startsWith('<command-name>')) { open(t, 'command', commandLine(text), 0); return; }
+    const turn = ensure(t); const out = tagOf(text, 'local-command-stdout');
+    if (out) turn.items.push({ kind: 'text', ts: t, text: out });
+    turn.endTs = Math.max(turn.endTs, t);
+  };
 
   for (const r of recs) {
     const t = ts(r);
@@ -178,7 +198,8 @@ export function buildTranscript(recs: Rec[]): Transcript {
 
     if (r.type === 'user') {
       if (typeof c === 'string') {
-        if (isNotification(c)) open(t, 'notification', parseNotification(c).summary, 0);
+        if (isLocalCommand(c)) localCommand(c, t);
+        else if (isNotification(c)) open(t, 'notification', parseNotification(c).summary, 0);
         else if (r.isMeta) { const turn = ensure(t); turn.items.push({ kind: 'context', ts: t, text: c }); turn.endTs = Math.max(turn.endTs, t); }
         else open(t, 'user', c, 0);
         continue;
@@ -200,6 +221,7 @@ export function buildTranscript(recs: Rec[]): Transcript {
       }
       const text = c.filter((b): b is TextBlock => b.type === 'text').map(b => b.text).join('\n');
       const images = c.filter((b): b is ImageBlock => b.type === 'image');
+      if (isLocalCommand(text)) { localCommand(text, t); continue; }
       if (r.isMeta && !isNotification(text)) {                  // injected context, not a new prompt
         const turn = ensure(t);
         if (text) turn.items.push({ kind: 'context', ts: t, text });
@@ -258,7 +280,7 @@ export function firstPrompt(recs: Rec[]): string | undefined {
     if (r.type !== 'user' || r.isMeta) continue;
     const c = r.message?.content;
     const text = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b): b is TextBlock => b.type === 'text').map(b => b.text).join('\n') : '';
-    if (!text.trim() || isNotification(text)) continue;
+    if (!text.trim() || isNotification(text) || isLocalCommand(text)) continue;
     // skip blank lines and markdown headings ("# Question") — the first substantive line labels the agent
     const line = text.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
     if (line) return line.slice(0, 120);

@@ -89,7 +89,7 @@ class SessionPanel {
               private readonly meta: SessionMeta, onDispose: () => void) {
     const dist = vscode.Uri.joinPath(ctx.extensionUri, 'dist');
     this.panel = vscode.window.createWebviewPanel(VIEW_TYPE, meta.title ?? meta.sessionId.slice(0, 8),
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: false },
+      { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },    // a tab in the current group; Beside split the editor on every open
       { enableScripts: true, localResourceRoots: [dist], retainContextWhenHidden: true });
     this.panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'resources', 'sessions.svg');
     this.panel.webview.html = html(this.panel.webview, dist, meta.title ?? 'Session');
