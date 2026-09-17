@@ -119,3 +119,45 @@ describe('buildGraph — workflows and nesting', () => {
     expect(bars(g).map(b => [b.id, b.depth])).toEqual([['session', 0], ['spawn:early', 1], ['spawn:late', 1]]);
   });
 });
+
+describe('buildGraph — decay of file-less launched nodes', () => {
+  const launchedWorkflow = (s: number) => [
+    asst(s, [{ type: 'tool_use', id: 'toolu_w', name: 'Workflow', input: { description: 'Understand governance', script: '…' } }]),
+    result(s + 1, 'toolu_w', { runId: 'wf_dead', status: 'async_launched', taskId: 'wb9' }, 'launched'),
+  ];
+  it('a launched workflow with no agents is stopped once the session has ended, ending when the session did', () => {
+    const g = base([user(1, 'go'), ...launchedWorkflow(2), asst(60, [{ type: 'text', text: 'moving on' }], 'end_turn')]);
+    expect(g.nodes.session!.status).toBe('completed');
+    expect(g.nodes['spawn:toolu_w']).toMatchObject({ status: 'stopped', endTs: T0 + 60_000 });
+  });
+  it('in a live session it stays launched while fresh and is stopped once stale', () => {
+    const live = (spawnAt: number) => buildGraph({ title: 't', mainFile: '/p/s.jsonl',
+      mainRecs: parseRecords([user(1, 'go'), ...launchedWorkflow(spawnAt), asst(spawnAt + 2, [{ type: 'tool_use', id: 'x', name: 'Bash', input: {} }])].join('\n')),
+      mainMtimeMs: NOW - 1000, agents: [], journals: {}, now: NOW });
+    expect(live(590).nodes['spawn:toolu_w']!.status).toBe('launched');       // 8 s ago
+    expect(live(2).nodes['spawn:toolu_w']!.status).toBe('launched');         // 10 min ago — under the 15 min stall threshold
+    const old = buildGraph({ title: 't', mainFile: '/p/s.jsonl',
+      mainRecs: parseRecords([user(1, 'go'), ...launchedWorkflow(2), asst(4, [{ type: 'tool_use', id: 'x', name: 'Bash', input: {} }])].join('\n')),
+      mainMtimeMs: T0 + 1_999_000, agents: [], journals: {}, now: T0 + 2_000_000 });
+    expect(old.nodes['spawn:toolu_w']!.status).toBe('stopped');              // 33 min silent, no file
+  });
+  it('a background agent WITH a fresh file keeps running after its session ended its turn', () => {
+    const g = base([user(1, 'go'), spawn(2, 'toolu_bg', 'Long review', { run_in_background: true }),
+                    result(3, 'toolu_bg', { agentId: 'bg1', status: 'async_launched' }),
+                    asst(4, [{ type: 'text', text: 'I will wait.' }], 'end_turn')],
+                   [agentFile('bg1', [user(5, 'review'), asst(590, [{ type: 'tool_use', id: 'q', name: 'Bash', input: {} }])], 599)]);
+    expect(g.nodes.session!.status).toBe('completed');
+    expect(g.nodes['spawn:toolu_bg']!.status).toBe('running');
+  });
+});
+
+describe('buildGraph — labels', () => {
+  it('siblings sharing a label get a short id suffix', () => {
+    const g = base([user(1, 'go')], [agentFile('aaaa1111', [user(2, 'Same prompt')], 2), agentFile('bbbb2222', [user(3, 'Same prompt')], 3)]);
+    expect(g.nodes.session!.children.map(id => g.nodes[id]!.label)).toEqual(['Same prompt · aaaa', 'Same prompt · bbbb']);
+  });
+  it('a unique label is left alone', () => {
+    const g = base([user(1, 'go')], [agentFile('aaaa1111', [user(2, 'Only child')], 2)]);
+    expect(g.nodes['orphan:aaaa1111']!.label).toBe('Only child');
+  });
+});

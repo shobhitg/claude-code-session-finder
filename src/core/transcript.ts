@@ -130,7 +130,9 @@ export type Item =
   | { kind: 'text'; ts: number; text: string }
   | { kind: 'thinking'; ts: number }
   | { kind: 'tool'; call: ToolCall }
-  | { kind: 'image'; ts: number; mediaType: string; dataUrl: string };
+  | { kind: 'image'; ts: number; mediaType: string; dataUrl: string }
+  /** an isMeta user record — a skill body, a system reminder — injected mid-turn; the turn goes on */
+  | { kind: 'context'; ts: number; text: string };
 export type PromptKind = 'user' | 'notification' | 'meta';
 export interface Turn {
   index: number; startTs: number; endTs: number;
@@ -177,7 +179,8 @@ export function buildTranscript(recs: Rec[]): Transcript {
     if (r.type === 'user') {
       if (typeof c === 'string') {
         if (isNotification(c)) open(t, 'notification', parseNotification(c).summary, 0);
-        else open(t, r.isMeta ? 'meta' : 'user', c, 0);
+        else if (r.isMeta) { const turn = ensure(t); turn.items.push({ kind: 'context', ts: t, text: c }); turn.endTs = Math.max(turn.endTs, t); }
+        else open(t, 'user', c, 0);
         continue;
       }
       if (!Array.isArray(c)) { hidden++; continue; }
@@ -197,9 +200,15 @@ export function buildTranscript(recs: Rec[]): Transcript {
       }
       const text = c.filter((b): b is TextBlock => b.type === 'text').map(b => b.text).join('\n');
       const images = c.filter((b): b is ImageBlock => b.type === 'image');
+      if (r.isMeta && !isNotification(text)) {                  // injected context, not a new prompt
+        const turn = ensure(t);
+        if (text) turn.items.push({ kind: 'context', ts: t, text });
+        turn.endTs = Math.max(turn.endTs, t);
+        continue;
+      }
       const turn = isNotification(text)
         ? open(t, 'notification', parseNotification(text).summary, images.length)
-        : open(t, r.isMeta ? 'meta' : 'user', text, images.length);
+        : open(t, 'user', text, images.length);
       for (const im of images) {
         const dataUrl = imageDataUrl(im);
         if (dataUrl) turn.items.push({ kind: 'image', ts: t, mediaType: im.source?.media_type ?? 'image/png', dataUrl });
@@ -249,7 +258,10 @@ export function firstPrompt(recs: Rec[]): string | undefined {
     if (r.type !== 'user' || r.isMeta) continue;
     const c = r.message?.content;
     const text = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b): b is TextBlock => b.type === 'text').map(b => b.text).join('\n') : '';
-    if (text.trim() && !isNotification(text)) return text.trim().split('\n')[0]!.slice(0, 120);
+    if (!text.trim() || isNotification(text)) continue;
+    // skip blank lines and markdown headings ("# Question") — the first substantive line labels the agent
+    const line = text.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
+    if (line) return line.slice(0, 120);
   }
   return undefined;
 }

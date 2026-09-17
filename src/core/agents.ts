@@ -148,6 +148,19 @@ export function buildGraph(input: GraphInput): SessionGraph {
     }
   }
 
+  // pass 2b — decay: a node with no transcript file has no evidence of life beyond its spawn. Once
+  // its session has stopped running, or it has been silent past the stall threshold, it is not
+  // "launched" any more. Nodes WITH a file were already judged by their own tail in pass 2 — a
+  // background agent legitimately outlives its parent's turn, and its fresh file says so.
+  for (const n of Object.values(nodes)) {
+    if (n === root || n.file || (n.status !== 'running' && n.status !== 'launched')) continue;
+    const since = n.launchedTs ?? n.spawnTs ?? 0;
+    const sessionOver = root.status !== 'running';
+    if (!sessionOver && !(since && input.now - since > th.stalledMs)) continue;
+    n.status = 'stopped';
+    if (!n.endTs && sessionOver) n.endTs = root.endTs ?? input.mainMtimeMs;
+  }
+
   // pass 3 — parents: the container's node (main → session), workflow agents → their run's node
   const workflowByRun = (runId: string): GraphNode => {
     let w = Object.values(nodes).find(n => n.kind === 'workflow' && n.runId === runId);
@@ -171,6 +184,15 @@ export function buildGraph(input: GraphInput): SessionGraph {
   for (const n of Object.values(nodes)) if (n.parentId) nodes[n.parentId]?.children.push(n.id);
   const bySpawn = (a: string, b: string): number => (nodes[a]?.spawnTs ?? 0) - (nodes[b]?.spawnTs ?? 0);
   for (const n of Object.values(nodes)) n.children.sort(bySpawn);
+  // siblings that share a label (workflow agents often share one prompt) get a short id suffix
+  for (const n of Object.values(nodes)) {
+    const seen = new Map<string, number>();
+    for (const id of n.children) { const l = nodes[id]!.label; seen.set(l, (seen.get(l) ?? 0) + 1); }
+    for (const id of n.children) {
+      const k = nodes[id]!;
+      if ((seen.get(k.label) ?? 0) > 1) k.label = `${k.label} · ${k.agentId?.slice(0, 4) ?? k.toolUseId?.slice(-4) ?? k.id.slice(-4)}`;
+    }
+  }
   // a workflow with children and no own outcome takes the worst child outcome
   for (const n of Object.values(nodes)) {
     if (n.kind !== 'workflow' || n.endTs || n.children.length === 0) continue;

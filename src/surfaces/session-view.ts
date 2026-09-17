@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { readFile, readdir, stat } from 'node:fs/promises';
-import { basename, dirname, join, relative, sep } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { basename, dirname, join, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { discover, defaultRoot } from '../core/discover.js';
 import { parseRecords, buildTranscript, firstPrompt, type Rec } from '../core/transcript.js';
@@ -68,23 +68,12 @@ async function fallbackMeta(sessionId: string): Promise<SessionMeta | undefined>
            branches: [], prLinks: [], firstTs: 0, lastTs: 0, msgCount: 0, mtimeMs: main.mtimeMs, size: main.size };
 }
 
-async function listAgentFiles(dir: string, depth = 0, out: string[] = []): Promise<string[]> {
-  if (depth > 6) return out;
-  let entries: string[];
-  try { entries = await readdir(dir); } catch { return out; }
-  for (const e of entries) {
-    const p = join(dir, e);
-    const s = await stat(p).catch(() => null);
-    if (!s) continue;
-    if (s.isDirectory()) await listAgentFiles(p, depth + 1, out);
-    else if (e.startsWith('agent-') && e.endsWith('.jsonl')) out.push(p);
-  }
-  return out;
-}
 const agentIdOf = (p: string): string => basename(p, '.jsonl').replace(/^agent-/, '');
-function runIdOf(p: string, dir: string): string | undefined {
-  const parts = relative(dir, p).split(sep);
-  return parts[0] === 'workflows' && parts.length > 2 ? parts[1] : undefined;
+/** `…/subagents/workflows/<runId>/agent-x.jsonl` → runId */
+function runIdOf(p: string): string | undefined {
+  const parts = p.split(sep);
+  const i = parts.lastIndexOf('workflows');
+  return i >= 0 && i + 2 < parts.length ? parts[i + 1] : undefined;
 }
 
 class SessionPanel {
@@ -125,8 +114,6 @@ class SessionPanel {
     await this.load(false);
   }
 
-  private get agentsDir(): string { return join(dirname(this.meta.file), this.meta.sessionId, 'subagents'); }
-
   /** Re-read what changed (by mtime:size), rebuild the graph, push it. `force` also (re)sends the page. */
   async load(force: boolean): Promise<void> {
     if (this.busy) return;
@@ -144,15 +131,19 @@ class SessionPanel {
       };
       const main = await read(this.meta.file);
       if (!main) { this.post({ type: 'error', message: 'This session\'s transcript is no longer on disk.' }); return; }
+      // discover() attributes every subagent transcript to its session across ALL project dirs — after
+      // a worktree move the agents can sit under a different copy of the session than the newest main file.
       const agents: AgentFile[] = [];
-      for (const p of await listAgentFiles(this.agentsDir)) {
-        const c = await read(p); if (!c) continue;
-        const runId = runIdOf(p, this.agentsDir);
-        agents.push({ path: p, agentId: agentIdOf(p), recs: c.recs, mtimeMs: c.mtimeMs, ...(runId ? { runId } : {}) });
+      const journalPaths = new Map<string, string>();
+      for (const f of (await discover(defaultRoot())).filter(f => f.kind === 'subagent' && f.sessionId === this.meta.sessionId)) {
+        const c = await read(f.path); if (!c) continue;
+        const runId = runIdOf(f.path);
+        agents.push({ path: f.path, agentId: agentIdOf(f.path), recs: c.recs, mtimeMs: c.mtimeMs, ...(runId ? { runId } : {}) });
+        if (runId && !journalPaths.has(runId)) journalPaths.set(runId, join(dirname(f.path), 'journal.jsonl'));
       }
       const journals: Record<string, JournalRec[]> = {};
-      for (const runId of new Set(agents.map(a => a.runId).filter((r): r is string => r !== undefined))) {
-        const c = await read(join(this.agentsDir, 'workflows', runId, 'journal.jsonl'));
+      for (const [runId, jp] of journalPaths) {
+        const c = await read(jp);
         if (c) journals[runId] = c.recs as JournalRec[];
       }
       if (!changed) return;

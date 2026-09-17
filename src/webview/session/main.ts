@@ -169,6 +169,13 @@ function renderItem(it: Item): HTMLElement {
     case 'thinking': return h('div', { class: 'item item--thinking' }, h('i', { class: 'codicon codicon-lightbulb', 'aria-hidden': 'true' }), 'thought (redacted in the transcript)');
     case 'image': return h('div', { class: 'item item--image' }, h('img', { src: it.dataUrl, alt: 'image from the prompt', loading: 'lazy' }));
     case 'tool': return renderTool(it.call);
+    case 'context': {
+      const d = document.createElement('details'); d.className = 'item item--context';
+      const head = it.text.replace(/^<[a-z-]+>\s*/i, '').split('\n')[0] ?? '';
+      d.append(h('summary', {}, h('i', { class: 'codicon codicon-info', 'aria-hidden': 'true' }), `context · ${head.slice(0, 80)}${head.length > 80 ? '…' : ''} · ${fmtTokens(it.text.length)} chars`),
+               h('pre', { class: 'code' }, it.text.length > 6000 ? `${it.text.slice(0, 6000)}\n… ${it.text.length - 6000} more characters — see the raw transcript` : it.text));
+      return d;
+    }
   }
 }
 

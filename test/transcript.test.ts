@@ -115,4 +115,28 @@ describe('firstPrompt', () => {
     expect(firstPrompt(recs)).toBe('Investigate the flaky test');
     expect(firstPrompt([])).toBeUndefined();
   });
+  it('skips blank lines and markdown headings', () => {
+    expect(firstPrompt(parseRecords(user(1, "\n# Question\nAida's forecast for the deal was stale\nWHY?")))).toBe("Aida's forecast for the deal was stale");
+  });
+});
+
+describe('injected context (isMeta user records)', () => {
+  it('attaches to the current turn as a context item instead of starting a new turn', () => {
+    const t = buildTranscript(parseRecords([
+      user(1, 'run the skill'),
+      asst(2, [{ type: 'tool_use', id: 'toolu_s', name: 'Skill', input: { skill: 'superpowers:tdd' } }]),
+      user(3, [{ type: 'tool_result', tool_use_id: 'toolu_s', content: 'Launching skill' }]),
+      user(3, 'Base directory for this skill: /x\n\n# TDD\n…', { isMeta: true }),
+      user(4, [{ type: 'text', text: '<system-reminder>be brief</system-reminder>' }], { isMeta: true }),
+      asst(5, [{ type: 'text', text: 'Red, green, refactor.' }], { id: 'msg_9', stop_reason: 'end_turn' }),
+    ].join('\n')));
+    expect(t.turns).toHaveLength(1);
+    expect(t.turns[0]!.items.map(i => i.kind)).toEqual(['tool', 'context', 'context', 'text']);
+    expect(t.turns[0]!.items[1]).toMatchObject({ kind: 'context', text: expect.stringContaining('# TDD') });
+    expect(t.turns[0]!.endTs).toBe(T0 + 5000);
+  });
+  it('a meta record before any prompt still gets an implicit turn', () => {
+    const t = buildTranscript(parseRecords([user(1, 'context first', { isMeta: true }), user(2, 'now a prompt')].join('\n')));
+    expect(t.turns.map(x => [x.promptKind, x.items.length])).toEqual([['meta', 1], ['user', 0]]);
+  });
 });

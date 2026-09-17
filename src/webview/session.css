@@ -86,6 +86,9 @@ main:focus-visible { outline: none; }
 .code, .tool__input, .tool__output { margin: var(--sp-1) 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius);
   background: var(--s-code-bg); font-family: var(--mono); font-size: var(--mono-size); white-space: pre-wrap; word-break: break-word; overflow: auto; max-height: 420px; }
 .item--thinking { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--s-muted); font-size: var(--size-meta); font-style: italic; }
+.item--context summary { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--s-muted); font-size: var(--size-meta); cursor: pointer; list-style: none; }
+.item--context summary::-webkit-details-marker { display: none; }
+.item--context summary:hover { color: var(--s-fg-editor); }
 .item--image img { display: block; max-width: 100%; max-height: 240px; border-radius: var(--radius); border: 1px solid var(--s-border); }
 
 .tool { margin-top: var(--sp-1); border-radius: var(--radius); }
