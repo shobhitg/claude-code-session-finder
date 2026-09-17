@@ -18,6 +18,16 @@ picker, results stay on screen: open one, read another in the Session View,
 refine, then `Esc` restores the list. Each result shows the line that matched
 and keeps its live glyph. Deep `!` searches stay in the picker.
 
+**Sessions no longer fall into HISTORY while you are working in them.** The
+live state is read from the last few KB of a transcript. One screenshot pasted
+or read as an image is a 400 KB record; when it straddled the read window the
+tail looked like nothing but sidecars, the verdict was "unknown", and an
+unknown verdict dropped the session from ACTIVE — the session you were typing
+in, listed under HISTORY. The reader now widens until it finds a conversational
+record (up to the whole file, rarely), and recency alone decides membership:
+written within `sessionFinder.activeWindow` (4 h by default) means ACTIVE, and
+an unknown verdict merely shows as running.
+
 **The active session is highlighted.** Switch between Claude Code tabs, or
 Session Views, and the matching row in the sidebar is selected and scrolled
 into view. Claude Code names its tabs after the session, so the row is found

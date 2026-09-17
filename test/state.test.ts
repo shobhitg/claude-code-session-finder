@@ -67,8 +67,9 @@ describe('resolveState (spec §7 table)', () => {
     expect(resolveState('awaiting-model', t.stalledMs - 1, t)).toEqual({ kind: 'running' });
     expect(resolveState('awaiting-model', t.stalledMs, t)).toEqual({ kind: 'attention', reason: 'stalled' });
   });
-  it('unknown is not shown', () => {
-    expect(resolveState('unknown', 0, t)).toBeNull();
+  it('unknown reads like awaiting-model: recency put the session in ACTIVE, the verdict only refines it', () => {
+    expect(resolveState('unknown', 0, t)).toEqual({ kind: 'running' });
+    expect(resolveState('unknown', t.stalledMs, t)).toEqual({ kind: 'attention', reason: 'stalled' });
   });
   it('honours custom thresholds', () => {
     expect(resolveState('awaiting-tool', 5_000, { toolQuietMs: 4_000, stalledMs: 1 }))
@@ -130,6 +131,19 @@ describe('readTail / readVerdict', () => {
     const spy = (p: string, s: number, w?: number) => { reads.push(w ?? TAIL_WINDOW); return readTail(p, s, w); };
     expect(await readVerdict(f, size, spy)).toBe('turn-ended');
     expect(reads).toEqual([65_536, 524_288]);
+  });
+  it('readVerdict keeps widening — to the whole file — when one huge record hides the last conversational one', async () => {
+    // A 700 KB tool_result (one screenshot read as an image) followed by sidecars: the 64 KB and 512 KB
+    // windows both start inside that record, drop it as a partial line, and see only sidecars.
+    const f = join(dir, 'image-heavy.jsonl');
+    const huge = line({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: 'x'.repeat(700_000) }] } });
+    const sidecar = line({ type: 'attachment', blob: 'y'.repeat(200) });
+    writeFileSync(f, assistant('tool_use') + '\n' + huge + '\n' + sidecar + '\n' + sidecar + '\n');
+    const size = statSync(f).size;
+    const reads: number[] = [];
+    const spy = (p: string, s: number, w?: number) => { reads.push(w ?? TAIL_WINDOW); return readTail(p, s, w); };
+    expect(await readVerdict(f, size, spy)).toBe('awaiting-model');
+    expect(reads).toEqual([65_536, 524_288, 2_097_152]);           // 2 MB covers the 700 KB file: stop there
   });
   it('an empty file is unknown without opening a read of zero bytes', async () => {
     const f = join(dir, 'empty.jsonl');

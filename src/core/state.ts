@@ -54,15 +54,19 @@ export function classifyTail(text: string): TailVerdict {
   return 'unknown';
 }
 
-/** Spec §7 table. `null` = not shown in ACTIVE. `turn-ended` ignores quiet time on purpose. */
+/**
+ * Spec §7 table. `turn-ended` ignores quiet time on purpose. `unknown` — a tail with nothing
+ * conversational, which a written-moments-ago file can still have — is read like `awaiting-model`:
+ * recency decided the session is ACTIVE, and the verdict only refines how it shows.
+ */
 export function resolveState(
   verdict: TailVerdict, quietMs: number, t: Thresholds = DEFAULT_THRESHOLDS,
-): LiveState | null {
+): LiveState {
   switch (verdict) {
     case 'turn-ended':     return { kind: 'attention', reason: 'your-turn' };
     case 'awaiting-tool':  return quietMs < t.toolQuietMs ? { kind: 'running' } : { kind: 'attention', reason: 'tool-or-permission' };
-    case 'awaiting-model': return quietMs < t.stalledMs   ? { kind: 'running' } : { kind: 'attention', reason: 'stalled' };
-    case 'unknown':        return null;
+    case 'awaiting-model':
+    case 'unknown':        return quietMs < t.stalledMs   ? { kind: 'running' } : { kind: 'attention', reason: 'stalled' };
   }
 }
 

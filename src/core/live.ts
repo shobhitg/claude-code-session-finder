@@ -134,7 +134,6 @@ export class LivenessTracker {
     for (const t of this.tracked.values()) {
       const lastWriteMs = effectiveMtime(t.files);
       const state = resolveState(t.verdict, now - lastWriteMs, this.thresholds);
-      if (!state) continue;                                                          // unknown → not ACTIVE
       next.set(t.sessionId, { sessionId: t.sessionId, verdict: t.verdict, state, lastWriteMs });
     }
     const changed = membershipChanged || !sameLiveness(this.current, next);

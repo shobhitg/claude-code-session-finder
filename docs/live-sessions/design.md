@@ -329,9 +329,9 @@ resolveState(verdict, quietMs, thresholds)
                              awaiting-tool  · quiet ≥  toolQuietMs   → attention / tool-or-permission
                              awaiting-model · quiet <  stalledMs     → running                    (L5)
                              awaiting-model · quiet ≥  stalledMs     → attention / stalled
-                             unknown                                 → caller widens the window once
-                                                                       (512 KB); still unknown → the
-                                                                       session is not shown in ACTIVE
+                             unknown                                 → caller widens the window: 64 KB →
+                                                                       512 KB → 2 MB → whole file. Still
+                                                                       unknown → shown like awaiting-model
 ```
 
 `quietMs = now − effectiveMtime`. Note `turn-ended` ignores quiet time: the sidecars written

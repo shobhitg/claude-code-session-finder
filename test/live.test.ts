@@ -64,11 +64,12 @@ describe('LivenessTracker.sweep', () => {
     expect(h.tracker.liveness.get('a')!.verdict).toBe('awaiting-model');
   });
 
-  it('drops a session whose verdict is unknown and one that only has subagent files left', async () => {
+  it('keeps a fresh session whose verdict is unknown (shown as running); drops one with only subagent files left', async () => {
     const t0 = 100 * H;
     const h = harness([main('u', t0), sub('orphan', t0)], {}, t0);
     await h.tracker.sweep();
-    expect(h.tracker.liveness.size).toBe(0);
+    expect([...h.tracker.liveness.keys()]).toEqual(['u']);
+    expect(h.tracker.liveness.get('u')).toMatchObject({ verdict: 'unknown', state: { kind: 'running' } });
   });
 });
 

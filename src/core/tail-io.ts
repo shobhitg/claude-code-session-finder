@@ -6,11 +6,15 @@ import { open } from 'node:fs/promises';
 import { classifyTail, type TailVerdict } from './state.js';
 
 /**
- * L9: the live path never reads a whole transcript (0.7 GB corpus, 21.8 MB max). 64 KB covered
- * every session measured; widened once to 512 KB when the tail is all sidecars.
+ * L9: the live path reads as little of a transcript as it can (0.7 GB corpus, 21.8 MB max). 64 KB
+ * covers almost every session; the windows widen geometrically while the tail holds nothing
+ * conversational. That happens more than the first measurement suggested: one screenshot pasted or
+ * read as an image is a 400 KB `tool_result` record, and a window whose first line is that record
+ * drops it as partial and sees only sidecars — so the last step is the whole file.
  */
 export const TAIL_WINDOW = 65_536;
 export const TAIL_WIDE = 524_288;
+export const TAIL_WINDOWS = [TAIL_WINDOW, TAIL_WIDE, 4 * TAIL_WIDE, Number.MAX_SAFE_INTEGER] as const;
 
 /**
  * The last `window` bytes of a file. When the file is longer than the window the first line is
@@ -32,9 +36,12 @@ export async function readTail(path: string, size: number, window: number = TAIL
   }
 }
 
-/** Tail → verdict, widening once (spec §7 `unknown` row). `read` is injectable for tests. */
+/** Tail → verdict, widening until a conversational record turns up or the whole file has been read (spec §7). */
 export async function readVerdict(path: string, size: number, read: typeof readTail = readTail): Promise<TailVerdict> {
-  let v = classifyTail(await read(path, size, TAIL_WINDOW));
-  if (v === 'unknown' && size > TAIL_WINDOW) v = classifyTail(await read(path, size, TAIL_WIDE));
+  let v: TailVerdict = 'unknown';
+  for (const w of TAIL_WINDOWS) {
+    v = classifyTail(await read(path, size, w));
+    if (v !== 'unknown' || size <= w) break;
+  }
   return v;
 }
