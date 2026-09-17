@@ -34,11 +34,25 @@
     "commands": [
       {
         "command": "sessionFinder.search",
-        "title": "Claude: Search Sessions"
+        "title": "Claude: Search Sessions",
+        "icon": "$(search)"
       },
       {
         "command": "sessionFinder.showSessions",
         "title": "Claude: Show Sessions"
+      },
+      {
+        "command": "sessionFinder.refresh",
+        "title": "Claude: Refresh Sessions",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sessionFinder.openInTab",
+        "title": "Claude: Open Session in Tab"
+      },
+      {
+        "command": "sessionFinder.openInRightPanel",
+        "title": "Claude: Open Session in Right Panel"
       }
     ],
     "configuration": {
@@ -69,6 +83,40 @@
         }
       }
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sessionFinder",
+          "title": "Claude Code Sessions",
+          "icon": "resources/sessions.svg"
+        }
+      ]
+    },
+    "views": {
+      "sessionFinder": [
+        {
+          "type": "webview",
+          "id": "sessionFinder.live",
+          "name": "Sessions",
+          "contextualTitle": "Claude Code Sessions",
+          "icon": "resources/sessions.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "sessionFinder.search",
+          "when": "view == sessionFinder.live",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sessionFinder.refresh",
+          "when": "view == sessionFinder.live",
+          "group": "navigation@2"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "sessionFinder.search",
@@ -96,6 +144,7 @@
     "@types/vscode": "^1.94.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/codicons": "^0.0.46-24",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.21.0",
