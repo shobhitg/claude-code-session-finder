@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0
+
+**A Session View.** From a Sessions row (`V`), the Quick Pick, or the palette
+(`Claude: Open Session View`), open any session — running, finished, or from a
+worktree that no longer exists — in an editor tab, read straight from the
+transcript files without resuming it. Three panes: the **agent tree** (who
+spawned whom, workflow runs grouped, denied spawns as dead ends), a
+**timeline** of when each agent ran and how much overlapped, and the selected
+node's **transcript** as turns: your prompts, Claude's text, tool calls as
+compact rows with collapsed output, images inline, background-agent
+notifications. Click an agent's row or bar, or "open agent →" on the spawning
+tool call, to read that agent. While the session is active the view keeps up
+with the files every two seconds.
+
+Two facts of the transcript format shaped this: a background agent's
+completion arrives as a `<task-notification>` user message whose task-id is the
+agent's filename, so agents spawned *by agents* link up through it; and
+thinking blocks are stored redacted, so the reader marks them rather than
+pretending to show them.
+
+Claude Code has its own in-session "Agent map" (the agents pill in a session's
+header). This view is for the sessions you don't have open.
+
 ## 0.3.0
 
 **A Sessions view.** The activity bar gets a sessions icon. ACTIVE lists every

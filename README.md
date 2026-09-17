@@ -72,6 +72,23 @@ buttons.
 Opening in the right panel uses Claude Code's own "Open in Side Bar", which also
 becomes its default for new sessions until you run "Claude Code: Open in New Tab".
 
+## Read a session
+
+**Claude: Open Session View** (or `V` on a Sessions row, or the tree icon on a
+search result) opens a session in an editor tab without resuming it:
+
+- **Agents** — the tree of everything the session spawned: agents, workflow
+  runs (with their journals), agents spawned by agents, denied spawns.
+- **Timeline** — one bar per agent from spawn to finish; open bars are still
+  running. Click a bar to read that agent.
+- **Transcript** — turns with your prompt, Claude's reply, and each tool call
+  as a row you can expand for its input and output. Images from prompts show
+  inline; thinking is marked, not shown (it is stored redacted).
+
+Works for sessions whose worktree is gone. A running session's view updates as
+the files are written. For a session you already have open, Claude Code's own
+agents pill shows the same tree live.
+
 ## Why it activates at startup
 
 `activationEvents` is `["onStartupFinished"]` on purpose — **do not change it to `[]`.**
