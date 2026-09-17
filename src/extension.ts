@@ -4,7 +4,7 @@ import { showSearchQuickPick } from './surfaces/quickpick.js';
 import { LiveHost } from './live-host.js';
 import { createStatusBar, SHOW_SESSIONS } from './surfaces/statusbar.js';
 import { claimPendingOpen } from './baton.js';
-import { BATON_FILE, batonPath, runOpen, executePlan } from './open.js';
+import { BATON_FILE, batonPath, runOpen, executePlan, openHooks } from './open.js';
 import { LiveViewProvider, VIEW_ID } from './surfaces/live-view.js';
 import { SessionViewManager } from './surfaces/session-view.js';
 import { stateIcon } from './core/rows.js';
@@ -69,6 +69,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
     const sessionId = id ?? await pickSessionId(host);
     if (sessionId) await sessions.open(sessionId);
   }));
+  openHooks.onOpened = (id, where) => live.noteOpened(id, where);
   live.noteActiveTab();
 
   // I2: openFolder focusing an ALREADY-OPEN window is the outcome spec §9 assumes, and

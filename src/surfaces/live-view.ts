@@ -48,7 +48,11 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private indexTimer: ReturnType<typeof setInterval> | undefined;
   /** What the active editor tab is: a Claude Code session tab (known by its label) or one of our Session Views. */
-  private activeTab: { kind: 'claude'; label: string } | { kind: 'own'; sessionId: string } | null = null;
+  private activeTab: { kind: 'claude'; label: string } | { kind: 'own' | 'opened'; sessionId: string } | null = null;
+  /** A session this extension just opened; the Claude Code tab that activates next is its tab. */
+  private opened: { sessionId: string; at: number } | null = null;
+  /** Claude Code tab label → session id, learned from our own opens. Exact where titles are ambiguous. */
+  private readonly learned: Map<string, string>;
   private pendingFilter: { q: string } | null = null;
   private titlesFor: SearchIndex | null = null;
   private titles = new Map<string, string>();
@@ -56,7 +60,29 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
   constructor(private readonly ctx: vscode.ExtensionContext, private readonly host: LiveHost,
               private readonly ownActiveSession: () => string | undefined = () => undefined,
               private readonly log?: vscode.LogOutputChannel) {
+    this.learned = new Map(Object.entries(ctx.workspaceState.get<Record<string, string>>('tabLabels') ?? {}));
     ctx.subscriptions.push(host.onSnapshot(s => this.post(s)));
+  }
+
+  /**
+   * Called from runOpen(): highlight the session at once (the user just chose it), and remember the
+   * Claude Code tab that appears for it, so later switches to that tab resolve by id rather than by
+   * title — three sessions can share one AI title. A right-panel open is not a tab; nothing to learn.
+   */
+  noteOpened(sessionId: string, where: OpenWhere): void {
+    this.activeTab = { kind: 'opened', sessionId };
+    this.postActive();
+    if (where !== 'tab') return;
+    this.opened = { sessionId, at: Date.now() };
+    // Re-activating an already-active tab fires no tab event; one late look covers that path.
+    setTimeout(() => { if (this.opened?.sessionId === sessionId) this.noteActiveTab(); }, 1_500);
+  }
+
+  private learn(label: string, sessionId: string): void {
+    if (this.learned.get(label) === sessionId) return;
+    this.learned.set(label, sessionId);
+    void this.ctx.workspaceState.update('tabLabels', Object.fromEntries(this.learned));
+    this.log?.info(`learned tab label "${label}" → ${sessionId}`);
   }
 
   /**
@@ -71,17 +97,25 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
       this.log?.debug(`active tab: not a webview (${input?.constructor.name ?? 'none'}) — highlight kept`);
       return;
     }
-    if (input.viewType.includes('claudeVSCodePanel')) this.activeTab = { kind: 'claude', label: tab.label };
+    if (input.viewType.includes('claudeVSCodePanel')) {
+      if (this.opened && Date.now() - this.opened.at < 5_000) { this.learn(tab.label, this.opened.sessionId); this.opened = null; }
+      this.activeTab = { kind: 'claude', label: tab.label };
+    }
     else if (input.viewType.includes(SESSION_VIEW_TYPE)) { const id = this.ownActiveSession(); if (id) this.activeTab = { kind: 'own', sessionId: id }; }
     else { this.log?.debug(`active tab: webview ${input.viewType} — not a session`); return; }
     this.log?.info(`active tab: ${input.viewType} "${tab.label}" → session ${this.activeId() ?? 'not found in the list'}`);
+    this.postActive();
+  }
+
+  private postActive(): void {
     if (this.view) void this.view.webview.postMessage({ type: 'active', sessionId: this.activeId() });
   }
 
   private activeId(): string | null {
     const a = this.activeTab;
     if (!a) return null;
-    return a.kind === 'own' ? a.sessionId : resolveTabSession(a.label, this.host.snapshot) ?? null;
+    if (a.kind !== 'claude') return a.sessionId;
+    return this.learned.get(a.label) ?? resolveTabSession(a.label, this.host.snapshot) ?? null;
   }
 
   /** The title-bar search button and `Claude: Filter Sessions`: focus the inline filter, optionally with a query. */

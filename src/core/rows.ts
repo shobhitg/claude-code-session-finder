@@ -94,7 +94,8 @@ export function rowsForHits(hits: SessionHit[], liveness: ReadonlyMap<string, Li
  */
 export function resolveTabSession(label: string, s: Snapshot): string | undefined {
   const l = label.trim(); if (!l) return undefined;
-  const rows = [...s.active, ...s.history];
+  // Several sessions can share one AI title; the one written most recently is the likeliest tab.
+  const rows = [...[...s.active].sort((a, b) => b.lastWriteMs - a.lastWriteMs), ...s.history];
   return (rows.find(r => r.title === l) ?? rows.find(r => r.title.startsWith(l) || l.startsWith(r.title)))?.sessionId;
 }
 

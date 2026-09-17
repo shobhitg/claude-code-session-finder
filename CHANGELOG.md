@@ -38,8 +38,11 @@ what it means.
 
 **The active session is highlighted.** Switch between Claude Code tabs, or
 Session Views, and the matching row in the sidebar is selected and scrolled
-into view. Claude Code names its tabs after the session, so the row is found
-by title; a file or terminal tab leaves the highlight where it was.
+into view. A session opened from here is highlighted at once, and the tab
+Claude Code gives it is remembered, so switching back to that tab resolves by
+id even when several sessions share a title. Tabs opened elsewhere are found
+by title, most recently written first. A file or terminal tab leaves the
+highlight where it was.
 
 ## 0.4.1
 

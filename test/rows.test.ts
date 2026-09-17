@@ -118,6 +118,11 @@ describe('rowsForHits / resolveTabSession', () => {
     expect(resolveTabSession('Ledger GUI', s)).toBe('a');
     expect(resolveTabSession('Match the Figma frame', s)).toBe('c');
     expect(resolveTabSession('Something else entirely', s)).toBeUndefined();
+    // two ACTIVE rows with one title: the most recently written wins, whatever the urgency order
+    const dup = buildSnapshot({ ...index, sessions: [meta({ sessionId: 'x', title: 'Same' }), meta({ sessionId: 'y', title: 'Same' })], prose: [] },
+                              new Map([live('x', { kind: 'attention', reason: 'your-turn' }, 9), live('y', { kind: 'running' }, 50)]));
+    expect(dup.active.map(r => r.sessionId)).toEqual(['x', 'y']);
+    expect(resolveTabSession('Same', dup)).toBe('y');
     expect(resolveTabSession('  ', s)).toBeUndefined();
   });
 });

@@ -16,9 +16,13 @@ export async function openTranscript(file: string): Promise<void> {
   await vscode.window.showTextDocument(doc, { preview: true });
 }
 
+/** Set by activate(): the sidebar learns which tab a session opens as, so its highlight follows exactly. */
+export const openHooks: { onOpened: (sessionId: string, where: OpenWhere) => void } = { onOpened: () => {} };
+
 /** The only place that calls into Claude Code to open a session. L10: never call editor.open directly. */
 export async function runOpen(sessionId: string, where: OpenWhere): Promise<void> {
   for (const c of openCommands(sessionId, where)) await vscode.commands.executeCommand(c.command, ...c.args);
+  openHooks.onOpened(sessionId, where);
 }
 
 /**
