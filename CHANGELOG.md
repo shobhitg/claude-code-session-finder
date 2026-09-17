@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+**A recognisable activity bar icon.** The Sessions view's icon was Claude
+Code's asterisk with a dot — one slot below Claude Code's own asterisk, it
+read as a duplicate. It is now the Marketplace icon's motif, a magnifier
+holding the session asterisk, so the entry point to the Sessions view is
+findable.
+
 ## 0.4.0
 
 **A Session View.** From a Sessions row (`V`), the Quick Pick, or the palette
