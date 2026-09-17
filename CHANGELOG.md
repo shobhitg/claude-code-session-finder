@@ -28,9 +28,10 @@ header). This view is for the sessions you don't have open.
 
 ## 0.3.0
 
-**Renamed to Claude Code Sessions.** It started as a search box for old
-sessions; with live state and a browser it is about all your sessions, so the
-name says so. The extension id is unchanged
+**Renamed.** It started as a search box for old sessions; with live state,
+a browser and agent trees it is about all your sessions, so the name says so:
+*Claude Code Sessions & Agents* on the Marketplace, *Claude Code Sessions* for
+the view inside VS Code. The extension id is unchanged
 (`shobhitg.claude-code-session-finder`) — existing installs update in place,
 and the commands, settings (`sessionFinder.*`) and keybinding are the same.
 

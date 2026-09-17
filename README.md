@@ -1,4 +1,4 @@
-# Claude Code Sessions
+# Claude Code Sessions & Agents
 
 See what every Claude Code session is doing, find any past conversation by what
 was said in it, and read a session's full story — agents included — without
@@ -8,6 +8,7 @@ resuming it.
 
 > Formerly **Claude Code Session Finder**. Same extension id, so an existing
 > install updates in place; the commands, settings and keybinding are unchanged.
+> Inside VS Code the view is simply **Claude Code Sessions**.
 
 ## What is a session?
 
