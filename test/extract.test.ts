@@ -95,3 +95,20 @@ describe('extract against redacted real fixtures', () => {
     expect(meta.cwd!.startsWith('/')).toBe(true);
   });
 });
+
+describe('titles (spec L12)', () => {
+  it('a custom-title beats every ai-title, and the latest custom-title wins', () => {
+    const text = [
+      line({ type: 'custom-title', customTitle: 'My name', timestamp: '2026-08-01T00:00:00Z' }),
+      line({ type: 'ai-title', aiTitle: 'Auto name', timestamp: '2026-08-01T00:00:01Z' }),
+      line({ type: 'custom-title', customTitle: 'My better name', timestamp: '2026-08-01T00:00:02Z' }),
+    ].join('\n');
+    const { meta, prose } = extractSession(f(), text);
+    expect(meta.title).toBe('My better name');
+    expect(prose.filter(p => p.r === 't').map(p => p.x)).toEqual(['My name', 'Auto name', 'My better name']);
+  });
+  it('falls back to the latest ai-title when there is no custom-title', () => {
+    const text = [line({ type: 'ai-title', aiTitle: 'First' }), line({ type: 'ai-title', aiTitle: 'Second' })].join('\n');
+    expect(extractSession(f(), text).meta.title).toBe('Second');
+  });
+});

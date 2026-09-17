@@ -5,14 +5,26 @@ export interface ParsedQuery {
   sinceMs: number | null; deep: boolean; raw: string;
 }
 
-const DAY = 86_400_000;
-const UNIT: Record<string, number> = { d: DAY, w: 7 * DAY, m: 30 * DAY };
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+const UNIT: Record<string, number> = { h: HOUR, d: DAY, w: 7 * DAY, m: 30 * DAY };
+const SPEC = /^(\d+)([hdwm])?$/;
+
+/**
+ * Duration a window spec denotes ("4h", "2d", "1w", bare digits = days), or `fallbackMs`
+ * when the spec is unparseable or "all". Used for sessionFinder.activeWindow (spec L6).
+ */
+export function durationMs(spec: string, fallbackMs: number): number {
+  const m = SPEC.exec(spec.trim().toLowerCase());
+  if (!m) return fallbackMs;
+  return Number(m[1]) * (UNIT[m[2] ?? 'd'] ?? DAY);
+}
 
 /** null = explicit "all time"; undefined = unparseable (caller should fall back) */
 function windowToMs(spec: string, now: number): number | null | undefined {
   const s = spec.trim().toLowerCase();
   if (!s || s === 'all') return null;
-  const m = /^(\d+)([dwm])?$/.exec(s);
+  const m = SPEC.exec(s);
   if (!m) return undefined;
   return now - Number(m[1]) * (UNIT[m[2] ?? 'd'] ?? DAY);
 }

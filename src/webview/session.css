@@ -1,0 +1,128 @@
+/* Session View — agent tree · timeline · transcript reader. Tokens come from tokens.css. */
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; background: var(--s-bg-editor); color: var(--s-fg-editor);
+  font-family: var(--font); font-size: var(--size); line-height: 1.45; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+main:focus-visible { outline: none; }
+
+.app { display: grid; grid-template-rows: auto auto minmax(0, 1fr); grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); height: 100vh; }
+
+/* ─── header ─────────────────────────────────────────────────────────────────── */
+.header { grid-column: 1 / span 2; display: flex; align-items: center; gap: var(--sp-2); min-height: 36px;
+  padding: 0 var(--sp-3); border-bottom: 1px solid var(--s-border); }
+.header__icon { font-size: 16px; }
+.header__title { font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.header__meta { color: var(--s-muted); font-size: var(--size-meta); white-space: nowrap; }
+.header__live { color: var(--st-running); font-size: var(--size-meta); }
+.header__actions { margin-left: auto; display: flex; gap: 2px; }
+.action { width: 26px; height: 26px; border-radius: var(--radius); display: inline-flex; align-items: center; justify-content: center; }
+.action:hover { background: var(--s-toolbar); }
+.action:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+
+/* ─── timeline ───────────────────────────────────────────────────────────────── */
+.timeline { grid-column: 1 / span 2; padding: var(--sp-1) var(--sp-3) var(--sp-2); border-bottom: 1px solid var(--s-border); overflow-x: hidden; }
+.timeline__svg { display: block; width: 100%; }
+.timeline__tick { stroke: var(--s-border); stroke-width: 1; }
+.timeline__label { fill: var(--s-muted); font-family: var(--mono); font-size: 10px; }
+.timeline__now { stroke: var(--st-running); stroke-width: 1; stroke-dasharray: 2 2; }
+.bar { cursor: pointer; }
+/* Status colours are a tint, not a block: labels sit on top in the editor foreground, so keep fills
+   translucent and give the text a halo in the editor background — readable on any theme's chart colour. */
+.bar rect { rx: 3; fill: var(--s-badge-bg); opacity: .55; transition: opacity var(--dur) var(--ease); }
+.bar:hover rect { opacity: .8; }
+.bar--running rect, .bar--launched rect { fill: var(--st-running); }
+.bar--completed rect { fill: var(--st-ok); }
+.bar--failed rect, .bar--failed-spawn rect { fill: var(--st-error); }
+.bar--stopped rect { fill: var(--st-stalled); }
+.bar--unknown rect { fill: var(--st-idle); opacity: .4; }
+.bar--workflow rect { stroke: var(--s-fg); stroke-opacity: .35; stroke-dasharray: 3 2; }
+/* the session bar is the baseline the agents hang under, never a status swatch — after the status rules so it wins */
+.bar.bar--session rect { fill: var(--s-border); opacity: .6; }
+.bar--selected rect { stroke: var(--s-focus); stroke-width: 2; }
+.bar__label { fill: var(--s-fg-editor); font-size: 11px; pointer-events: none;
+  paint-order: stroke fill; stroke: var(--s-bg-editor); stroke-width: 3px; stroke-linejoin: round; stroke-opacity: .85; }
+
+/* ─── tree ───────────────────────────────────────────────────────────────────── */
+.tree { grid-column: 1; overflow: auto; border-right: 1px solid var(--s-border); background: var(--s-bg); color: var(--s-fg); padding: var(--sp-1) 0; }
+.tree__row { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: var(--sp-2); align-items: center;
+  width: 100%; text-align: left; padding: var(--sp-1) var(--sp-2) var(--sp-1) calc(var(--sp-2) + var(--depth, 0) * 14px);
+  min-height: 40px; border-left: 2px solid transparent; transition: background var(--dur) var(--ease); }
+.tree__row:hover { background: var(--s-hover); }
+.tree__row:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+.tree__row[aria-selected="true"] { background: var(--s-sel); color: var(--s-sel-fg); border-left-color: var(--s-focus); }
+.tree__icon { grid-row: 1 / span 2; font-size: 14px; }
+.tree__label { display: flex; gap: var(--sp-1); min-width: 0; }
+.tree__text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tree__tag { flex-shrink: 0; font-family: var(--mono); font-size: var(--size-meta); color: var(--s-muted); }
+.tree__row[aria-selected="true"] .tree__tag { color: inherit; opacity: .85; }
+.tree__meta { grid-column: 2; font-size: var(--size-meta); color: var(--s-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tree__row[aria-selected="true"] .tree__meta { color: inherit; opacity: .85; }
+.tree__row[data-status="running"] .tree__icon, .tree__row[data-status="launched"] .tree__icon { color: var(--st-running); }
+.tree__row[data-status="completed"] .tree__icon { color: var(--st-ok); }
+.tree__row[data-status="failed"] .tree__icon { color: var(--st-error); }
+.tree__row[data-status="stopped"] .tree__icon { color: var(--st-stalled); }
+.tree__row[data-kind="failed-spawn"] { opacity: .75; }
+
+/* ─── reader ─────────────────────────────────────────────────────────────────── */
+.reader { grid-column: 2; overflow: auto; padding: 0 var(--sp-4) var(--sp-6); }
+.reader__head { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: var(--sp-2);
+  padding: var(--sp-2) 0; background: var(--s-bg-editor); border-bottom: 1px solid var(--s-border); }
+.reader__title { font-weight: 600; }
+.reader__meta { color: var(--s-muted); font-size: var(--size-meta); white-space: nowrap; flex-shrink: 0; }
+.reader__more { display: block; margin: var(--sp-3) auto; padding: var(--sp-1) var(--sp-3); border-radius: var(--radius);
+  color: var(--s-link); border: 1px solid var(--s-border); }
+.reader__more:hover { background: var(--s-hover); }
+.empty { padding: var(--sp-4); color: var(--s-muted); }
+
+.turns { display: flex; flex-direction: column; gap: var(--sp-4); padding-top: var(--sp-3); }
+.turn { border-left: 2px solid var(--s-border); padding-left: var(--sp-3); }
+.turn__prompt { display: grid; grid-template-columns: auto 1fr auto; column-gap: var(--sp-2); align-items: baseline; }
+.turn__who { font-size: var(--size-meta); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--s-muted); }
+.turn--notification .turn__who { color: var(--st-running); }
+.turn--meta .turn__who { color: var(--st-idle); }
+.turn--command .turn__who { color: var(--st-idle); }
+.turn--command .turn__prompt-text p { font-family: var(--mono); font-size: var(--mono-size); font-weight: 400; }
+.turn__prompt-text { grid-column: 2; }
+.turn__prompt-text p { margin: 0; white-space: pre-wrap; word-break: break-word; font-weight: 500; }
+.turn--meta .turn__prompt-text p { color: var(--s-muted); font-weight: 400; }
+.turn__meta { grid-column: 3; color: var(--s-muted); font-family: var(--mono); font-size: var(--size-meta); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.item { margin-top: var(--sp-2); }
+.item--text p { margin: 0 0 var(--sp-2); white-space: pre-wrap; word-break: break-word; }
+.item--text p:last-child { margin-bottom: 0; }
+.code, .tool__input, .tool__output { margin: var(--sp-1) 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius);
+  background: var(--s-code-bg); font-family: var(--mono); font-size: var(--mono-size); white-space: pre-wrap; word-break: break-word; overflow: auto; max-height: 420px; }
+.item--thinking { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--s-muted); font-size: var(--size-meta); font-style: italic; }
+.item--context summary { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--s-muted); font-size: var(--size-meta); cursor: pointer; list-style: none; }
+.item--context summary::-webkit-details-marker { display: none; }
+.item--context summary:hover { color: var(--s-fg-editor); }
+.item--image img { display: block; max-width: 100%; max-height: 240px; border-radius: var(--radius); border: 1px solid var(--s-border); }
+
+.tool { margin-top: var(--sp-1); border-radius: var(--radius); }
+.tool__summary { display: flex; align-items: center; gap: var(--sp-2); min-height: 26px; padding: 0 var(--sp-2); border-radius: var(--radius);
+  cursor: pointer; list-style: none; color: var(--s-fg-editor); }
+.tool__summary::-webkit-details-marker { display: none; }
+.tool__summary:hover { background: var(--s-hover); }
+.tool__summary:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+.tool__name { font-family: var(--mono); font-size: var(--size-meta); color: var(--s-muted); }
+.tool__what { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tool__meta { margin-left: auto; color: var(--s-muted); font-family: var(--mono); font-size: var(--size-meta); white-space: nowrap; }
+.tool__link { color: var(--s-link); font-size: var(--size-meta); white-space: nowrap; }
+.tool__link:hover { text-decoration: underline; }
+.tool--error .tool__summary { color: var(--st-error); }
+.tool--pending .tool__meta { color: var(--st-running); }
+.tool__body { padding: 0 var(--sp-2) var(--sp-2); }
+.tool__output { border-left: 2px solid var(--s-border); }
+.tool--error .tool__output { border-left-color: var(--st-error); }
+
+/* ─── narrow pane ────────────────────────────────────────────────────────────── */
+/* A split editor or the right panel: stack the tree above the reader instead of squeezing the reader
+   to a sliver. Last in the file on purpose — it overrides the column placements above. */
+@media (max-width: 560px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 35%) minmax(0, 1fr); }
+  .header { grid-column: 1; grid-row: 1; }
+  .timeline { grid-column: 1; grid-row: 2; }
+  .tree { grid-column: 1; grid-row: 3; border-right: 0; border-bottom: 1px solid var(--s-border); }
+  .reader { grid-column: 1; grid-row: 4; }
+}

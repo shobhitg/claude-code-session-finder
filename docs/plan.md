@@ -1,5 +1,8 @@
 # Claude Code Session Finder — Implementation Plan
 
+> Historical: the plan for 0.1.x, when the extension was the search picker alone. It is
+> **Claude Code Sessions** from 0.3.0; later work is planned under `live-sessions/`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A VS Code extension that content-searches every Claude Code session transcript on the machine and opens the matching session in one keystroke.

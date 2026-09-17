@@ -7,9 +7,12 @@ import { parseQuery, search, snippet, withWindow, type SessionHit } from '../cor
 import { planOpen } from '../core/resolve.js';
 import type { SearchIndex } from '../core/types.js';
 import { executePlan, folderUri, openTranscript } from '../open.js';
+import { projectLabel, stateIcon } from '../core/rows.js';
+import type { Liveness } from '../core/state.js';
 
 interface Row extends vscode.QuickPickItem { hit?: SessionHit; action?: 'all' | 'deep' }
 
+const OPEN_VIEW = 'Open session view';
 const COPY_LINK = 'Copy deep link';
 const REVEAL_FOLDER = 'Reveal folder';
 const OPEN_TRANSCRIPT = 'Open transcript';
@@ -22,19 +25,23 @@ const ago = (ts: number) => {
   return d <= 0 ? 'today' : d === 1 ? '1d ago' : `${d}d ago`;
 };
 
-function toRow(hit: SessionHit): Row {
+function toRow(hit: SessionHit, liveness: ReadonlyMap<string, Liveness>): Row {
   const m = hit.session;
-  const bits = [m.projectDir.replace(/^-/, '').split('--').pop() ?? '', m.branches.at(-1) ?? '', ago(m.lastTs)];
+  const bits = [projectLabel(m.projectDir), m.branches.at(-1) ?? '', ago(m.lastTs)];
   if (m.prLinks.length) bits.push(`PR #${m.prLinks.at(-1)}`);
   if (!m.cwdExists) bits.push('⚠ folder missing');
+  // Stage 1 (spec §9.3): the glyph is the session's live state; history keeps the sparkle.
+  const live = liveness.get(m.sessionId);
+  const glyph = live ? stateIcon({ state: live.state.kind, ...(live.state.kind === 'attention' ? { reason: live.state.reason } : {}) }) : 'sparkle';
   return {
-    label: `$(sparkle) ${m.title ?? hit.best?.text.slice(0, 60) ?? m.sessionId}`,
+    label: `$(${glyph}) ${m.title ?? hit.best?.text.slice(0, 60) ?? m.sessionId}`,
     description: bits.filter(Boolean).join(' · '),
     detail: hit.best ? `${snippet(hit.best.text, hit.best.index)}   (${hit.matchCount} matches)` : undefined,
     alwaysShow: true,                    // F7 — MUST be set or VS Code re-filters on label
     // I5: VS Code's QuickPick has no modifier-accept API, so spec §9's Cmd/Ctrl+Enter
     // "open the raw transcript" action is a third item button instead.
     buttons: [
+      { iconPath: new vscode.ThemeIcon('type-hierarchy'), tooltip: OPEN_VIEW },
       { iconPath: new vscode.ThemeIcon('link'), tooltip: COPY_LINK },
       { iconPath: new vscode.ThemeIcon('folder'), tooltip: REVEAL_FOLDER },
       { iconPath: new vscode.ThemeIcon('file-code'), tooltip: OPEN_TRANSCRIPT },
@@ -43,7 +50,10 @@ function toRow(hit: SessionHit): Row {
   };
 }
 
-export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise<void> {
+export async function showSearchQuickPick(
+  ctx: vscode.ExtensionContext,
+  liveness: ReadonlyMap<string, Liveness> = new Map(),
+): Promise<void> {
   const cacheFile = join(ctx.globalStorageUri.fsPath, 'index.json');
   const defaultWindow = vscode.workspace.getConfiguration('sessionFinder').get<string>('defaultWindow', '60d');
 
@@ -106,12 +116,12 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
         { cancelled: () => token !== renderToken }); // superseded mid-scan, or picker disposed
       if (token !== renderToken) return;             // a newer render has already taken over
       qp.busy = false;
-      qp.items = hits.slice(0, 50).map(toRow);
+      qp.items = hits.slice(0, 50).map(h => toRow(h, liveness));
       return;
     }
 
     const hits = search(index, q, Date.now()).filter(h => !removedIds.has(h.session.sessionId));
-    const rows: Row[] = hits.slice(0, 50).map(toRow);
+    const rows: Row[] = hits.slice(0, 50).map(h => toRow(h, liveness));
     if (hits.length <= 2 && q.sinceMs !== null) {
       rows.push({ label: `$(history) Search all time — ${index.sessions.length} sessions`,
                   alwaysShow: true, action: 'all' });
@@ -135,7 +145,10 @@ export async function showSearchQuickPick(ctx: vscode.ExtensionContext): Promise
     if (!m) return;
     try {
       const tooltip = e.button.tooltip ?? '';
-      if (tooltip === COPY_LINK) {
+      if (tooltip === OPEN_VIEW) {
+        qp.hide();
+        await vscode.commands.executeCommand('sessionFinder.openSessionView', m.sessionId);
+      } else if (tooltip === COPY_LINK) {
         await vscode.env.clipboard.writeText(`vscode://anthropic.claude-code/open?session=${m.sessionId}`);
         vscode.window.setStatusBarMessage('Deep link copied', 3000);
       } else if (tooltip === OPEN_TRANSCRIPT) {

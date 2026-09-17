@@ -1,5 +1,9 @@
 # Claude Code Session Finder — Design
 
+> The extension shipped under this name through 0.2.x and is **Claude Code Sessions** from 0.3.0
+> (same extension id, `shobhitg.claude-code-session-finder`). This document is the original search
+> design; `live-sessions/design.md` covers the live state, the Sessions view and the Session View.
+
 **Status:** approved design, not yet implemented
 **Date:** 2026-08-24
 **Repo:** github.com/shobhitg/claude-code-session-finder (MIT, public)

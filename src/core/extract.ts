@@ -7,7 +7,7 @@ export type BareMeta = Omit<SessionMeta, 'cwdExists' | 'extraFiles'>;
 interface Part { type?: string; text?: string }
 interface Line {
   type?: string; cwd?: string; gitBranch?: string; timestamp?: string;
-  isSidechain?: boolean; aiTitle?: string; prNumber?: number;
+  isSidechain?: boolean; aiTitle?: string; customTitle?: string; prNumber?: number;
   message?: { content?: string | Part[] };
 }
 
@@ -30,7 +30,8 @@ export function extractSession(file: SourceFile, text: string): { meta: BareMeta
   const branches = new Set<string>();
   const prLinks = new Set<number>();
   let cwd: string | null = null;
-  let title: string | null = null;
+  let aiTitle: string | null = null;
+  let customTitle: string | null = null;      // L12: written by "Rename Session Tab"; beats every ai-title
   let firstTs = 0, lastTs = 0, msgCount = 0;
 
   for (const raw of text.split('\n')) {
@@ -47,7 +48,8 @@ export function extractSession(file: SourceFile, text: string): { meta: BareMeta
     }
     const t = Number.isNaN(ts) ? 0 : ts;
 
-    if (d.type === 'ai-title' && d.aiTitle) { title = d.aiTitle; prose.push({ r: 't', t, x: d.aiTitle }); continue; }
+    if (d.type === 'ai-title' && d.aiTitle) { aiTitle = d.aiTitle; prose.push({ r: 't', t, x: d.aiTitle }); continue; }
+    if (d.type === 'custom-title' && d.customTitle) { customTitle = d.customTitle; prose.push({ r: 't', t, x: d.customTitle }); continue; }
     if (d.type === 'pr-link' && typeof d.prNumber === 'number') { prLinks.add(d.prNumber); continue; }
 
     let role: Role | null = null;
@@ -61,7 +63,7 @@ export function extractSession(file: SourceFile, text: string): { meta: BareMeta
   return {
     meta: {
       sessionId: file.sessionId, file: file.path, projectDir: file.projectDir,
-      cwd, title, branches: [...branches], prLinks: [...prLinks],
+      cwd, title: customTitle ?? aiTitle, branches: [...branches], prLinks: [...prLinks],
       firstTs, lastTs, msgCount, mtimeMs: file.mtimeMs, size: file.size,
     },
     prose,

@@ -1,8 +1,8 @@
 {
   "name": "claude-code-session-finder",
-  "displayName": "Claude Code Session Finder",
-  "description": "Search the contents of your Claude Code sessions and jump straight to one.",
-  "version": "0.1.1",
+  "displayName": "Claude Code Sessions",
+  "description": "See which Claude Code sessions are running or waiting on you, browse and search every session's content, and open any of them in a tab or the right panel.",
+  "version": "0.4.0",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {
@@ -19,9 +19,10 @@
   "keywords": [
     "claude",
     "claude code",
-    "search",
     "sessions",
-    "history"
+    "search",
+    "history",
+    "status"
   ],
   "main": "./dist/extension.js",
   "extensionDependencies": [
@@ -34,18 +35,92 @@
     "commands": [
       {
         "command": "sessionFinder.search",
-        "title": "Claude: Search Sessions"
+        "title": "Claude: Search Sessions",
+        "icon": "$(search)"
+      },
+      {
+        "command": "sessionFinder.showSessions",
+        "title": "Claude: Show Sessions"
+      },
+      {
+        "command": "sessionFinder.refresh",
+        "title": "Claude: Refresh Sessions",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sessionFinder.openInTab",
+        "title": "Claude: Open Session in Tab"
+      },
+      {
+        "command": "sessionFinder.openInRightPanel",
+        "title": "Claude: Open Session in Right Panel"
+      },
+      {
+        "command": "sessionFinder.openSessionView",
+        "title": "Claude: Open Session View"
       }
     ],
     "configuration": {
-      "title": "Claude Code Session Finder",
+      "title": "Claude Code Sessions",
       "properties": {
         "sessionFinder.defaultWindow": {
           "type": "string",
           "default": "60d",
           "description": "Default recency window for searches, e.g. 30d, 60d, all. Exact-identifier queries such as pr:123 ignore it entirely. Widen any search inline with since:all."
+        },
+        "sessionFinder.activeWindow": {
+          "type": "string",
+          "default": "4h",
+          "pattern": "^\\s*\\d+\\s*[hdwm]?\\s*$",
+          "description": "Sessions written within this window are ACTIVE and show a live state (running / needs you). Examples: 2h, 8h, 1d. Everything older is history."
+        },
+        "sessionFinder.toolQuietSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 5,
+          "description": "A session that has been waiting on a tool call for longer than this is shown as \"waiting on a tool or a permission prompt\". Raise it if your tests or builds run long."
+        },
+        "sessionFinder.stalledMinutes": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "description": "A session whose model has written nothing for this long is shown as stalled. Long answers are normal for several minutes, which is why the default is not lower."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sessionFinder",
+          "title": "Claude Code Sessions",
+          "icon": "resources/sessions.svg"
+        }
+      ]
+    },
+    "views": {
+      "sessionFinder": [
+        {
+          "type": "webview",
+          "id": "sessionFinder.live",
+          "name": "Sessions",
+          "contextualTitle": "Claude Code Sessions",
+          "icon": "resources/sessions.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "sessionFinder.search",
+          "when": "view == sessionFinder.live",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sessionFinder.refresh",
+          "when": "view == sessionFinder.live",
+          "group": "navigation@2"
+        }
+      ]
     },
     "keybindings": [
       {
@@ -64,7 +139,7 @@
     "lint": "eslint src test --ext .ts",
     "check:fixtures": "node scripts/check-fixtures.mjs test/fixtures",
     "vscode:prepublish": "node esbuild.mjs --no-sourcemap",
-    "package": "npx --no @vscode/vsce package",
+    "package": "npx --no @vscode/vsce package --no-dependencies",
     "publish:ovsx": "ovsx publish -p $OVSX_TOKEN",
     "publish:vsce": "vsce publish"
   },
@@ -74,6 +149,7 @@
     "@types/vscode": "^1.94.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/codicons": "^0.0.46-24",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.21.0",

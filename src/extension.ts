@@ -1,8 +1,15 @@
 import * as vscode from 'vscode';
 import { readFile, unlink } from 'node:fs/promises';
 import { showSearchQuickPick } from './surfaces/quickpick.js';
+import { LiveHost } from './live-host.js';
+import { createStatusBar, SHOW_SESSIONS } from './surfaces/statusbar.js';
 import { claimPendingOpen } from './baton.js';
-import { BATON_FILE, batonPath } from './open.js';
+import { BATON_FILE, batonPath, runOpen, executePlan } from './open.js';
+import { LiveViewProvider, VIEW_ID } from './surfaces/live-view.js';
+import { SessionViewManager } from './surfaces/session-view.js';
+import { stateIcon } from './core/rows.js';
+import { planOpen } from './core/resolve.js';
+import type { OpenWhere } from './core/open-args.js';
 
 async function tryClaimPendingOpen(ctx: vscode.ExtensionContext): Promise<void> {
   const path = batonPath(ctx);
@@ -12,9 +19,9 @@ async function tryClaimPendingOpen(ctx: vscode.ExtensionContext): Promise<void> 
     myFolder: vscode.workspace.workspaceFolders?.[0]?.uri.path,
     // M3: the only executeCommand that was not wrapped. A missing Claude Code command
     // here must not become an unhandled rejection during activation.
-    openSession: async id => {
+    openSession: async (id, where) => {
       try {
-        await vscode.commands.executeCommand('claude-vscode.editor.open', id, undefined);
+        await runOpen(id, where);
       } catch {
         vscode.window.showErrorMessage('Claude Code did not accept the handed-off session.');
       }
@@ -27,9 +34,30 @@ const claim = (ctx: vscode.ExtensionContext) =>
     vscode.window.showErrorMessage(`Could not open the handed-off session: ${String(err)}`));
 
 export function activate(ctx: vscode.ExtensionContext): void {
+  // Stage 1 (spec §9.2): the status bar is the glanceable answer to "which sessions are running?".
+  const log = vscode.window.createOutputChannel('Claude Code Sessions', { log: true });
+  const host = new LiveHost(ctx, log);
+  const status = createStatusBar(ctx);
+  ctx.subscriptions.push(log, host, host.onSnapshot(s => status.update(s)));
+  // Until the sidebar browser exists (Stage 2) the session list IS the Quick Pick.
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('sessionFinder.search', () => showSearchQuickPick(ctx)),
+    vscode.window.registerWebviewViewProvider(VIEW_ID, new LiveViewProvider(ctx, host)),
+    vscode.commands.registerCommand(SHOW_SESSIONS, () => vscode.commands.executeCommand(`${VIEW_ID}.focus`)),
+    vscode.commands.registerCommand('sessionFinder.refresh', () => Promise.all([host.sweepNow(), host.refreshIndex()])),
+    vscode.commands.registerCommand('sessionFinder.openInTab', (id?: string) => openFromPalette(ctx, host, id, 'tab')),
+    vscode.commands.registerCommand('sessionFinder.openInRightPanel', (id?: string) => openFromPalette(ctx, host, id, 'right')),
   );
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand('sessionFinder.search', () => showSearchQuickPick(ctx, host.liveness)),
+  );
+
+  // Stage 3: the Session View — agent tree, timeline and a readable transcript for ANY session,
+  // read from disk without resuming it. Opened from a Sessions row, a Quick Pick button, or the palette.
+  const sessions = new SessionViewManager(ctx, host, log);
+  ctx.subscriptions.push(sessions, vscode.commands.registerCommand('sessionFinder.openSessionView', async (id?: string) => {
+    const sessionId = id ?? await pickSessionId(host);
+    if (sessionId) await sessions.open(sessionId);
+  }));
 
   // I2: openFolder focusing an ALREADY-OPEN window is the outcome spec §9 assumes, and
   // that window's extension host is already activated — activate() never runs again. Watch
@@ -55,3 +83,32 @@ export function activate(ctx: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void { /* nothing to tear down */ }
+
+/** Palette entry points: pick an ACTIVE session (or take an id) and open it where asked. */
+async function openFromPalette(ctx: vscode.ExtensionContext, host: LiveHost, sessionId: string | undefined, where: OpenWhere): Promise<void> {
+  let id = sessionId;
+  if (!id) {
+    const rows = host.snapshot.active;
+    const picked = await vscode.window.showQuickPick(
+      rows.map(r => ({ label: `$(${stateIcon(r)}) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '),
+                       id: r.sessionId, alwaysShow: true })),                                   // F7
+      { placeHolder: rows.length ? 'Open which session?' : 'No active sessions' });
+    id = picked?.id;
+  }
+  if (!id) return;
+  const m = host.session(id);
+  if (!m) { vscode.window.showWarningMessage('That session is not in the index yet — try again in a moment.'); return; }
+  const folders = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.path);
+  await executePlan(planOpen(m, folders), ctx, where);
+}
+
+/** Palette entry for the Session View: any ACTIVE or recent session. */
+async function pickSessionId(host: LiveHost): Promise<string | undefined> {
+  const { active, history } = host.snapshot;
+  const rows = [
+    ...active.map(r => ({ label: `$(${stateIcon(r)}) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '), id: r.sessionId, alwaysShow: true })),
+    ...history.map(r => ({ label: `$(history) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '), id: r.sessionId, alwaysShow: true })),
+  ];
+  const picked = await vscode.window.showQuickPick(rows, { placeHolder: rows.length ? 'Open the Session View for…' : 'No sessions indexed yet' });
+  return picked?.id;
+}

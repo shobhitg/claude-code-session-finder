@@ -16,3 +16,6 @@ esbuild.mjs
 **/*.map
 .gitignore
 *.vsix
+.vscode-test
+.worktrees/**
+.worktrees
