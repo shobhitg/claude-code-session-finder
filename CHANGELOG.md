@@ -28,6 +28,14 @@ record (up to the whole file, rarely), and recency alone decides membership:
 written within `sessionFinder.activeWindow` (4 h by default) means ACTIVE, and
 an unknown verdict merely shows as running.
 
+**Interrupted and asked-a-question are states of their own.** Pressing `Esc`
+writes a user message (`[Request interrupted by user]`), which read as "the
+model is generating", so an interrupted session spun forever. It now shows ⊘
+"interrupted" at once. A pending `AskUserQuestion` used to be a slow tool
+until the 60-second bell; it now shows `?` "asks you" immediately and sorts
+first. A finished turn reads "done · N ago". Every glyph has a tooltip saying
+what it means.
+
 **The active session is highlighted.** Switch between Claude Code tabs, or
 Session Views, and the matching row in the sidebar is selected and scrolled
 into view. Claude Code names its tabs after the session, so the row is found

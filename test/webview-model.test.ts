@@ -29,9 +29,11 @@ describe('timeLabel (spec §10 table)', () => {
     expect(timeLabel(live({ lastWriteMs: now - 10 * S }), now)).toBe('just now');
     expect(timeLabel(live({ lastWriteMs: now - 2 * M }), now)).toBe('quiet 2 m');
   });
-  it('tool-or-permission says quiet; your-turn says ago; stalled is bare', () => {
+  it('tool-or-permission says quiet; your-turn says done; a question asks; an interruption says so; stalled is bare', () => {
     expect(timeLabel(live({ state: 'attention', reason: 'tool-or-permission', lastWriteMs: now - 3 * M }), now)).toBe('quiet 3 m');
-    expect(timeLabel(live({ state: 'attention', reason: 'your-turn', lastWriteMs: now - 3 * M }), now)).toBe('3 m ago');
+    expect(timeLabel(live({ state: 'attention', reason: 'your-turn', lastWriteMs: now - 3 * M }), now)).toBe('done · 3 m ago');
+    expect(timeLabel(live({ state: 'attention', reason: 'question', lastWriteMs: now - 40 * S }), now)).toBe('asks you · 40 s');
+    expect(timeLabel(live({ state: 'attention', reason: 'interrupted', lastWriteMs: now - 2 * M }), now)).toBe('interrupted · 2 m');
     expect(timeLabel(live({ state: 'attention', reason: 'stalled', lastWriteMs: now - 2.1 * H }), now)).toBe('2.1 h');
   });
 });

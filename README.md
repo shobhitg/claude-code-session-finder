@@ -43,9 +43,13 @@ view and in search results:
 | Glyph | State | Meaning |
 |---|---|---|
 | `⟳` spinning | running | the model is working — including long answers, which write nothing for a while |
+| `?` | asks you | Claude asked a question (`AskUserQuestion`) and is waiting for the answer |
 | `🔔` | needs you | waiting on a tool call for a while: usually a **permission prompt**, sometimes a slow tool |
-| `💬` | your turn | Claude finished its turn and is waiting for you |
+| `💬` | done | Claude finished its turn and is waiting for you |
+| `⊘` | interrupted | you stopped it (`Esc`); nothing is running until you type again |
 | `⚠` | stalled | nothing written for 15+ minutes mid-turn; probably abandoned |
+
+Hover a glyph for the sentence behind it. Rows are ordered by how much they need you: question, permission, done, interrupted, running, stalled.
 
 State is derived from the last conversational record of each recently written
 transcript, so a session in another window, another worktree, or a terminal

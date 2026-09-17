@@ -1,4 +1,4 @@
-import { stateIcon, type Snapshot, type LiveRow, type HistoryRow, type SearchRow } from '../core/rows.js';
+import { stateIcon, stateLabel, type Snapshot, type LiveRow, type HistoryRow, type SearchRow } from '../core/rows.js';
 
 export interface RowVM {
   kind: 'session'; sessionId: string; title: string; meta: string; time: string; iconClass: string;
@@ -7,6 +7,8 @@ export interface RowVM {
   snippet?: string;
   /** the session behind the active editor tab */
   selected: boolean;
+  /** one sentence for the glyph's tooltip */
+  stateLabel: string;
 }
 export interface LinkVM { kind: 'link'; title: string; meta: string; iconClass: string; action: 'search' | 'scope' }
 export interface SectionVM {
@@ -38,7 +40,9 @@ export function timeLabel(row: Pick<LiveRow, 'state' | 'reason' | 'lastWriteMs'>
   if (row.state === 'running') return quiet < 45_000 ? 'just now' : `quiet ${fmtDuration(quiet)}`;
   switch (row.reason) {
     case 'tool-or-permission': return `quiet ${fmtDuration(quiet)}`;
-    case 'your-turn': return `${fmtDuration(quiet)} ago`;
+    case 'question': return `asks you · ${fmtDuration(quiet)}`;
+    case 'your-turn': return `done · ${fmtDuration(quiet)} ago`;
+    case 'interrupted': return `interrupted · ${fmtDuration(quiet)}`;
     default: return fmtDuration(quiet);
   }
 }
@@ -60,7 +64,7 @@ function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
   const vm: RowVM = {
     kind: 'session', sessionId: r.sessionId, title: r.title, meta: metaLabel(r), time: timeLabel(r, now),
     iconClass: iconClass(r.state === 'running' ? runningIcon(opts.reducedMotion) : stateIcon(r)), state: r.state,
-    missing: !r.cwdExists, selected: r.sessionId === opts.activeId,
+    missing: !r.cwdExists, selected: r.sessionId === opts.activeId, stateLabel: stateLabel(r),
   };
   if (r.reason) vm.reason = r.reason;
   return vm;
@@ -70,6 +74,7 @@ function historyRow(r: HistoryRow, opts: ViewOpts): RowVM {
   return {
     kind: 'session', sessionId: r.sessionId, title: r.title, meta: metaLabel(r), time: historyLabel(r),
     iconClass: iconClass('history'), state: 'history', missing: !r.cwdExists, selected: r.sessionId === opts.activeId,
+    stateLabel: 'Finished earlier',
   };
 }
 

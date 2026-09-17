@@ -214,10 +214,18 @@ function renderReader(): HTMLElement {
 
 // ---------------------------------------------------------------- composition
 
+/** Swap in a fresh tree without losing where the user had scrolled it — this runs every second while live. */
+function replaceTree(old: Element | null, next: HTMLElement): void {
+  const top = old?.scrollTop ?? 0;
+  if (old) old.replaceWith(next); else root.append(next);
+  next.scrollTop = top;
+}
+
 function renderTop(): void {
   if (!graph) return;
   const [header, timeline, tree] = [root.querySelector('.header'), root.querySelector('.timeline'), root.querySelector('.tree')];
-  header?.replaceWith(renderHeader()); timeline?.replaceWith(renderTimeline()); tree?.replaceWith(renderTree());
+  header?.replaceWith(renderHeader()); timeline?.replaceWith(renderTimeline());
+  replaceTree(tree, renderTree());
 }
 
 function render(): void {
@@ -225,8 +233,11 @@ function render(): void {
   const oldReader = root.querySelector<HTMLElement>('.reader');
   const stickToBottom = oldReader ? oldReader.scrollHeight - oldReader.scrollTop - oldReader.clientHeight < 40 : true;
   const scrollTop = oldReader?.scrollTop ?? 0;
+  const treeTop = root.querySelector('.tree')?.scrollTop ?? 0;
   const reader = renderReader();
-  root.replaceChildren(renderHeader(), renderTimeline(), renderTree(), reader);
+  const tree = renderTree();
+  root.replaceChildren(renderHeader(), renderTimeline(), tree, reader);
+  tree.scrollTop = treeTop;
   reader.scrollTop = live && stickToBottom ? reader.scrollHeight : scrollTop;
 }
 

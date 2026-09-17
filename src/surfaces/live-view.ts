@@ -54,7 +54,8 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
   private titles = new Map<string, string>();
 
   constructor(private readonly ctx: vscode.ExtensionContext, private readonly host: LiveHost,
-              private readonly ownActiveSession: () => string | undefined = () => undefined) {
+              private readonly ownActiveSession: () => string | undefined = () => undefined,
+              private readonly log?: vscode.LogOutputChannel) {
     ctx.subscriptions.push(host.onSnapshot(s => this.post(s)));
   }
 
@@ -66,10 +67,14 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
   noteActiveTab(): void {
     const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
     const input = tab?.input;
-    if (!tab || !(input instanceof vscode.TabInputWebview)) return;
+    if (!tab || !(input instanceof vscode.TabInputWebview)) {
+      this.log?.debug(`active tab: not a webview (${input?.constructor.name ?? 'none'}) — highlight kept`);
+      return;
+    }
     if (input.viewType.includes('claudeVSCodePanel')) this.activeTab = { kind: 'claude', label: tab.label };
     else if (input.viewType.includes(SESSION_VIEW_TYPE)) { const id = this.ownActiveSession(); if (id) this.activeTab = { kind: 'own', sessionId: id }; }
-    else return;
+    else { this.log?.debug(`active tab: webview ${input.viewType} — not a session`); return; }
+    this.log?.info(`active tab: ${input.viewType} "${tab.label}" → session ${this.activeId() ?? 'not found in the list'}`);
     if (this.view) void this.view.webview.postMessage({ type: 'active', sessionId: this.activeId() });
   }
 

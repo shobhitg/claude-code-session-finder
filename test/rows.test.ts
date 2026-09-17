@@ -37,6 +37,8 @@ describe('stateIcon', () => {
     expect(stateIcon({ state: 'attention', reason: 'tool-or-permission' })).toBe('bell-dot');
     expect(stateIcon({ state: 'attention', reason: 'your-turn' })).toBe('comment-discussion');
     expect(stateIcon({ state: 'attention', reason: 'stalled' })).toBe('warning');
+    expect(stateIcon({ state: 'attention', reason: 'question' })).toBe('question');
+    expect(stateIcon({ state: 'attention', reason: 'interrupted' })).toBe('circle-slash');
   });
 });
 

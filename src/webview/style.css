@@ -64,7 +64,9 @@ main:focus-visible { outline: none; }
 @keyframes row-in { from { opacity: 0; } to { opacity: 1; } }
 .row:hover { background: var(--s-hover); }
 .row:focus-visible, .row[aria-selected="true"] { outline: 1px solid var(--s-focus); outline-offset: -1px; }
-.row[aria-selected="true"] { background: var(--s-sel); color: var(--s-sel-fg); }
+/* The session behind the active editor tab: selection colour, a 3px focus-colour bar, bold title. */
+.row[aria-selected="true"] { background: var(--s-sel); color: var(--s-sel-fg); box-shadow: inset 3px 0 0 var(--s-focus); }
+.row[aria-selected="true"] .row__title { font-weight: 600; }
 .row[aria-selected="true"] .row__meta,
 .row[aria-selected="true"] .row__time { color: inherit; opacity: .85; }
 
@@ -99,7 +101,13 @@ main:focus-visible { outline: none; }
 .row[data-reason="tool-or-permission"]::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--st-needs);
 }
+.row[data-reason="question"] .row__icon { color: var(--st-needs); }
+.row[data-reason="question"] .row__title { font-weight: 600; }
+.row[data-reason="question"]::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--st-needs);
+}
 .row[data-reason="your-turn"] .row__icon { color: var(--s-fg); }
+.row[data-reason="interrupted"] .row__icon { color: var(--st-stalled); }
 .row[data-reason="stalled"] .row__icon { color: var(--st-stalled); }
 .row[data-reason="stalled"] { opacity: .7; }
 .row[data-state="history"] .row__icon { color: var(--st-idle); }

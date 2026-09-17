@@ -97,7 +97,7 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
     return li;
   }
   const li = h('li', { class: `row${r.snippet ? ' row--snippet' : ''}`, role: 'option', tabindex: '-1',
-                       'data-state': r.state, 'data-id': r.sessionId, title: r.title, 'aria-selected': String(r.selected) });
+                       'data-state': r.state, 'data-id': r.sessionId, title: `${r.title} — ${r.stateLabel}`, 'aria-selected': String(r.selected) });
   if (r.reason) li.dataset.reason = r.reason;
   const actions = h('span', { class: 'row__actions' },
     actionButton('type-hierarchy', 'Open session view', () => post({ type: 'view', sessionId: r.sessionId })),
@@ -110,7 +110,7 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
   const meta = h('span', { class: 'row__meta' }, r.meta);
   if (r.missing) meta.append(h('span', { class: 'row__missing' }, '⚠ folder missing'));
   li.append(
-    h('i', { class: `row__icon ${r.iconClass}`, 'aria-hidden': 'true' }),
+    h('i', { class: `row__icon ${r.iconClass}`, title: r.stateLabel, 'aria-label': r.stateLabel, role: 'img' }),
     h('span', { class: 'row__title' }, r.title),
     h('span', { class: 'row__time' }, r.time),
     actions,

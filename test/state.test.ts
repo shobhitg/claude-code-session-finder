@@ -36,6 +36,18 @@ describe('classifyTail', () => {
     expect(classifyTail(system('away_summary'))).toBe('turn-ended');
     expect(classifyTail(system('local_command'))).toBe('turn-ended');
   });
+  it('an interruption is its own verdict — Esc writes a user message, but nothing is generating', () => {
+    expect(classifyTail(line({ type: 'user', message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } }))).toBe('interrupted');
+    expect(classifyTail(line({ type: 'user', message: { content: '[Request interrupted by user for tool use]' } }))).toBe('interrupted');
+    expect(classifyTail([line({ type: 'user', message: { content: '[Request interrupted by user]' } }), sidecars].join('\n'))).toBe('interrupted');
+    expect(classifyTail(line({ type: 'user', message: { content: 'please do not [Request interrupted by user] literally' } }))).toBe('awaiting-model');
+  });
+  it('a pending AskUserQuestion is awaiting-answer, not a slow tool', () => {
+    const ask = line({ type: 'assistant', message: { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't', name: 'AskUserQuestion', input: {} }] } });
+    expect(classifyTail(ask)).toBe('awaiting-answer');
+    expect(classifyTail([ask, sidecars].join('\n'))).toBe('awaiting-answer');
+    expect(classifyTail(line({ type: 'assistant', message: { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't', name: 'Bash', input: {} }] } }))).toBe('awaiting-tool');
+  });
   it('a system record that is not a turn boundary is skipped, not a verdict', () => {
     expect(classifyTail([assistant('tool_use'), system('compact_boundary')].join('\n'))).toBe('awaiting-tool');
   });
@@ -57,6 +69,10 @@ describe('resolveState (spec §7 table)', () => {
   it('turn-ended is your turn regardless of quiet time', () => {
     expect(resolveState('turn-ended', 0, t)).toEqual({ kind: 'attention', reason: 'your-turn' });
     expect(resolveState('turn-ended', 10 * 3_600_000, t)).toEqual({ kind: 'attention', reason: 'your-turn' });
+  });
+  it('a question and an interruption need you at once, however fresh', () => {
+    expect(resolveState('awaiting-answer', 0, t)).toEqual({ kind: 'attention', reason: 'question' });
+    expect(resolveState('interrupted', 0, t)).toEqual({ kind: 'attention', reason: 'interrupted' });
   });
   it('awaiting-tool flips at toolQuietMs', () => {
     expect(resolveState('awaiting-tool', t.toolQuietMs - 1, t)).toEqual({ kind: 'running' });

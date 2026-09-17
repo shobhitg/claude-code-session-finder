@@ -32,14 +32,28 @@ export function stateIcon(row: { state: 'running' | 'attention'; reason?: Attent
   if (row.state === 'running') return 'loading~spin';
   switch (row.reason) {
     case 'tool-or-permission': return 'bell-dot';
+    case 'question': return 'question';
     case 'your-turn': return 'comment-discussion';
+    case 'interrupted': return 'circle-slash';
     default: return 'warning';
+  }
+}
+
+/** One sentence per state — the glyph's tooltip everywhere it is drawn. */
+export function stateLabel(row: { state: 'running' | 'attention'; reason?: AttentionReason }): string {
+  if (row.state === 'running') return 'Claude is working';
+  switch (row.reason) {
+    case 'question': return 'Claude asked you a question';
+    case 'tool-or-permission': return 'Waiting on a tool call or a permission prompt';
+    case 'your-turn': return 'Claude finished — your turn';
+    case 'interrupted': return 'Interrupted — waiting for you';
+    default: return 'Stalled — nothing written for a while';
   }
 }
 
 /** Spec §6 ordering: things that need you, then things that are working, then things probably dead. */
 const RANK: Record<string, number> = {
-  'attention/tool-or-permission': 0, 'attention/your-turn': 1, running: 2, 'attention/stalled': 3,
+  'attention/question': 0, 'attention/tool-or-permission': 1, 'attention/your-turn': 2, 'attention/interrupted': 3, running: 4, 'attention/stalled': 5,
 };
 const rank = (l: Liveness) =>
   RANK[l.state.kind === 'attention' ? `attention/${l.state.reason}` : 'running'] ?? 9;
