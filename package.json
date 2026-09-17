@@ -61,7 +61,7 @@
       }
     ],
     "configuration": {
-      "title": "Claude Code Session Finder",
+      "title": "Claude Code Sessions",
       "properties": {
         "sessionFinder.defaultWindow": {
           "type": "string",

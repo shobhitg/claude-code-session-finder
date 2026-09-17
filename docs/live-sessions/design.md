@@ -1,4 +1,8 @@
-# Claude Code Session Finder — Live Sessions & Browser — Design
+# Claude Code Sessions — Live Sessions & Browser — Design
+
+> Written while the extension was still called *Claude Code Session Finder*; Stage 2 renamed it
+> to **Claude Code Sessions** (the extension id did not change). Mentions of "Session Finder" below
+> refer to this same extension.
 
 **Status:** design for review, not yet implemented
 **Date:** 2026-09-16

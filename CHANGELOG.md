@@ -28,6 +28,12 @@ header). This view is for the sessions you don't have open.
 
 ## 0.3.0
 
+**Renamed to Claude Code Sessions.** It started as a search box for old
+sessions; with live state and a browser it is about all your sessions, so the
+name says so. The extension id is unchanged
+(`shobhitg.claude-code-session-finder`) — existing installs update in place,
+and the commands, settings (`sessionFinder.*`) and keybinding are the same.
+
 **A Sessions view.** The activity bar gets a sessions icon. ACTIVE lists every
 session written in the last few hours with its live state — spinner, "waiting on
 a tool or a permission prompt", "your turn", stalled — and HISTORY lists the 50
