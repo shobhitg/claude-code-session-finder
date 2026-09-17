@@ -27,8 +27,8 @@ happened inside each, and how to get back to any of them.
 
 | Surface | Open it | For |
 |---|---|---|
-| **Sessions** view + status bar | the sessions icon in the activity bar | what is running or needs you right now, and recent history |
-| **Search** | `Ctrl+Alt+S` (`Cmd+Alt+S` on macOS) or **Claude: Search Sessions** | finding a session by anything said inside it |
+| **Sessions** view + status bar | the sessions icon in the activity bar | what is running or needs you right now, recent history, and a filter box that searches inside sessions while keeping the list browsable |
+| **Search picker** | `Ctrl+Alt+S` (`Cmd+Alt+S` on macOS) or **Claude: Search Sessions** | the same search as a Quick Pick, when you know you want to jump to exactly one session |
 | **Session View** | `V` on a row, the tree icon on a search result, or **Claude: Open Session View** | reading a session: agents, timeline, transcript |
 
 Everything is read from the transcript files. Nothing is installed into Claude
@@ -55,7 +55,14 @@ shows up too. Only sessions written within `sessionFinder.activeWindow`
 
 ## Browse sessions
 
-The **Sessions** view lists what is live and what is history:
+The **Sessions** view lists what is live and what is history **for this
+workspace**: sessions from its folders, their git repository and every worktree
+of it. Sessions from other projects stay out until you press the filter button
+in the view title (or `sessionFinder.sidebarScope`). The status bar and the
+search picker always cover every project.
+
+The row for the session in your active editor tab is highlighted, and follows
+you as you switch between Claude Code tabs and Session Views.
 
 - **Active** — sessions written in the last `activeWindow`, most urgent first:
   needs you, your turn, running, stalled. The time label says how long a
@@ -63,8 +70,14 @@ The **Sessions** view lists what is live and what is history:
 - **History** — the 50 most recent finished sessions, with their project,
   branch and PR, and **Search all…** for everything older.
 
+**Filter box.** Type at the top of the view (or press `/`) to search inside the
+listed sessions with the same syntax as the picker below — words, `"phrase"`,
+`pr:123`, `since:all`. Results replace the list and stay on screen: open one in
+a tab, read another in the Session View, come back, refine, and `Esc` or the
+`×` restores Active and History. Deep `!` searches stay in the picker.
+
 `↑` `↓` move · `Enter` opens in a tab · `Shift+Enter` opens in the right panel ·
-`V` opens the Session View · `T` opens the raw transcript · `/` searches. Hover
+`V` opens the Session View · `T` opens the raw transcript · `/` filters. Hover
 or focus a row for the same actions as buttons, plus a copyable deep link and
 "reveal folder".
 
@@ -75,8 +88,8 @@ Tab**; the first time, a notice says so.
 ## Search inside sessions
 
 Claude Code's own picker matches session *titles*. Once a title stops reminding
-you what happened, that session is lost. Search here matches what you and
-Claude actually **said**:
+you what happened, that session is lost. Search here — in the sidebar's filter
+box or the `Ctrl+Alt+S` picker — matches what you and Claude actually **said**:
 
 | Type | To find |
 |---|---|
@@ -124,6 +137,8 @@ agents pill shows the same tree live; this view is for the ones you don't.
 |---|---|
 | **Claude: Search Sessions** | `Ctrl+Alt+S` / `Cmd+Alt+S` |
 | **Claude: Show Sessions** | focus the Sessions view |
+| **Claude: Filter Sessions** | focus the sidebar's filter box |
+| **Claude: Sessions — Show All Projects** / **Show This Workspace Only** | toggle the sidebar's scope for this workspace |
 | **Claude: Open Session View** | read the current or a chosen session |
 | **Claude: Open Session in Tab** / **in Right Panel** | resume a session where you want it |
 | **Claude: Refresh Sessions** | re-scan now |
@@ -131,6 +146,7 @@ agents pill shows the same tree live; this view is for the ones you don't.
 | Setting | Default | |
 |---|---|---|
 | `sessionFinder.defaultWindow` | `60d` | recency window for searches; `pr:` ignores it |
+| `sessionFinder.sidebarScope` | `workspace` | `workspace`: this workspace's folders, repo and worktrees · `all`: every project. The view's filter button overrides it per workspace |
 | `sessionFinder.activeWindow` | `4h` | sessions written within this are Active and carry a state |
 | `sessionFinder.toolQuietSeconds` | `60` | waiting on a tool longer than this shows 🔔 |
 | `sessionFinder.stalledMinutes` | `15` | silence longer than this mid-turn shows ⚠ |

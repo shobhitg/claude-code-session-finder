@@ -15,6 +15,22 @@ body { padding-bottom: var(--sp-3); }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 main:focus-visible { outline: none; }
 
+/* ─── filter — the sidebar's own search: results stay on screen, unlike the picker ─ */
+.filter {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2); background: var(--s-bg);
+}
+.filter__icon { color: var(--s-muted); font-size: 14px; }
+.filter__input {
+  flex: 1; min-width: 0; height: 24px; padding: 0 var(--sp-2); border-radius: var(--radius);
+  border: 1px solid var(--s-input-border); background: var(--s-input-bg); color: var(--s-input-fg); font: inherit;
+}
+.filter__input::placeholder { color: var(--s-input-placeholder); }
+.filter__input:focus { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+.filter .action { display: none; }
+.filter[data-active="true"] .action { display: inline-flex; }
+
 /* ─── sections ─────────────────────────────────────────────────────────────── */
 .section { margin-top: var(--sp-1); }
 .section__header {
@@ -69,6 +85,12 @@ main:focus-visible { outline: none; }
   font-size: var(--size-meta); color: var(--s-muted);
 }
 .row__missing { margin-left: var(--sp-1); }
+.row--snippet { grid-template-rows: 22px 22px 18px; }
+.row__snippet {
+  grid-column: 2 / span 2; grid-row: 3; padding-bottom: 2px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: var(--size-meta); color: var(--s-muted); font-style: italic;
+}
 
 /* ─── state language (spec §10 table) ──────────────────────────────────────── */
 .row[data-state="running"] .row__icon { color: var(--st-running); }

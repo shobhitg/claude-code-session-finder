@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { LivenessTracker } from './core/live.js';
 import { refreshIndex } from './core/cache.js';
 import { durationMs } from './core/query.js';
-import { buildSnapshot, type Snapshot } from './core/rows.js';
+import { buildSnapshot, type Snapshot, type SidebarScope } from './core/rows.js';
+import { inScope } from './core/scope.js';
+import { workspaceRoots } from './scope-roots.js';
 import type { SearchIndex, SessionMeta } from './core/types.js';
 import type { Liveness, Thresholds } from './core/state.js';
 
@@ -31,7 +33,9 @@ export class LiveHost implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [this.emitter];
 
   readonly onSnapshot: vscode.Event<Snapshot> = this.emitter.event;
-  snapshot: Snapshot = { active: [], history: [], totalSessions: 0, indexing: true };
+  snapshot: Snapshot = { active: [], history: [], totalSessions: 0, indexing: true, scope: 'all' };
+  /** This workspace's folders, main checkouts and worktrees — what "this project" means for the sidebar. */
+  private roots: string[] = [];
 
   constructor(private readonly ctx: vscode.ExtensionContext, private readonly log: vscode.LogOutputChannel) {
     this.rebuildTracker();
@@ -41,11 +45,35 @@ export class LiveHost implements vscode.Disposable {
       }),
       // D6: nothing runs while the window is unfocused; the first focus event sweeps at once.
       vscode.window.onDidChangeWindowState(s => (s.focused ? this.tracker?.start() : this.tracker?.stop())),
+      vscode.workspace.onDidChangeWorkspaceFolders(() => void this.refreshIndex()),
     );
+    void this.syncScopeContext();
     void this.refreshIndex();
   }
 
+  /** Sidebar scope: a per-workspace choice (the toggle) over the setting's default. */
+  get scope(): SidebarScope {
+    return this.ctx.workspaceState.get<SidebarScope>('sidebarScope')
+      ?? vscode.workspace.getConfiguration('sessionFinder').get<SidebarScope>('sidebarScope', 'workspace');
+  }
+
+  async toggleScope(): Promise<void> {
+    await this.ctx.workspaceState.update('sidebarScope', this.scope === 'workspace' ? 'all' : 'workspace');
+    await this.syncScopeContext();
+    this.publish();
+  }
+
+  /** The view-title toggle shows one of two icons; the `when` clause reads this context key. */
+  private syncScopeContext(): Thenable<unknown> {
+    return vscode.commands.executeCommand('setContext', 'sessionFinder.scope', this.scope);
+  }
+
+  /** Whether the sidebar shows this session. Global surfaces (status bar, picker) never ask. */
+  readonly inScope = (m: SessionMeta): boolean => this.scope === 'all' || inScope(m, this.roots);
+
   get liveness(): ReadonlyMap<string, Liveness> { return this.tracker?.liveness ?? new Map(); }
+  /** The search index, or null before the first refresh lands. Read-only for surfaces. */
+  get searchIndex(): SearchIndex | null { return this.index; }
 
   private rebuildTracker(): void {
     this.tracker?.stop();
@@ -69,6 +97,8 @@ export class LiveHost implements vscode.Disposable {
     if (this.indexing) return this.indexing;
     this.indexing = (async () => {
       try {
+        // Worktrees come and go, so the roots are re-read with every index refresh (two git calls).
+        this.roots = await workspaceRoots((vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath));
         ({ index: this.index } = await refreshIndex({ cacheFile: join(this.ctx.globalStorageUri.fsPath, 'index.json') }));
       } catch (err) {
         this.log.warn(`index refresh failed: ${String(err)}`);
@@ -81,7 +111,7 @@ export class LiveHost implements vscode.Disposable {
   }
 
   private publish(): void {
-    this.snapshot = buildSnapshot(this.index, this.liveness, { indexing: this.indexing !== null });
+    this.snapshot = buildSnapshot(this.index, this.liveness, { indexing: this.indexing !== null, scope: this.scope, inScope: this.inScope });
     this.emitter.fire(this.snapshot);
   }
 

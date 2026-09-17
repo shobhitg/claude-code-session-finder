@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildSnapshot, projectLabel, stateIcon } from '../src/core/rows.js';
+import { buildSnapshot, projectLabel, stateIcon, rowsForHits, resolveTabSession, firstPrompts } from '../src/core/rows.js';
+import type { SessionHit } from '../src/core/query.js';
 import type { SearchIndex, SessionMeta } from '../src/core/types.js';
 import type { Liveness } from '../src/core/state.js';
 
@@ -83,5 +84,38 @@ describe('buildSnapshot', () => {
     expect(s.history).toEqual([]);
     expect(s.totalSessions).toBe(0);
     expect(s.indexing).toBe(true);
+  });
+});
+
+describe('scope', () => {
+  it('drops indexed sessions the predicate rejects from ACTIVE, HISTORY and the total; keeps unindexed live ones', () => {
+    const s = buildSnapshot(index, new Map([live('b', { kind: 'running' }, 5), live('new-not-indexed', { kind: 'running' }, 4)]),
+                            { scope: 'workspace', inScope: m => m.sessionId !== 'b' && m.sessionId !== 'd' });
+    expect(s.active.map(r => r.sessionId)).toEqual(['new-not-indexed']);
+    expect(s.history.map(r => r.sessionId)).toEqual(['a', 'c']);
+    expect(s.totalSessions).toBe(2);
+    expect(s.scope).toBe('workspace');
+  });
+});
+
+describe('rowsForHits / resolveTabSession', () => {
+  it('turns search hits into rows with the shared title fallback, a snippet and live state', () => {
+    const hits: SessionHit[] = [
+      { session: index.sessions[0]!, score: 2, matchCount: 3, best: { text: 'we should paste the image here', role: 'u', index: 10 } },
+      { session: index.sessions[2]!, score: 1, matchCount: 1, best: null },
+    ];
+    const rows = rowsForHits(hits, new Map([live('a', { kind: 'attention', reason: 'your-turn' }, 5)]), firstPrompts(index));
+    expect(rows[0]).toMatchObject({ sessionId: 'a', title: 'Ledger GUI', matches: 3, pr: 20231, live: { state: 'attention', reason: 'your-turn', lastWriteMs: 5 } });
+    expect(rows[0]!.snippet).toContain('paste the image');
+    expect(rows[1]).toMatchObject({ sessionId: 'c', title: 'Match the Figma frame for the sequences dialog', snippet: null });
+    expect(rows[1]).not.toHaveProperty('live');
+  });
+  it('resolves a Claude Code tab label to a row: exact title, ACTIVE first, prefix for a truncated label, else nothing', () => {
+    const s = buildSnapshot(index, new Map([live('b', { kind: 'running' }, 5)]));
+    expect(resolveTabSession('Deal forecast', s)).toBe('b');
+    expect(resolveTabSession('Ledger GUI', s)).toBe('a');
+    expect(resolveTabSession('Match the Figma frame', s)).toBe('c');
+    expect(resolveTabSession('Something else entirely', s)).toBeUndefined();
+    expect(resolveTabSession('  ', s)).toBeUndefined();
   });
 });

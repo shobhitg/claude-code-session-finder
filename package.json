@@ -2,7 +2,7 @@
   "name": "claude-code-session-finder",
   "displayName": "Claude Code Sessions & Agents",
   "description": "See which Claude Code sessions are running or waiting on you, browse and search every session's content, and open any of them in a tab or the right panel.",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {
@@ -39,6 +39,21 @@
         "icon": "$(search)"
       },
       {
+        "command": "sessionFinder.filterSessions",
+        "title": "Claude: Filter Sessions",
+        "icon": "$(search)"
+      },
+      {
+        "command": "sessionFinder.showAllProjects",
+        "title": "Claude: Sessions — Show All Projects",
+        "icon": "$(filter-filled)"
+      },
+      {
+        "command": "sessionFinder.showThisWorkspace",
+        "title": "Claude: Sessions — Show This Workspace Only",
+        "icon": "$(filter)"
+      },
+      {
         "command": "sessionFinder.showSessions",
         "title": "Claude: Show Sessions"
       },
@@ -67,6 +82,16 @@
           "type": "string",
           "default": "60d",
           "description": "Default recency window for searches, e.g. 30d, 60d, all. Exact-identifier queries such as pr:123 ignore it entirely. Widen any search inline with since:all."
+        },
+        "sessionFinder.sidebarScope": {
+          "type": "string",
+          "enum": ["workspace", "all"],
+          "default": "workspace",
+          "enumDescriptions": [
+            "Only sessions from this workspace's folders, their git repository and all of its worktrees.",
+            "Every Claude Code session on this machine."
+          ],
+          "description": "Which sessions the Sessions view lists. The filter button in the view toggles it per workspace; the status bar and the search picker always cover every project."
         },
         "sessionFinder.activeWindow": {
           "type": "string",
@@ -111,14 +136,24 @@
     "menus": {
       "view/title": [
         {
-          "command": "sessionFinder.search",
+          "command": "sessionFinder.filterSessions",
           "when": "view == sessionFinder.live",
           "group": "navigation@1"
         },
         {
+          "command": "sessionFinder.showAllProjects",
+          "when": "view == sessionFinder.live && sessionFinder.scope == workspace",
+          "group": "navigation@2"
+        },
+        {
+          "command": "sessionFinder.showThisWorkspace",
+          "when": "view == sessionFinder.live && sessionFinder.scope == all",
+          "group": "navigation@2"
+        },
+        {
           "command": "sessionFinder.refresh",
           "when": "view == sessionFinder.live",
-          "group": "navigation@2"
+          "group": "navigation@3"
         }
       ]
     },

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.0
+
+**The Sessions view is about this workspace.** It lists sessions from the
+workspace's folders, their git repository and every worktree of it — so a
+session started in `.worktrees/feature` is yours, and the other project in
+your other window is not. The filter button in the view title switches to all
+projects for this workspace; `sessionFinder.sidebarScope` sets the default.
+The status bar and the search picker still cover everything, because "what
+needs me?" is a question about the whole machine. Membership is decided by the
+session's last recorded cwd; a session with none falls back to Claude Code's
+project-directory name.
+
+**A filter box in the sidebar.** Type (or press `/`) to search inside sessions
+with the picker's syntax — words, `"phrase"`, `pr:123`, `since:all`. Unlike the
+picker, results stay on screen: open one, read another in the Session View,
+refine, then `Esc` restores the list. Each result shows the line that matched
+and keeps its live glyph. Deep `!` searches stay in the picker.
+
+**The active session is highlighted.** Switch between Claude Code tabs, or
+Session Views, and the matching row in the sidebar is selected and scrolled
+into view. Claude Code names its tabs after the session, so the row is found
+by title; a file or terminal tab leaves the highlight where it was.
+
 ## 0.4.1
 
 **A recognisable activity bar icon.** The Sessions view's icon was Claude

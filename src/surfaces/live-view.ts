@@ -2,7 +2,10 @@ import * as vscode from 'vscode';
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import type { LiveHost } from '../live-host.js';
-import type { Snapshot } from '../core/rows.js';
+import { firstPrompts, resolveTabSession, rowsForHits, type Snapshot } from '../core/rows.js';
+import { parseQuery, search } from '../core/query.js';
+import type { SearchIndex } from '../core/types.js';
+import { VIEW_TYPE as SESSION_VIEW_TYPE } from './session-view.js';
 import { planOpen } from '../core/resolve.js';
 import type { OpenWhere } from '../core/open-args.js';
 import { executePlan, folderUri, openTranscript } from '../open.js';
@@ -15,6 +18,8 @@ export const VIEW_ID = 'sessionFinder.live';
 type Inbound =
   | { type: 'ready' }
   | { type: 'search' }
+  | { type: 'filter'; q: string }
+  | { type: 'toggleScope' }
   | { type: 'open'; sessionId: string; where: OpenWhere }
   | { type: 'view'; sessionId: string }
   | { type: 'transcript'; sessionId: string }
@@ -26,7 +31,8 @@ function isInbound(m: unknown): m is Inbound {
   if (typeof m !== 'object' || m === null) return false;
   const o = m as Record<string, unknown>;
   switch (o.type) {
-    case 'ready': case 'search': return true;
+    case 'ready': case 'search': case 'toggleScope': return true;
+    case 'filter': return typeof o.q === 'string';
     case 'open': return typeof o.sessionId === 'string' && (o.where === 'tab' || o.where === 'right');
     case 'view': case 'transcript': case 'copyLink': case 'reveal': return typeof o.sessionId === 'string';
     default: return false;
@@ -41,9 +47,42 @@ function isInbound(m: unknown): m is Inbound {
 export class LiveViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private indexTimer: ReturnType<typeof setInterval> | undefined;
+  /** What the active editor tab is: a Claude Code session tab (known by its label) or one of our Session Views. */
+  private activeTab: { kind: 'claude'; label: string } | { kind: 'own'; sessionId: string } | null = null;
+  private pendingFilter: { q: string } | null = null;
+  private titlesFor: SearchIndex | null = null;
+  private titles = new Map<string, string>();
 
-  constructor(private readonly ctx: vscode.ExtensionContext, private readonly host: LiveHost) {
+  constructor(private readonly ctx: vscode.ExtensionContext, private readonly host: LiveHost,
+              private readonly ownActiveSession: () => string | undefined = () => undefined) {
     ctx.subscriptions.push(host.onSnapshot(s => this.post(s)));
+  }
+
+  /**
+   * Called on every tab change. A Claude Code tab is recognised by its webview type and named by
+   * its label; one of our Session Views by its panel. Any other tab (a file, a terminal) leaves the
+   * highlight where it was — you are still working in that session.
+   */
+  noteActiveTab(): void {
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    const input = tab?.input;
+    if (!tab || !(input instanceof vscode.TabInputWebview)) return;
+    if (input.viewType.includes('claudeVSCodePanel')) this.activeTab = { kind: 'claude', label: tab.label };
+    else if (input.viewType.includes(SESSION_VIEW_TYPE)) { const id = this.ownActiveSession(); if (id) this.activeTab = { kind: 'own', sessionId: id }; }
+    else return;
+    if (this.view) void this.view.webview.postMessage({ type: 'active', sessionId: this.activeId() });
+  }
+
+  private activeId(): string | null {
+    const a = this.activeTab;
+    if (!a) return null;
+    return a.kind === 'own' ? a.sessionId : resolveTabSession(a.label, this.host.snapshot) ?? null;
+  }
+
+  /** The title-bar search button and `Claude: Filter Sessions`: focus the inline filter, optionally with a query. */
+  focusFilter(q?: string): void {
+    const msg = { type: 'focusFilter', ...(q !== undefined ? { q } : {}) };
+    if (this.view) void this.view.webview.postMessage(msg); else this.pendingFilter = { q: q ?? '' };
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -69,13 +108,31 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
   private post(snapshot: Snapshot): void {
     if (!this.view) return;
     const activeWindow = vscode.workspace.getConfiguration('sessionFinder').get<string>('activeWindow', '4h');
-    void this.view.webview.postMessage({ type: 'snapshot', snapshot, now: Date.now(), activeWindow });
+    void this.view.webview.postMessage({ type: 'snapshot', snapshot, now: Date.now(), activeWindow, active: this.activeId() });
+  }
+
+  /** The inline filter: the Quick Pick's prose search, as rows that stay on screen. Deep (!) stays in the picker. */
+  private postResults(q: string): void {
+    if (!this.view) return;
+    const index = this.host.searchIndex;
+    const defaultWindow = vscode.workspace.getConfiguration('sessionFinder').get<string>('defaultWindow', '60d');
+    const parsed = parseQuery(q, defaultWindow, Date.now());
+    if (index && this.titlesFor !== index) { this.titles = firstPrompts(index); this.titlesFor = index; }
+    const rows = index && !parsed.deep && q.trim()
+      ? rowsForHits(search(index, parsed, Date.now()).filter(h => this.host.inScope(h.session)), this.host.liveness, this.titles) : [];
+    void this.view.webview.postMessage({ type: 'results', q, deep: parsed.deep, rows, now: Date.now(), indexing: !index });
   }
 
   private async onMessage(raw: unknown): Promise<void> {
     if (!isInbound(raw)) return;
     try {
-      if (raw.type === 'ready') { this.post(this.host.snapshot); return; }
+      if (raw.type === 'ready') {
+        this.post(this.host.snapshot);
+        if (this.pendingFilter) { this.focusFilter(this.pendingFilter.q); this.pendingFilter = null; }
+        return;
+      }
+      if (raw.type === 'filter') { this.postResults(raw.q); return; }
+      if (raw.type === 'toggleScope') { await this.host.toggleScope(); return; }
       if (raw.type === 'search') { await vscode.commands.executeCommand('sessionFinder.search'); return; }
       if (raw.type === 'copyLink') {
         await vscode.env.clipboard.writeText(`vscode://anthropic.claude-code/open?session=${raw.sessionId}`);

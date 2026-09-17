@@ -39,9 +39,22 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const host = new LiveHost(ctx, log);
   const status = createStatusBar(ctx);
   ctx.subscriptions.push(log, host, host.onSnapshot(s => status.update(s)));
-  // Until the sidebar browser exists (Stage 2) the session list IS the Quick Pick.
+  // Stage 3: the Session View — agent tree, timeline and a readable transcript for ANY session,
+  // read from disk without resuming it. Created first: the sidebar asks it which panel is the active tab.
+  const sessions = new SessionViewManager(ctx, host, log);
+  const live = new LiveViewProvider(ctx, host, () => sessions.activeSessionId());
   ctx.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(VIEW_ID, new LiveViewProvider(ctx, host)),
+    sessions,
+    vscode.window.registerWebviewViewProvider(VIEW_ID, live),
+    // The sidebar follows the active editor tab: a Claude Code session tab or one of our Session Views.
+    vscode.window.tabGroups.onDidChangeTabs(() => live.noteActiveTab()),
+    vscode.window.tabGroups.onDidChangeTabGroups(() => live.noteActiveTab()),
+    vscode.commands.registerCommand('sessionFinder.showAllProjects', () => host.toggleScope()),
+    vscode.commands.registerCommand('sessionFinder.showThisWorkspace', () => host.toggleScope()),
+    vscode.commands.registerCommand('sessionFinder.filterSessions', async (q?: string) => {
+      await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
+      live.focusFilter(typeof q === 'string' ? q : undefined);
+    }),
     vscode.commands.registerCommand(SHOW_SESSIONS, () => vscode.commands.executeCommand(`${VIEW_ID}.focus`)),
     vscode.commands.registerCommand('sessionFinder.refresh', () => Promise.all([host.sweepNow(), host.refreshIndex()])),
     vscode.commands.registerCommand('sessionFinder.openInTab', (id?: string) => openFromPalette(ctx, host, id, 'tab')),
@@ -51,13 +64,12 @@ export function activate(ctx: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('sessionFinder.search', () => showSearchQuickPick(ctx, host.liveness)),
   );
 
-  // Stage 3: the Session View — agent tree, timeline and a readable transcript for ANY session,
-  // read from disk without resuming it. Opened from a Sessions row, a Quick Pick button, or the palette.
-  const sessions = new SessionViewManager(ctx, host, log);
-  ctx.subscriptions.push(sessions, vscode.commands.registerCommand('sessionFinder.openSessionView', async (id?: string) => {
+  // Opened from a Sessions row, a Quick Pick button, or the palette.
+  ctx.subscriptions.push(vscode.commands.registerCommand('sessionFinder.openSessionView', async (id?: string) => {
     const sessionId = id ?? await pickSessionId(host);
     if (sessionId) await sessions.open(sessionId);
   }));
+  live.noteActiveTab();
 
   // I2: openFolder focusing an ALREADY-OPEN window is the outcome spec §9 assumes, and
   // that window's extension host is already activated — activate() never runs again. Watch

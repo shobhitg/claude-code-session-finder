@@ -23,6 +23,10 @@
   --s-toolbar:   var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   --s-code-bg:   var(--vscode-textCodeBlock-background, var(--vscode-editorWidget-background));
   --s-quote:     var(--vscode-textBlockQuote-background, var(--vscode-editorWidget-background));
+  --s-input-bg:  var(--vscode-input-background);
+  --s-input-fg:  var(--vscode-input-foreground);
+  --s-input-border: var(--vscode-input-border, transparent);
+  --s-input-placeholder: var(--vscode-input-placeholderForeground);
 
   /* state — the theme's own semantic ramp */
   --st-running:  var(--vscode-charts-blue);

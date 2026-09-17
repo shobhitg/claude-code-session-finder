@@ -11,7 +11,7 @@ import type { SessionMeta } from '../core/types.js';
 import { LiveHost, readThresholds } from '../live-host.js';
 import { executePlan, openTranscript } from '../open.js';
 
-const VIEW_TYPE = 'sessionFinder.sessionView';
+export const VIEW_TYPE = 'sessionFinder.sessionView';
 const PAGE = 40;
 const TICK_MS = 2_000;
 
@@ -54,6 +54,12 @@ export class SessionViewManager implements vscode.Disposable {
     const panel = new SessionPanel(this.ctx, this.host, this.log, meta, () => this.panels.delete(sessionId));
     this.panels.set(sessionId, panel);
     await panel.load(true);
+  }
+
+  /** The session whose panel is the active editor tab, if any — the sidebar highlights it. */
+  activeSessionId(): string | undefined {
+    for (const [id, p] of this.panels) if (p.active) return id;
+    return undefined;
   }
 
   dispose(): void { for (const p of [...this.panels.values()]) p.dispose(); }
@@ -102,6 +108,7 @@ class SessionPanel {
   }
 
   reveal(): void { this.panel.reveal(); }
+  get active(): boolean { return this.panel.active; }
   dispose(): void { this.panel.dispose(); }
 
   private schedule(): void {
