@@ -14,9 +14,9 @@ async function tryClaimPendingOpen(ctx: vscode.ExtensionContext): Promise<void> 
     myFolder: vscode.workspace.workspaceFolders?.[0]?.uri.path,
     // M3: the only executeCommand that was not wrapped. A missing Claude Code command
     // here must not become an unhandled rejection during activation.
-    openSession: async id => {
+    openSession: async (id, where) => {
       try {
-        await runOpen(id, 'tab');
+        await runOpen(id, where);
       } catch {
         vscode.window.showErrorMessage('Claude Code did not accept the handed-off session.');
       }
