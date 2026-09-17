@@ -27,18 +27,21 @@ main:focus-visible { outline: none; }
 .timeline__label { fill: var(--s-muted); font-family: var(--mono); font-size: 10px; }
 .timeline__now { stroke: var(--st-running); stroke-width: 1; stroke-dasharray: 2 2; }
 .bar { cursor: pointer; }
-.bar rect { rx: 3; fill: var(--s-badge-bg); opacity: .9; transition: opacity var(--dur) var(--ease); }
-.bar:hover rect { opacity: 1; }
-.bar--session rect { fill: var(--s-badge-bg); opacity: .45; }
+/* Status colours are a tint, not a block: labels sit on top in the editor foreground, so keep fills
+   translucent and give the text a halo in the editor background — readable on any theme's chart colour. */
+.bar rect { rx: 3; fill: var(--s-badge-bg); opacity: .55; transition: opacity var(--dur) var(--ease); }
+.bar:hover rect { opacity: .8; }
 .bar--running rect, .bar--launched rect { fill: var(--st-running); }
-.bar--completed rect { fill: var(--st-ok); opacity: .75; }
+.bar--completed rect { fill: var(--st-ok); }
 .bar--failed rect, .bar--failed-spawn rect { fill: var(--st-error); }
-.bar--stopped rect { fill: var(--st-stalled); opacity: .7; }
-.bar--unknown rect { fill: var(--st-idle); opacity: .5; }
+.bar--stopped rect { fill: var(--st-stalled); }
+.bar--unknown rect { fill: var(--st-idle); opacity: .4; }
 .bar--workflow rect { stroke: var(--s-fg); stroke-opacity: .35; stroke-dasharray: 3 2; }
-.bar--selected rect { stroke: var(--s-focus); stroke-width: 2; opacity: 1; }
-.bar__label { fill: var(--s-fg-editor); font-size: 11px; pointer-events: none; }
-.bar--running .bar__label, .bar--launched .bar__label, .bar--failed .bar__label { fill: var(--s-sel-fg); }
+/* the session bar is the baseline the agents hang under, never a status swatch — after the status rules so it wins */
+.bar.bar--session rect { fill: var(--s-border); opacity: .6; }
+.bar--selected rect { stroke: var(--s-focus); stroke-width: 2; }
+.bar__label { fill: var(--s-fg-editor); font-size: 11px; pointer-events: none;
+  paint-order: stroke fill; stroke: var(--s-bg-editor); stroke-width: 3px; stroke-linejoin: round; stroke-opacity: .85; }
 
 /* ─── tree ───────────────────────────────────────────────────────────────────── */
 .tree { grid-column: 1; overflow: auto; border-right: 1px solid var(--s-border); background: var(--s-bg); color: var(--s-fg); padding: var(--sp-1) 0; }
