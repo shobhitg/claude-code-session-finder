@@ -19,3 +19,5 @@ esbuild.mjs
 .vscode-test
 .worktrees/**
 .worktrees
+.local_claude/**
+.pytest_cache/**
