@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { readFile, unlink } from 'node:fs/promises';
 import { showSearchQuickPick } from './surfaces/quickpick.js';
 import { claimPendingOpen } from './baton.js';
-import { BATON_FILE, batonPath } from './open.js';
+import { BATON_FILE, batonPath, runOpen } from './open.js';
 
 async function tryClaimPendingOpen(ctx: vscode.ExtensionContext): Promise<void> {
   const path = batonPath(ctx);
@@ -14,7 +14,7 @@ async function tryClaimPendingOpen(ctx: vscode.ExtensionContext): Promise<void> 
     // here must not become an unhandled rejection during activation.
     openSession: async id => {
       try {
-        await vscode.commands.executeCommand('claude-vscode.editor.open', id, undefined);
+        await runOpen(id, 'tab');
       } catch {
         vscode.window.showErrorMessage('Claude Code did not accept the handed-off session.');
       }

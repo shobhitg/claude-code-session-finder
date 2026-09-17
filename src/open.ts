@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { OpenPlan } from './core/resolve.js';
+import { openCommands, type OpenWhere } from './core/open-args.js';
 
 export const BATON_TTL_MS = 60_000;
 export const BATON_FILE = 'pending-open.json';
@@ -13,6 +14,11 @@ const TRANSCRIPT_ACTION = 'Open transcript';
 export async function openTranscript(file: string): Promise<void> {
   const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
   await vscode.window.showTextDocument(doc, { preview: true });
+}
+
+/** The only place that calls into Claude Code to open a session. L10: never call editor.open directly. */
+export async function runOpen(sessionId: string, where: OpenWhere): Promise<void> {
+  for (const c of openCommands(sessionId, where)) await vscode.commands.executeCommand(c.command, ...c.args);
 }
 
 /**
@@ -27,7 +33,7 @@ export function folderUri(path: string, ctx: vscode.ExtensionContext): vscode.Ur
   return base.with({ path });
 }
 
-export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext): Promise<void> {
+export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext, where: OpenWhere = 'tab'): Promise<void> {
   if (plan.kind === 'transcript') {
     await openTranscript(plan.file);
     vscode.window.showInformationMessage(`Cannot resume this session: ${plan.reason}. Showing the transcript.`);
@@ -37,9 +43,10 @@ export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext):
   if (plan.kind === 'here') {
     if (plan.note) vscode.window.setStatusBarMessage(`Claude session: ${plan.note}`, 4000);
     // F3: reveal-if-open / new-tab-otherwise is Claude Code's own behaviour.
-    // Pass prompt undefined, or an already-open session shows a confusing toast.
+    // L10: openCommands() passes the programmatic flag; without it every open here silently
+    // reset the user's Claude Code preferred location to "panel".
     try {
-      await vscode.commands.executeCommand('claude-vscode.editor.open', plan.sessionId, undefined);
+      await runOpen(plan.sessionId, where);
     } catch {
       // Spec §10: offer the transcript rather than surfacing a bare error.
       const choice = await vscode.window.showErrorMessage(
@@ -56,7 +63,7 @@ export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext):
     const target = folderUri(plan.targetCwd, ctx);
     await vscode.workspace.fs.createDirectory(ctx.globalStorageUri);
     await writeFile(batonPath(ctx), JSON.stringify({
-      sessionId: plan.sessionId, targetCwd: plan.targetCwd, expiresAt: Date.now() + BATON_TTL_MS,
+      sessionId: plan.sessionId, targetCwd: plan.targetCwd, expiresAt: Date.now() + BATON_TTL_MS, where,
     }));
     await vscode.commands.executeCommand('vscode.openFolder', target, { forceNewWindow: true });
   } catch (err) {
