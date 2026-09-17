@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.1
+
+**Interrupted and asked-a-question are states of their own.** Pressing `Esc`
+writes a user message (`[Request interrupted by user]`), which read as "the
+model is generating", so an interrupted session spun forever. It now shows ⊘
+"interrupted" at once. A pending `AskUserQuestion` used to be a slow tool
+until the 60-second bell; it now shows `?` "asks you" immediately and sorts
+first. A finished turn reads "done · N ago". Every glyph has a tooltip saying
+what it means.
+
+**The highlighted row is unmistakable, and follows tabs by id.** The selected
+row gets the selection colour plus an accent bar and a bold title, for themes
+whose selection colour is faint. A session opened from here is highlighted at
+once, and the tab Claude Code gives it is remembered, so switching back to
+that tab resolves by id even when several sessions share one AI title (three
+did). Tabs opened elsewhere are still found by title, most recently written
+first. Tab resolution is logged to the "Claude Code Sessions" output channel.
+
+**The Session View's agent tree no longer scrolls back to the top** every
+second while the session is live; the per-second refresh now keeps the scroll
+offset.
+
 ## 0.5.0
 
 **The Sessions view is about this workspace.** It lists sessions from the
@@ -28,21 +50,10 @@ record (up to the whole file, rarely), and recency alone decides membership:
 written within `sessionFinder.activeWindow` (4 h by default) means ACTIVE, and
 an unknown verdict merely shows as running.
 
-**Interrupted and asked-a-question are states of their own.** Pressing `Esc`
-writes a user message (`[Request interrupted by user]`), which read as "the
-model is generating", so an interrupted session spun forever. It now shows ⊘
-"interrupted" at once. A pending `AskUserQuestion` used to be a slow tool
-until the 60-second bell; it now shows `?` "asks you" immediately and sorts
-first. A finished turn reads "done · N ago". Every glyph has a tooltip saying
-what it means.
-
 **The active session is highlighted.** Switch between Claude Code tabs, or
 Session Views, and the matching row in the sidebar is selected and scrolled
-into view. A session opened from here is highlighted at once, and the tab
-Claude Code gives it is remembered, so switching back to that tab resolves by
-id even when several sessions share a title. Tabs opened elsewhere are found
-by title, most recently written first. A file or terminal tab leaves the
-highlight where it was.
+into view. Claude Code names its tabs after the session, so the row is found
+by title; a file or terminal tab leaves the highlight where it was.
 
 ## 0.4.1
 
