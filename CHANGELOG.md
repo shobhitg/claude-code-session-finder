@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0
+
+**A Sessions view.** The activity bar gets a sessions icon. ACTIVE lists every
+session written in the last few hours with its live state — spinner, "waiting on
+a tool or a permission prompt", "your turn", stalled — and HISTORY lists the 50
+most recent below it, with "Search all…" leading into the content search. Rows
+open in a tab (`Enter`) or in the right-hand panel (`Shift+Enter`); hover or focus
+a row for deep link, reveal folder and transcript. Colours, fonts and icons come
+from your VS Code theme: the stylesheet has no colour of its own, and a test
+keeps it that way.
+
+**Right panel.** Claude Code has no per-call "open here" — its `sidebar.open`
+sets a sticky preference, then `editor.open` honours it. So the first time you
+open in the right panel, a notice explains that new sessions will now open there
+too, and how to switch back.
+
+**Renamed sessions show their name.** Claude Code records a rename as a
+`custom-title`; only the AI-generated title was read. The index version bumps,
+so the first search after upgrading rebuilds it (about a second).
+
+Also: a cross-window hand-off now remembers whether you asked for a tab or the
+right panel.
+
 ## 0.2.0
 
 **You can now see which sessions are running.** The status bar shows how many

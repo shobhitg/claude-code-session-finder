@@ -56,6 +56,22 @@ carry a state. `sessionFinder.toolQuietSeconds` (60) and
 `sessionFinder.stalledMinutes` (15) tune the two thresholds. Everything is read
 from `~/.claude/projects`; nothing is installed into Claude Code's settings.
 
+## Browse sessions
+
+The **Sessions** view (activity bar) shows what is live and what is history:
+
+- **Active** — sessions written in the last `sessionFinder.activeWindow`, most
+  urgent first: waiting on you, your turn, running, stalled. The time label
+  says how long a session has been quiet.
+- **History** — the 50 most recent sessions, and "Search all…" for the rest.
+
+`↑`/`↓` move, `Enter` opens in a tab, `Shift+Enter` opens in the **right panel**,
+`T` opens the transcript, `/` opens search. Hover or focus a row for the action
+buttons.
+
+Opening in the right panel uses Claude Code's own "Open in Side Bar", which also
+becomes its default for new sessions until you run "Claude Code: Open in New Tab".
+
 ## Why it activates at startup
 
 `activationEvents` is `["onStartupFinished"]` on purpose — **do not change it to `[]`.**

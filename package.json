@@ -1,8 +1,8 @@
 {
   "name": "claude-code-session-finder",
-  "displayName": "Claude Code Session Finder",
-  "description": "Search the contents of your Claude Code sessions and jump straight to one.",
-  "version": "0.2.0",
+  "displayName": "Claude Code Sessions",
+  "description": "See which Claude Code sessions are running or waiting on you, browse and search every session's content, and open any of them in a tab or the right panel.",
+  "version": "0.3.0",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {
@@ -19,9 +19,10 @@
   "keywords": [
     "claude",
     "claude code",
-    "search",
     "sessions",
-    "history"
+    "search",
+    "history",
+    "status"
   ],
   "main": "./dist/extension.js",
   "extensionDependencies": [
