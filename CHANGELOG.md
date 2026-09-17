@@ -12,6 +12,13 @@ swap whenever one of them writes — a row moves only when its state changes,
 and when it does it slides to its new place. While your pointer is over the
 list the order is held until it leaves.
 
+**A cost meter on every active row.** The tail read now also picks up the
+newest assistant record's `usage`; input plus cache-read plus cache-creation
+tokens is the context the model was given, which is what each further turn
+costs. The row shows it as a small bar and a count — green under half the
+model's window, yellow to three quarters, red above (compaction is near).
+The window is 1M for `[1m]` and Fable models, 200k otherwise.
+
 ## 0.5.1
 
 **Interrupted and asked-a-question are states of their own.** Pressing `Esc`

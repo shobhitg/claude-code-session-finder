@@ -3,7 +3,7 @@
  * bundled into the webviews (a browser bundle cannot import node:fs).
  */
 import { open } from 'node:fs/promises';
-import { classifyTail, type TailVerdict } from './state.js';
+import { readTailInfo, type TailInfo, type TailVerdict } from './state.js';
 
 /**
  * L9: the live path reads as little of a transcript as it can (0.7 GB corpus, 21.8 MB max). 64 KB
@@ -36,12 +36,17 @@ export async function readTail(path: string, size: number, window: number = TAIL
   }
 }
 
-/** Tail → verdict, widening until a conversational record turns up or the whole file has been read (spec §7). */
-export async function readVerdict(path: string, size: number, read: typeof readTail = readTail): Promise<TailVerdict> {
-  let v: TailVerdict = 'unknown';
+/** Tail → verdict and context size, widening until a conversational record turns up or the whole file has been read (spec §7). */
+export async function readTail_info(path: string, size: number, read: typeof readTail = readTail): Promise<TailInfo> {
+  let info: TailInfo = { verdict: 'unknown' };
   for (const w of TAIL_WINDOWS) {
-    v = classifyTail(await read(path, size, w));
-    if (v !== 'unknown' || size <= w) break;
+    info = readTailInfo(await read(path, size, w));
+    if (info.verdict !== 'unknown' || size <= w) break;
   }
-  return v;
+  return info;
+}
+export { readTail_info as readTailInfoFrom };
+
+export async function readVerdict(path: string, size: number, read: typeof readTail = readTail): Promise<TailVerdict> {
+  return (await readTail_info(path, size, read)).verdict;
 }

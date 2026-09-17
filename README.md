@@ -49,7 +49,9 @@ view and in search results:
 | `⊘` | interrupted | you stopped it (`Esc`); nothing is running until you type again |
 | `⚠` | stalled | nothing written for 15+ minutes mid-turn; probably abandoned |
 
-Hover a glyph for the sentence behind it. Rows are ordered by how much they need you: question, permission, done, interrupted, running, stalled.
+Hover a glyph for the sentence behind it. Rows are ordered by how much they need you: question, permission, done, interrupted, running, stalled — and within a group they stay where they first appeared, so nothing shuffles under your pointer.
+
+**Cost meter.** Each active row carries a small bar with its context size, the tokens the model was given on its last turn and therefore what every further turn costs. Green under half the model's window, yellow to three quarters, red above, where compaction is near. The window is 1M for `[1m]` and Fable models, 200k otherwise.
 
 State is derived from the last conversational record of each recently written
 transcript, so a session in another window, another worktree, or a terminal

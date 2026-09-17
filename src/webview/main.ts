@@ -117,6 +117,15 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
     meta.replaceChildren(r.meta);
     if (r.missing) meta.append(h('span', { class: 'row__missing' }, '⚠ folder missing'));
   }
+  const heat = li.querySelector<HTMLElement>('.row__heat')!;
+  if (r.heat) {
+    li.dataset.heat = r.heat.tier;
+    if (!heat.firstChild) heat.append(h('span', { class: 'heat__track' }, h('span', { class: 'heat__fill' })), h('span', { class: 'heat__label' }));
+    heat.title = r.heat.title; heat.setAttribute('aria-label', r.heat.title);
+    heat.querySelector<HTMLElement>('.heat__fill')!.style.width = `${r.heat.pct}%`;
+    const label = heat.querySelector<HTMLElement>('.heat__label')!;
+    if (label.textContent !== r.heat.label) label.textContent = r.heat.label;
+  } else if (heat.firstChild) { heat.replaceChildren(); heat.removeAttribute('title'); delete li.dataset.heat; }
   const snippet = li.querySelector<HTMLElement>('.row__snippet');
   if (r.snippet && !snippet) li.append(h('span', { class: 'row__snippet' }, r.snippet));
   else if (r.snippet && snippet) { if (snippet.textContent !== r.snippet) snippet.textContent = r.snippet; }
@@ -148,6 +157,7 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
     h('span', { class: 'row__time' }),
     actions,
     h('span', { class: 'row__meta' }),
+    h('span', { class: 'row__heat', role: 'img' }),
   );
   li.addEventListener('click', () => post({ type: 'open', sessionId: id, where: 'tab' }));
   updateRow(li, r);

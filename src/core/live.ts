@@ -1,12 +1,13 @@
 import { stat as fsStat } from 'node:fs/promises';
 import { discover as fsDiscover, defaultRoot, type SourceFile } from './discover.js';
-import { effectiveMtime, pickMainFile, resolveState, DEFAULT_THRESHOLDS, type Liveness, type TailVerdict, type Thresholds } from './state.js';
-import { readVerdict as fsReadVerdict } from './tail-io.js';
+import { effectiveMtime, pickMainFile, resolveState, DEFAULT_THRESHOLDS, type Liveness, type TailInfo, type TailVerdict, type Thresholds } from './state.js';
+import { readTailInfoFrom as fsReadTailInfo } from './tail-io.js';
 
 export interface TrackerDeps {
   discover: (root: string) => Promise<SourceFile[]>;
   stat: (path: string) => Promise<{ mtimeMs: number; size: number }>;
-  readVerdict: (path: string, size: number) => Promise<TailVerdict>;
+  /** a bare verdict is accepted (tests); the real reader also returns the context size */
+  readVerdict: (path: string, size: number) => Promise<TailVerdict | TailInfo>;
   now: () => number;
 }
 
@@ -28,9 +29,10 @@ interface Tracked {
   main: SourceFile;
   /** `${mtimeMs}:${size}` of `main` when its tail was last read — the same key cache.ts uses. */
   key: string;
-  verdict: TailVerdict;
+  info: TailInfo;
 }
 
+const toInfo = (v: TailVerdict | TailInfo): TailInfo => typeof v === 'string' ? { verdict: v } : v;
 const keyOf = (f: { mtimeMs: number; size: number }) => `${f.mtimeMs}:${f.size}`;
 
 /**
@@ -85,10 +87,10 @@ export class LivenessTracker {
       if (!main) continue;                                                           // parent transcript gone
       const key = keyOf(main);
       const prev = this.tracked.get(sessionId);
-      const verdict = prev && prev.key === key && prev.main.path === main.path
-        ? prev.verdict
-        : await this.deps.readVerdict(main.path, main.size);
-      next.set(sessionId, { sessionId, files: group, main, key, verdict });
+      const info = prev && prev.key === key && prev.main.path === main.path
+        ? prev.info
+        : toInfo(await this.deps.readVerdict(main.path, main.size));
+      next.set(sessionId, { sessionId, files: group, main, key, info });
     }
     const membershipChanged = next.size !== this.tracked.size || [...next.keys()].some(k => !this.tracked.has(k));
     this.tracked = next;
@@ -107,7 +109,7 @@ export class LivenessTracker {
       t.files = fresh;
       const key = keyOf(main);
       if (key !== t.key || main.path !== t.main.path) {                              // changed → one tail read
-        t.verdict = await this.deps.readVerdict(main.path, main.size);
+        t.info = toInfo(await this.deps.readVerdict(main.path, main.size));
         t.key = key;
         t.main = main;
       }
@@ -133,8 +135,11 @@ export class LivenessTracker {
     const next = new Map<string, Liveness>();
     for (const t of this.tracked.values()) {
       const lastWriteMs = effectiveMtime(t.files);
-      const state = resolveState(t.verdict, now - lastWriteMs, this.thresholds);
-      next.set(t.sessionId, { sessionId: t.sessionId, verdict: t.verdict, state, lastWriteMs });
+      const state = resolveState(t.info.verdict, now - lastWriteMs, this.thresholds);
+      const l: Liveness = { sessionId: t.sessionId, verdict: t.info.verdict, state, lastWriteMs };
+      if (t.info.contextTokens !== undefined) l.contextTokens = t.info.contextTokens;
+      if (t.info.model !== undefined) l.model = t.info.model;
+      next.set(t.sessionId, l);
     }
     const changed = membershipChanged || !sameLiveness(this.current, next);
     this.current = next;
@@ -153,7 +158,7 @@ function sameLiveness(a: ReadonlyMap<string, Liveness>, b: ReadonlyMap<string, L
   if (a.size !== b.size) return false;
   for (const [k, x] of a) {
     const y = b.get(k);
-    if (!y || x.verdict !== y.verdict || x.lastWriteMs !== y.lastWriteMs || x.state.kind !== y.state.kind) return false;
+    if (!y || x.verdict !== y.verdict || x.lastWriteMs !== y.lastWriteMs || x.state.kind !== y.state.kind || x.contextTokens !== y.contextTokens) return false;
     if (x.state.kind === 'attention' && y.state.kind === 'attention' && x.state.reason !== y.state.reason) return false;
   }
   return true;
@@ -163,7 +168,7 @@ function defaultDeps(): TrackerDeps {
   return {
     discover: fsDiscover,
     stat: async p => { const s = await fsStat(p); return { mtimeMs: s.mtimeMs, size: s.size }; },
-    readVerdict: fsReadVerdict,
+    readVerdict: fsReadTailInfo,
     now: () => Date.now(),
   };
 }

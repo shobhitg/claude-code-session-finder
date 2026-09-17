@@ -9,7 +9,10 @@ export interface RowVM {
   selected: boolean;
   /** one sentence for the glyph's tooltip */
   stateLabel: string;
+  /** how expensive the next turn is: context size against the model's window */
+  heat?: Heat;
 }
+export interface Heat { tokens: number; window: number; pct: number; tier: 'low' | 'mid' | 'high'; label: string; title: string }
 export interface LinkVM { kind: 'link'; title: string; meta: string; iconClass: string; action: 'search' | 'scope' }
 export interface SectionVM {
   id: 'active' | 'history' | 'results'; label: string; count: number; rows: Array<RowVM | LinkVM>;
@@ -57,6 +60,27 @@ export function metaLabel(r: { project: string; branch: string | null; pr: numbe
   return [r.project, r.branch ?? '', r.pr ? `PR #${r.pr}` : ''].filter(Boolean).join(' · ');
 }
 
+export const fmtTokens = (n: number): string => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+
+/** The model's context window. Explicit `[1m]` variants and the Fable family run 1M; everything else 200k. */
+export function contextWindow(model?: string, tokens = 0): number {
+  const m = model ?? '';
+  const w = /\[1m\]/i.test(m) || /fable/i.test(m) ? 1_000_000 : 200_000;
+  return tokens > w ? 1_000_000 : w;                          // never show more than full
+}
+
+/**
+ * Cost meter for a row. Green under half the window, yellow to three quarters, red above: past that,
+ * every turn re-sends a near-full context and compaction is close.
+ */
+export function heatOf(tokens: number, model?: string): Heat {
+  const window = contextWindow(model, tokens);
+  const pct = Math.min(100, Math.round((tokens / window) * 100));
+  const tier = pct < 50 ? 'low' : pct < 75 ? 'mid' : 'high';
+  return { tokens, window, pct, tier, label: fmtTokens(tokens),
+           title: `Context ${fmtTokens(tokens)} of ${fmtTokens(window)} tokens (${pct}%) — what each turn costs${tier === 'high' ? '; compaction is near' : ''}` };
+}
+
 // Under reduced motion the spinner becomes a static dot in the running colour (spec §10).
 const runningIcon = (reducedMotion?: boolean): string => reducedMotion ? 'circle-large-filled' : 'loading~spin';
 
@@ -67,6 +91,7 @@ function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
     missing: !r.cwdExists, selected: r.sessionId === opts.activeId, stateLabel: stateLabel(r),
   };
   if (r.reason) vm.reason = r.reason;
+  if (r.contextTokens) vm.heat = heatOf(r.contextTokens, r.model);
   return vm;
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder } from '../src/webview/model.js';
+import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder, heatOf, contextWindow } from '../src/webview/model.js';
 import type { Snapshot, LiveRow, HistoryRow, SearchRow } from '../src/core/rows.js';
 
 const S = 1_000, M = 60 * S, H = 60 * M;
@@ -140,5 +140,27 @@ describe('stableOrder', () => {
   it('leaves link rows in place and keeps groups contiguous', () => {
     const rows = viewModel({ ...snap, history: [hist({ sessionId: 'h' })] }, now, opts).sections[1]!.rows;
     expect(ids(stableOrder(rows, new Map()))).toEqual(['h', 'search', 'scope']);
+  });
+});
+
+describe('heatOf / contextWindow (the cost meter)', () => {
+  it('sizes the window by model and never shows more than full', () => {
+    expect(contextWindow('claude-opus-5')).toBe(200_000);
+    expect(contextWindow('claude-opus-5[1m]')).toBe(1_000_000);
+    expect(contextWindow('claude-fable-5-1')).toBe(1_000_000);
+    expect(contextWindow('claude-sonnet-5', 350_000)).toBe(1_000_000);   // a 200k model cannot hold 350k: it must be a 1M variant
+  });
+  it('tiers at half and three quarters, labels in k/M', () => {
+    expect(heatOf(42_000, 'claude-sonnet-5')).toMatchObject({ pct: 21, tier: 'low', label: '42k', window: 200_000 });
+    expect(heatOf(118_000, 'claude-sonnet-5')).toMatchObject({ pct: 59, tier: 'mid' });
+    expect(heatOf(168_000, 'claude-sonnet-5')).toMatchObject({ pct: 84, tier: 'high' });
+    expect(heatOf(560_244, 'claude-fable-5-1')).toMatchObject({ pct: 56, tier: 'mid', label: '560k' });
+    expect(heatOf(168_000, 'claude-sonnet-5').title).toContain('compaction is near');
+  });
+  it('rides on the row when the live state carries a context size', () => {
+    const vm = viewModel({ active: [live({ sessionId: 'a', contextTokens: 168_000, model: 'claude-opus-5' }), live({ sessionId: 'b' })],
+                           history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, { activeWindowLabel: '4h', searchKey: 'k' });
+    expect(vm.sections[0]!.rows[0]).toMatchObject({ heat: { tier: 'high', label: '168k' } });
+    expect(vm.sections[0]!.rows[1]).not.toHaveProperty('heat');
   });
 });

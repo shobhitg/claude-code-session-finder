@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { classifyTail, resolveState, pickMainFile, effectiveMtime, DEFAULT_THRESHOLDS } from '../src/core/state.js';
+import { classifyTail, readTailInfo, resolveState, pickMainFile, effectiveMtime, DEFAULT_THRESHOLDS } from '../src/core/state.js';
 import { readTail, readVerdict, TAIL_WINDOW } from '../src/core/tail-io.js';
 import type { SourceFile } from '../src/core/discover.js';
 
@@ -61,6 +61,21 @@ describe('classifyTail', () => {
   it('returns unknown when nothing conversational is present', () => {
     expect(classifyTail('')).toBe('unknown');
     expect(classifyTail(sidecars)).toBe('unknown');
+  });
+});
+
+describe('readTailInfo — context size alongside the verdict', () => {
+  const withUsage = (stop: string | null, usage: object, model = 'claude-opus-5') =>
+    line({ type: 'assistant', message: { stop_reason: stop, model, content: [{ type: 'text', text: 'x' }], usage } });
+  it('sums input + cache-read + cache-creation of the newest assistant record, even when the tail is a user record', () => {
+    const t = readTailInfo([withUsage('tool_use', { input_tokens: 32, cache_creation_input_tokens: 2_023, cache_read_input_tokens: 558_189, output_tokens: 859 }, 'claude-fable-5-1'),
+                            user(), sidecars].join('\n'));
+    expect(t).toEqual({ verdict: 'awaiting-model', contextTokens: 560_244, model: 'claude-fable-5-1' });
+  });
+  it('prefers the newest usage, and a record without usage adds nothing', () => {
+    const t = readTailInfo([withUsage('tool_use', { cache_read_input_tokens: 100_000 }), withUsage('end_turn', { input_tokens: 5, cache_read_input_tokens: 120_000 })].join('\n'));
+    expect(t).toMatchObject({ verdict: 'turn-ended', contextTokens: 120_005 });
+    expect(readTailInfo(assistant('end_turn'))).toEqual({ verdict: 'turn-ended' });
   });
 });
 

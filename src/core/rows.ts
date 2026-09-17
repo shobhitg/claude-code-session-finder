@@ -9,6 +9,8 @@ export interface LiveRow {
   state: 'running' | 'attention'; reason?: AttentionReason;
   /** surfaces render "quiet 2 m" from this and their own clock */
   lastWriteMs: number;
+  /** context the model was last given, and the model — the cost meter */
+  contextTokens?: number; model?: string;
 }
 export interface HistoryRow {
   sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
@@ -19,7 +21,7 @@ export interface Snapshot { active: LiveRow[]; history: HistoryRow[]; totalSessi
 /** A row of the sidebar's inline filter: a HISTORY-shaped row plus what matched, and its live state if it has one. */
 export interface SearchRow extends HistoryRow {
   snippet: string | null; matches: number;
-  live?: { state: 'running' | 'attention'; reason?: AttentionReason; lastWriteMs: number };
+  live?: { state: 'running' | 'attention'; reason?: AttentionReason; lastWriteMs: number; contextTokens?: number; model?: string };
 }
 
 /** The derivation quickpick.ts has used since v0.1: last `--` segment of the sanitized dir name. */
@@ -82,7 +84,8 @@ export function rowsForHits(hits: SessionHit[], liveness: ReadonlyMap<string, Li
       branch: m.branches.at(-1) ?? null, pr: m.prLinks.at(-1) ?? null, cwdExists: m.cwdExists, lastTs: m.lastTs, msgCount: m.msgCount,
       snippet: h.best ? snippet(h.best.text, h.best.index) : null, matches: h.matchCount,
     };
-    if (l) row.live = { state: l.state.kind, lastWriteMs: l.lastWriteMs, ...(l.state.kind === 'attention' ? { reason: l.state.reason } : {}) };
+    if (l) row.live = { state: l.state.kind, lastWriteMs: l.lastWriteMs, ...(l.state.kind === 'attention' ? { reason: l.state.reason } : {}),
+                        ...(l.contextTokens !== undefined ? { contextTokens: l.contextTokens } : {}), ...(l.model !== undefined ? { model: l.model } : {}) };
     return row;
   });
 }
@@ -126,6 +129,8 @@ export function buildSnapshot(
         state: l.state.kind, lastWriteMs: l.lastWriteMs,
       };
       if (l.state.kind === 'attention') row.reason = l.state.reason;
+      if (l.contextTokens !== undefined) row.contextTokens = l.contextTokens;
+      if (l.model !== undefined) row.model = l.model;
       return row;
     });
 

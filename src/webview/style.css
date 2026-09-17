@@ -83,11 +83,23 @@ main:focus-visible { outline: none; }
   color: var(--s-muted); white-space: nowrap;
 }
 .row__meta {
-  grid-column: 2 / span 2; grid-row: 2;
+  grid-column: 2; grid-row: 2;
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   font-size: var(--size-meta); color: var(--s-muted);
 }
 .row__missing { margin-left: var(--sp-1); }
+
+/* ─── cost meter: context size against the model's window ──────────────────── */
+.row__heat {
+  grid-column: 3; grid-row: 2; display: flex; align-items: center; gap: var(--sp-1);
+  font-family: var(--mono); font-size: var(--size-meta); font-variant-numeric: tabular-nums; color: var(--s-muted); white-space: nowrap;
+}
+.heat__track { width: 28px; height: 4px; border-radius: 2px; background: var(--s-badge-bg); overflow: hidden; }
+.heat__fill { display: block; height: 100%; border-radius: 2px; transition: width var(--dur) var(--ease); }
+.row[data-heat="low"] .heat__fill { background: var(--st-ok); }
+.row[data-heat="mid"] .heat__fill { background: var(--st-needs); }
+.row[data-heat="high"] .heat__fill { background: var(--st-error); }
+.row[data-heat="high"] .row__heat { color: var(--st-error); }
 .row--snippet { grid-template-rows: 22px 22px 18px; }
 .row__snippet {
   grid-column: 2 / span 2; grid-row: 3; padding-bottom: 2px;

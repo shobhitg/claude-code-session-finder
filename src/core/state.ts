@@ -21,13 +21,20 @@ export interface Liveness {
   state: LiveState;
   /** max mtime over the main copy(ies) AND subagent files (L7) */
   lastWriteMs: number;
+  /** context the model was last given: input + cache-read + cache-creation tokens of the newest assistant record */
+  contextTokens?: number;
+  model?: string;
 }
+
+/** Everything the tail of a transcript tells us in one read. */
+export interface TailInfo { verdict: TailVerdict; contextTokens?: number; model?: string }
 
 const CONVERSATIONAL = new Set(['user', 'assistant', 'system']);
 /** system subtypes that end a turn. Others (e.g. compact_boundary) are not boundaries and are skipped. */
 const TURN_BOUNDARY = new Set(['turn_duration', 'away_summary', 'local_command']);
 
-interface Rec { type?: string; subtype?: string; isSidechain?: boolean; message?: { stop_reason?: string | null; content?: unknown } }
+interface Usage { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number }
+interface Rec { type?: string; subtype?: string; isSidechain?: boolean; message?: { stop_reason?: string | null; content?: unknown; usage?: Usage; model?: string } }
 
 /** Esc in Claude Code writes this as a user message; the loop is over until you type again. */
 const INTERRUPTED = /^\s*\[Request interrupted by user(?: for tool use)?\]\s*$/;
@@ -44,29 +51,47 @@ function parse(line: string): Rec | null {
   try { return JSON.parse(line) as Rec; } catch { return null; }   // a write in progress is normal
 }
 
-/** L3: walk backwards past the sidecars to the last conversational record; L4/L5: read its verdict. */
-export function classifyTail(text: string): TailVerdict {
+const contextOf = (u: Usage | undefined): number =>
+  u ? (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) : 0;
+
+/**
+ * L3: walk backwards past the sidecars to the last conversational record; L4/L5: read its verdict.
+ * On the way, the newest assistant record with usage gives the context size — what every further
+ * turn costs — so the walk continues past the verdict record until it has both.
+ */
+export function readTailInfo(text: string): TailInfo {
   const lines = text.split('\n');
-  for (let i = lines.length - 1; i >= 0; i--) {
+  const info: TailInfo = { verdict: 'unknown' };
+  let verdict: TailVerdict | null = null;
+  for (let i = lines.length - 1; i >= 0 && !(verdict !== null && info.contextTokens !== undefined); i--) {
     const raw = lines[i];
     if (!raw || !raw.trim()) continue;
     const d = parse(raw);
     if (!d || !d.type || !CONVERSATIONAL.has(d.type) || d.isSidechain === true) continue;
     if (d.type === 'assistant') {
+      if (info.contextTokens === undefined) {
+        const n = contextOf(d.message?.usage);
+        if (n > 0) { info.contextTokens = n; if (typeof d.message?.model === 'string') info.model = d.message.model; }
+      }
+      if (verdict !== null) continue;
       const stop = d.message?.stop_reason;
-      if (stop === 'end_turn') return 'turn-ended';
-      if (stop === 'tool_use') return asksQuestion(d.message?.content) ? 'awaiting-answer' : 'awaiting-tool';
-      return 'awaiting-model';               // null (streaming), max_tokens, stop_sequence: the loop continues
-    }
-    if (d.type === 'system') {
-      if (d.subtype && TURN_BOUNDARY.has(d.subtype)) return 'turn-ended';
+      if (stop === 'end_turn') verdict = 'turn-ended';
+      else if (stop === 'tool_use') verdict = asksQuestion(d.message?.content) ? 'awaiting-answer' : 'awaiting-tool';
+      else verdict = 'awaiting-model';       // null (streaming), max_tokens, stop_sequence: the loop continues
       continue;
     }
-    if (INTERRUPTED.test(textOf(d.message?.content))) return 'interrupted';
-    return 'awaiting-model';                 // user: a prompt or a tool_result the model has not answered
+    if (verdict !== null) continue;
+    if (d.type === 'system') {
+      if (d.subtype && TURN_BOUNDARY.has(d.subtype)) verdict = 'turn-ended';
+      continue;
+    }
+    verdict = INTERRUPTED.test(textOf(d.message?.content)) ? 'interrupted' : 'awaiting-model';   // user: prompt, tool_result, or Esc
   }
-  return 'unknown';
+  info.verdict = verdict ?? 'unknown';
+  return info;
 }
+
+export const classifyTail = (text: string): TailVerdict => readTailInfo(text).verdict;
 
 /**
  * Spec §7 table. `turn-ended` ignores quiet time on purpose. `unknown` — a tail with nothing
