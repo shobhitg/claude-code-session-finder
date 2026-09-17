@@ -139,7 +139,7 @@
     "lint": "eslint src test --ext .ts",
     "check:fixtures": "node scripts/check-fixtures.mjs test/fixtures",
     "vscode:prepublish": "node esbuild.mjs --no-sourcemap",
-    "package": "npx --no @vscode/vsce package",
+    "package": "npx --no @vscode/vsce package --no-dependencies",
     "publish:ovsx": "ovsx publish -p $OVSX_TOKEN",
     "publish:vsce": "vsce publish"
   },

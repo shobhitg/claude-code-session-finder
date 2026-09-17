@@ -203,7 +203,8 @@ src/
     extract.ts      (v0.1)  + custom-title precedence               (L12)                  Stage 2
     types.ts        (v0.1)  INDEX_VERSION 1 → 2                                             Stage 2
     query.ts        (v0.1)  'h' unit; + durationMs(spec, fallback)  (activeWindow parsing)  Stage 1
-    state.ts        NEW     classifyTail · resolveState · pickMainFile · effectiveMtime · readTail  (pure)
+    state.ts        NEW     classifyTail · resolveState · pickMainFile · effectiveMtime  (pure, node-free)
+    tail-io.ts      NEW     readTail · readVerdict (node:fs) — split out so state.ts can be bundled into the webviews
     live.ts         NEW     LivenessTracker: sweep/tick over injected discover/stat/readVerdict/clock; emits diffs
     rows.ts         NEW     buildSnapshot(index, liveness, opts) → Snapshot; stateIcon(); projectLabel()  (pure)
     open-args.ts    NEW     openCommands(sessionId, where) → the exact command calls (L10)  (pure planner, like resolve.ts)
