@@ -2,7 +2,7 @@
   "name": "claude-code-session-finder",
   "displayName": "Claude Code Sessions & Agents",
   "description": "See which Claude Code sessions are running or waiting on you, browse and search every session's content, and open any of them in a tab or the right panel.",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {
@@ -92,6 +92,12 @@
             "Every Claude Code session on this machine."
           ],
           "description": "Which sessions the Sessions view lists. The filter button in the view toggles it per workspace; the status bar and the search picker always cover every project."
+        },
+        "sessionFinder.contextBudget": {
+          "type": "number",
+          "default": 1000000,
+          "minimum": 1000,
+          "description": "Tokens of context at which a session's cost meter reads full (deep red). Set it to where Claude Code compacts for your models; the meter ramps green → yellow → orange → red toward it."
         },
         "sessionFinder.activeWindow": {
           "type": "string",

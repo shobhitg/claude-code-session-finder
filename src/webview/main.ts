@@ -18,7 +18,7 @@ declare function acquireVsCodeApi(): {
 const api = acquireVsCodeApi();
 
 type Inbound =
-  | { type: 'snapshot'; snapshot: Snapshot; now: number; activeWindow: string; active: string | null }
+  | { type: 'snapshot'; snapshot: Snapshot; now: number; activeWindow: string; contextBudget: number; active: string | null }
   | { type: 'results'; q: string; deep: boolean; rows: SearchRow[]; now: number; indexing: boolean }
   | { type: 'active'; sessionId: string | null }
   | { type: 'focusFilter'; q?: string };
@@ -30,6 +30,7 @@ let activeId: string | null = null;
 let scrolledTo: string | null = null;       // the selected row we last scrolled into view
 let clockOffset = 0;                       // host clock − webview clock; labels use the host's clock
 let activeWindow = '4h';
+let contextBudget = 1_000_000;
 let orderPending = false;                  // a reorder arrived while the pointer was over the list
 const ui: UiState = (api.getState() as UiState | undefined) ?? { collapsed: {} };
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -47,8 +48,9 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return el;
 }
 
+/** Tooltips are our own (`.tip[data-tip]`, style.css): native `title` bubbles are slow and easy to miss in a webview. */
 function actionButton(icon: string, label: string, onClick: () => void): HTMLButtonElement {
-  const b = h('button', { class: 'action', title: label, 'aria-label': label },
+  const b = h('button', { class: 'action tip', 'data-tip': label, 'aria-label': label },
     h('i', { class: `codicon codicon-${icon}`, 'aria-hidden': 'true' }));
   b.addEventListener('click', e => { e.stopPropagation(); onClick(); });
   return b;
@@ -106,10 +108,10 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   li.className = `row${r.snippet ? ' row--snippet' : ''}`;
   li.dataset.state = r.state;
   if (r.reason) li.dataset.reason = r.reason; else delete li.dataset.reason;
-  li.title = `${r.title} — ${r.stateLabel}`;
+  li.title = r.title;
   li.setAttribute('aria-selected', String(r.selected));
   const icon = li.querySelector<HTMLElement>('.row__icon')!;
-  icon.className = `row__icon ${r.iconClass}`; icon.title = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
+  icon.className = `row__icon tip tip--left ${r.iconClass}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
   text('.row__title', r.title); text('.row__time', r.time);
   const meta = li.querySelector<HTMLElement>('.row__meta')!;
   const metaText = r.meta + (r.missing ? '⚠ folder missing' : '');
@@ -121,11 +123,11 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   if (r.heat) {
     li.dataset.heat = r.heat.tier;
     if (!heat.firstChild) heat.append(h('span', { class: 'heat__track' }, h('span', { class: 'heat__fill' })), h('span', { class: 'heat__label' }));
-    heat.title = r.heat.title; heat.setAttribute('aria-label', r.heat.title);
+    heat.dataset.tip = r.heat.title; heat.setAttribute('aria-label', r.heat.title);
     heat.querySelector<HTMLElement>('.heat__fill')!.style.width = `${r.heat.pct}%`;
     const label = heat.querySelector<HTMLElement>('.heat__label')!;
     if (label.textContent !== r.heat.label) label.textContent = r.heat.label;
-  } else if (heat.firstChild) { heat.replaceChildren(); heat.removeAttribute('title'); delete li.dataset.heat; }
+  } else if (heat.firstChild) { heat.replaceChildren(); delete heat.dataset.tip; heat.removeAttribute('aria-label'); delete li.dataset.heat; }
   const snippet = li.querySelector<HTMLElement>('.row__snippet');
   if (r.snippet && !snippet) li.append(h('span', { class: 'row__snippet' }, r.snippet));
   else if (r.snippet && snippet) { if (snippet.textContent !== r.snippet) snippet.textContent = r.snippet; }
@@ -143,13 +145,12 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
   }
   const id = r.sessionId;
   const li = h('li', { class: 'row', role: 'option', tabindex: '-1', 'data-id': id, 'data-key': keyOf(r) });
+  // Click resumes in a tab, so no button repeats that. Four that do something else, each saying what.
   const actions = h('span', { class: 'row__actions' },
-    actionButton('type-hierarchy', 'Open session view', () => post({ type: 'view', sessionId: id })),
-    actionButton('window', 'Open in tab', () => post({ type: 'open', sessionId: id, where: 'tab' })),
-    actionButton('layout-sidebar-right', 'Open in right panel', () => post({ type: 'open', sessionId: id, where: 'right' })),
-    actionButton('link', 'Copy deep link', () => post({ type: 'copyLink', sessionId: id })),
-    actionButton('folder', 'Reveal folder', () => post({ type: 'reveal', sessionId: id })),
-    actionButton('file-code', 'Open transcript', () => post({ type: 'transcript', sessionId: id })),
+    actionButton('type-hierarchy', 'Read it here: agents, timeline, transcript (V)', () => post({ type: 'view', sessionId: id })),
+    actionButton('layout-sidebar-right', 'Resume in the right panel (Shift+Enter)', () => post({ type: 'open', sessionId: id, where: 'right' })),
+    actionButton('link', 'Copy a link that reopens this session', () => post({ type: 'copyLink', sessionId: id })),
+    actionButton('file-code', 'Open the raw transcript file (T)', () => post({ type: 'transcript', sessionId: id })),
   );
   li.append(
     h('i', { class: 'row__icon', role: 'img' }),
@@ -157,7 +158,7 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
     h('span', { class: 'row__time' }),
     actions,
     h('span', { class: 'row__meta' }),
-    h('span', { class: 'row__heat', role: 'img' }),
+    h('span', { class: 'row__heat tip', role: 'img' }),
   );
   li.addEventListener('click', () => post({ type: 'open', sessionId: id, where: 'tab' }));
   updateRow(li, r);
@@ -266,7 +267,7 @@ function noteSeen(s: Snapshot): Map<string, number> {
 function render(force = false): void {
   if (!snapshot) return;
   const focusedId = (document.activeElement as HTMLElement | null)?.dataset.id;
-  const opts = { activeWindowLabel: activeWindow, searchKey, reducedMotion, activeId };
+  const opts = { activeWindowLabel: activeWindow, searchKey, reducedMotion, activeId, contextBudget };
   const q = ui.filter ?? '';
   const vm: ViewModel = filtering()
     ? resultsModel(results && results.q === q ? results.rows : null, q, results?.deep ?? false, hostNow(), opts)
@@ -335,7 +336,7 @@ window.addEventListener('message', (e: MessageEvent<Inbound>) => {
   switch (m.type) {
     case 'snapshot': {
       const scopeChanged = snapshot !== null && snapshot.scope !== m.snapshot.scope;
-      snapshot = m.snapshot; activeWindow = m.activeWindow; clockOffset = m.now - Date.now(); activeId = m.active;
+      snapshot = m.snapshot; activeWindow = m.activeWindow; contextBudget = m.contextBudget; clockOffset = m.now - Date.now(); activeId = m.active;
       render(scopeChanged);
       if (filtering()) post({ type: 'filter', q: ui.filter ?? '' });   // the index moved; re-ask so results stay current
       return;

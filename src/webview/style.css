@@ -98,8 +98,25 @@ main:focus-visible { outline: none; }
 .heat__fill { display: block; height: 100%; border-radius: 2px; transition: width var(--dur) var(--ease); }
 .row[data-heat="low"] .heat__fill { background: var(--st-ok); }
 .row[data-heat="mid"] .heat__fill { background: var(--st-needs); }
+.row[data-heat="warm"] .heat__fill { background: var(--st-warm); }
+.row[data-heat="warm"] .row__heat { color: var(--st-warm); }
 .row[data-heat="high"] .heat__fill { background: var(--st-error); }
 .row[data-heat="high"] .row__heat { color: var(--st-error); }
+.row[data-heat="full"] .heat__fill { background: var(--st-full); }
+.row[data-heat="full"] .heat__track { box-shadow: 0 0 0 1px var(--st-full); }
+.row[data-heat="full"] .row__heat { color: var(--st-full); font-weight: 700; }
+
+/* ─── tooltips: ours, so they show fast and on keyboard focus too ───────────── */
+.tip { position: relative; }
+.tip::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 4px); right: 0; z-index: 10;
+  max-width: 260px; padding: 3px 7px; border-radius: var(--radius);
+  background: var(--s-tip-bg); color: var(--s-tip-fg); border: 1px solid var(--s-tip-border);
+  font-family: var(--font); font-size: var(--size-meta); font-weight: 400; font-style: normal; line-height: 1.35; white-space: normal; width: max-content;
+  opacity: 0; pointer-events: none; transition: opacity var(--dur) var(--ease) 300ms;
+}
+.tip:hover::after, .tip:focus-visible::after { opacity: 1; }
+.tip--left::after { right: auto; left: 0; }
 .row--snippet { grid-template-rows: 22px 22px 18px; }
 .row__snippet {
   grid-column: 2 / span 2; grid-row: 3; padding-bottom: 2px;

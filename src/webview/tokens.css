@@ -35,6 +35,13 @@
   --st-idle:     var(--vscode-descriptionForeground);
   --st-ok:       var(--vscode-testing-iconPassed, var(--vscode-charts-green));
   --st-error:    var(--vscode-testing-iconFailed, var(--vscode-charts-red));
+  /* charts.orange defaults to minimap.findMatchHighlight (a translucent grey) in the built-in themes;
+     the git "modified" colour is a dependable orange-tan everywhere */
+  --st-warm:     var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-editorWarning-foreground));
+  --st-full:     var(--vscode-charts-red);
+  --s-tip-bg:    var(--vscode-editorHoverWidget-background);
+  --s-tip-fg:    var(--vscode-editorHoverWidget-foreground);
+  --s-tip-border: var(--vscode-editorHoverWidget-border);
 
   /* type — the IDE's */
   --font:      var(--vscode-font-family);

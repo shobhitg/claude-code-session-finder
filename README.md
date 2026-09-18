@@ -51,7 +51,7 @@ view and in search results:
 
 Hover a glyph for the sentence behind it. Rows are ordered by how much they need you: question, permission, done, interrupted, running, stalled — and within a group they stay where they first appeared, so nothing shuffles under your pointer.
 
-**Cost meter.** Each active row carries a small bar with its context size, the tokens the model was given on its last turn and therefore what every further turn costs. Green under half the model's window, yellow to three quarters, red above, where compaction is near. The window is 1M for `[1m]` and Fable models, 200k otherwise.
+**Cost meter.** Each active row carries a small bar with its context size: the tokens the model was given on its last turn, and therefore what every further turn costs. One absolute scale for every session, ramping green → yellow → orange → red toward `sessionFinder.contextBudget` (1M by default, where compaction lands), and pinned full in deep red past it: compact or start a new session. Hover the bar for the numbers.
 
 State is derived from the last conversational record of each recently written
 transcript, so a session in another window, another worktree, or a terminal

@@ -12,14 +12,15 @@ export interface RowVM {
   /** how expensive the next turn is: context size against the model's window */
   heat?: Heat;
 }
-export interface Heat { tokens: number; window: number; pct: number; tier: 'low' | 'mid' | 'high'; label: string; title: string }
+export type HeatTier = 'low' | 'mid' | 'warm' | 'high' | 'full';
+export interface Heat { tokens: number; budget: number; pct: number; tier: HeatTier; label: string; title: string }
 export interface LinkVM { kind: 'link'; title: string; meta: string; iconClass: string; action: 'search' | 'scope' }
 export interface SectionVM {
   id: 'active' | 'history' | 'results'; label: string; count: number; rows: Array<RowVM | LinkVM>;
   empty: string | null; skeleton: boolean;
 }
 export interface ViewModel { sections: SectionVM[] }
-export interface ViewOpts { activeWindowLabel: string; searchKey: string; reducedMotion?: boolean; activeId?: string | null }
+export interface ViewOpts { activeWindowLabel: string; searchKey: string; reducedMotion?: boolean; activeId?: string | null; contextBudget?: number }
 
 /** `loading~spin` → `codicon codicon-loading codicon-modifier-spin` (the IDE's own spinner). */
 export function iconClass(name: string): string {
@@ -62,23 +63,24 @@ export function metaLabel(r: { project: string; branch: string | null; pr: numbe
 
 export const fmtTokens = (n: number): string => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
 
-/** The model's context window. Explicit `[1m]` variants and the Fable family run 1M; everything else 200k. */
-export function contextWindow(model?: string, tokens = 0): number {
-  const m = model ?? '';
-  const w = /\[1m\]/i.test(m) || /fable/i.test(m) ? 1_000_000 : 200_000;
-  return tokens > w ? 1_000_000 : w;                          // never show more than full
-}
+export const DEFAULT_CONTEXT_BUDGET = 1_000_000;
 
 /**
- * Cost meter for a row. Green under half the window, yellow to three quarters, red above: past that,
- * every turn re-sends a near-full context and compaction is close.
+ * Cost meter for a row, on ONE absolute scale for every session: a 420k context is a 420k context
+ * whichever model holds it. `budget` is where compaction lands (a setting; 1M by default). The ramp
+ * is green → yellow → orange → red, and past the budget the bar is pinned full in deep red: the
+ * message is "compact or start a new session", and it stays on until you do.
  */
-export function heatOf(tokens: number, model?: string): Heat {
-  const window = contextWindow(model, tokens);
-  const pct = Math.min(100, Math.round((tokens / window) * 100));
-  const tier = pct < 50 ? 'low' : pct < 75 ? 'mid' : 'high';
-  return { tokens, window, pct, tier, label: fmtTokens(tokens),
-           title: `Context ${fmtTokens(tokens)} of ${fmtTokens(window)} tokens (${pct}%) — what each turn costs${tier === 'high' ? '; compaction is near' : ''}` };
+export function heatOf(tokens: number, budget = DEFAULT_CONTEXT_BUDGET): Heat {
+  const b = Math.max(1, budget);
+  const ratio = tokens / b;
+  const pct = Math.min(100, Math.round(ratio * 100));
+  const tier: HeatTier = ratio >= 1 ? 'full' : ratio >= 0.8 ? 'high' : ratio >= 0.6 ? 'warm' : ratio >= 0.35 ? 'mid' : 'low';
+  const advice = tier === 'full' ? ' — past the budget: compact or start a new session'
+    : tier === 'high' ? ' — compaction is near; consider compacting or starting fresh'
+    : tier === 'warm' ? ' — getting heavy' : '';
+  return { tokens, budget: b, pct, tier, label: fmtTokens(tokens),
+           title: `Context ${fmtTokens(tokens)} of a ${fmtTokens(b)} budget (${pct}%): the tokens re-sent on every turn${advice}` };
 }
 
 // Under reduced motion the spinner becomes a static dot in the running colour (spec §10).
@@ -91,7 +93,7 @@ function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
     missing: !r.cwdExists, selected: r.sessionId === opts.activeId, stateLabel: stateLabel(r),
   };
   if (r.reason) vm.reason = r.reason;
-  if (r.contextTokens) vm.heat = heatOf(r.contextTokens, r.model);
+  if (r.contextTokens) vm.heat = heatOf(r.contextTokens, opts.contextBudget);
   return vm;
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder, heatOf, contextWindow } from '../src/webview/model.js';
+import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder, heatOf } from '../src/webview/model.js';
 import type { Snapshot, LiveRow, HistoryRow, SearchRow } from '../src/core/rows.js';
 
 const S = 1_000, M = 60 * S, H = 60 * M;
@@ -143,23 +143,23 @@ describe('stableOrder', () => {
   });
 });
 
-describe('heatOf / contextWindow (the cost meter)', () => {
-  it('sizes the window by model and never shows more than full', () => {
-    expect(contextWindow('claude-opus-5')).toBe(200_000);
-    expect(contextWindow('claude-opus-5[1m]')).toBe(1_000_000);
-    expect(contextWindow('claude-fable-5-1')).toBe(1_000_000);
-    expect(contextWindow('claude-sonnet-5', 350_000)).toBe(1_000_000);   // a 200k model cannot hold 350k: it must be a 1M variant
+describe('heatOf (the cost meter): one absolute scale, five tiers', () => {
+  it('ramps green → yellow → orange → red toward the budget and pins full past it — the same for every model', () => {
+    expect(heatOf(168_000)).toMatchObject({ pct: 17, tier: 'low', label: '168k', budget: 1_000_000 });
+    expect(heatOf(420_000)).toMatchObject({ pct: 42, tier: 'mid', label: '420k' });
+    expect(heatOf(622_000)).toMatchObject({ pct: 62, tier: 'warm', label: '622k' });
+    expect(heatOf(850_000)).toMatchObject({ pct: 85, tier: 'high' });
+    expect(heatOf(1_300_000)).toMatchObject({ pct: 100, tier: 'full', label: '1.3M' });
+    expect(heatOf(850_000).title).toContain('compaction is near');
+    expect(heatOf(1_300_000).title).toContain('compact or start a new session');
   });
-  it('tiers at half and three quarters, labels in k/M', () => {
-    expect(heatOf(42_000, 'claude-sonnet-5')).toMatchObject({ pct: 21, tier: 'low', label: '42k', window: 200_000 });
-    expect(heatOf(118_000, 'claude-sonnet-5')).toMatchObject({ pct: 59, tier: 'mid' });
-    expect(heatOf(168_000, 'claude-sonnet-5')).toMatchObject({ pct: 84, tier: 'high' });
-    expect(heatOf(560_244, 'claude-fable-5-1')).toMatchObject({ pct: 56, tier: 'mid', label: '560k' });
-    expect(heatOf(168_000, 'claude-sonnet-5').title).toContain('compaction is near');
+  it('honours the configured budget', () => {
+    expect(heatOf(168_000, 200_000)).toMatchObject({ pct: 84, tier: 'high' });
+    expect(heatOf(50, 0).pct).toBe(100);                                   // a nonsense budget cannot divide by zero
   });
-  it('rides on the row when the live state carries a context size', () => {
+  it('rides on the row when the live state carries a context size, using the budget from options', () => {
     const vm = viewModel({ active: [live({ sessionId: 'a', contextTokens: 168_000, model: 'claude-opus-5' }), live({ sessionId: 'b' })],
-                           history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, { activeWindowLabel: '4h', searchKey: 'k' });
+                           history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, { activeWindowLabel: '4h', searchKey: 'k', contextBudget: 200_000 });
     expect(vm.sections[0]!.rows[0]).toMatchObject({ heat: { tier: 'high', label: '168k' } });
     expect(vm.sections[0]!.rows[1]).not.toHaveProperty('heat');
   });

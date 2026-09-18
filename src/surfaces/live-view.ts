@@ -146,8 +146,10 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
 
   private post(snapshot: Snapshot): void {
     if (!this.view) return;
-    const activeWindow = vscode.workspace.getConfiguration('sessionFinder').get<string>('activeWindow', '4h');
-    void this.view.webview.postMessage({ type: 'snapshot', snapshot, now: Date.now(), activeWindow, active: this.activeId() });
+    const cfg = vscode.workspace.getConfiguration('sessionFinder');
+    const activeWindow = cfg.get<string>('activeWindow', '4h');
+    const contextBudget = Math.max(1_000, cfg.get<number>('contextBudget', 1_000_000));
+    void this.view.webview.postMessage({ type: 'snapshot', snapshot, now: Date.now(), activeWindow, contextBudget, active: this.activeId() });
   }
 
   /** The inline filter: the Quick Pick's prose search, as rows that stay on screen. Deep (!) stays in the picker. */
@@ -162,8 +164,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     void this.view.webview.postMessage({ type: 'results', q, deep: parsed.deep, rows, now: Date.now(), indexing: !index });
   }
 
-  private async onMessage(raw: unknown): Promise<void> {
-    if (!isInbound(raw)) return;
+  private async onMessage(raw: unknown): Promise<void> {    if (!isInbound(raw)) return;
     try {
       if (raw.type === 'ready') {
         this.post(this.host.snapshot);

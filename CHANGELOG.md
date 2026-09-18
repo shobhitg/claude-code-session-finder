@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.3
+
+**The cost meter is on one absolute scale.** 0.5.2 scaled it to each model's
+window, so a 420k context on a 1M model read green while 168k on a 200k model
+read red — inverted at a glance. Now every session is measured against the
+same `sessionFinder.contextBudget` (1M by default, where compaction lands):
+green → yellow → orange → red toward it, then pinned full in deep red past it
+with the advice "compact or start a new session". Hover the bar for the
+numbers.
+
+**Every icon explains itself.** Row buttons, state glyphs and the cost meter
+have tooltips that appear on hover and on keyboard focus — ours, not the
+browser's, so they show promptly. The row's buttons are down to four: read
+here, resume in the right panel, copy a reopening link, open the raw
+transcript. Clicking the row already resumes it in a tab, and "reveal folder"
+earned nothing the meta line does not already say.
+
 ## 0.5.2
 
 **The Sessions view stopped flickering and stopped shuffling.** A snapshot
