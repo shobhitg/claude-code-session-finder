@@ -5,11 +5,14 @@ import { refreshIndex } from './core/cache.js';
 import { durationMs } from './core/query.js';
 import { buildSnapshot, type Snapshot, type SidebarScope } from './core/rows.js';
 import { inScope } from './core/scope.js';
+import { applyClosed, type ClosedMarkers } from './core/closed.js';
 import { workspaceRoots } from './scope-roots.js';
 import type { SearchIndex, SessionMeta } from './core/types.js';
 import type { Liveness, Thresholds } from './core/state.js';
 
 const HOUR = 3_600_000;
+/** globalState key: sessions closed from the sidebar, session id → when (core/closed.ts). Machine-wide, like the sessions. */
+const CLOSED_KEY = 'closedSessions';
 
 /** The two live-state thresholds, from settings (spec D5). Shared with the Session View. */
 export function readThresholds(c: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration('sessionFinder')): Thresholds {
@@ -34,10 +37,16 @@ export class LiveHost implements vscode.Disposable {
 
   readonly onSnapshot: vscode.Event<Snapshot> = this.emitter.event;
   snapshot: Snapshot = { active: [], history: [], totalSessions: 0, indexing: true, scope: 'all' };
+  /** The override that keeps a recently written session under CLOSED: the × on a row put it there. */
+  private closed: ClosedMarkers = {};
+  private activeWindowMs = 4 * HOUR;
+  /** The tracker's liveness minus the closed sessions — what every surface reads as "live". */
+  private live: ReadonlyMap<string, Liveness> = new Map();
   /** This workspace's folders, main checkouts and worktrees — what "this project" means for the sidebar. */
   private roots: string[] = [];
 
   constructor(private readonly ctx: vscode.ExtensionContext, private readonly log: vscode.LogOutputChannel) {
+    this.closed = ctx.globalState.get<ClosedMarkers>(CLOSED_KEY) ?? {};
     this.rebuildTracker();
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration(e => {
@@ -71,7 +80,27 @@ export class LiveHost implements vscode.Disposable {
   /** Whether the sidebar shows this session. Global surfaces (status bar, picker) never ask. */
   readonly inScope = (m: SessionMeta): boolean => this.scope === 'all' || inScope(m, this.roots);
 
-  get liveness(): ReadonlyMap<string, Liveness> { return this.tracker?.liveness ?? new Map(); }
+  get liveness(): ReadonlyMap<string, Liveness> { return this.live; }
+
+  /**
+   * Close a session: it moves under CLOSED at once and stays there until its transcript is written
+   * again after the close (core/closed.ts). The tab, if any, is the view's business.
+   */
+  async close(sessionId: string): Promise<void> {
+    this.closed = { ...this.closed, [sessionId]: Date.now() };
+    this.publish();
+    await this.ctx.globalState.update(CLOSED_KEY, this.closed);
+  }
+
+  /** Opening a closed session from here is the user's word that it is active again — the marker goes now, not after the first write. */
+  async reopen(sessionId: string): Promise<void> {
+    if (!(sessionId in this.closed)) return;
+    const rest: Record<string, number> = { ...this.closed };
+    delete rest[sessionId];
+    this.closed = rest;
+    this.publish();
+    await this.ctx.globalState.update(CLOSED_KEY, this.closed);
+  }
   /** The search index, or null before the first refresh lands. Read-only for surfaces. */
   get searchIndex(): SearchIndex | null { return this.index; }
 
@@ -79,10 +108,8 @@ export class LiveHost implements vscode.Disposable {
     this.tracker?.stop();
     this.unsubscribe?.();
     const c = vscode.workspace.getConfiguration('sessionFinder');
-    const tracker = new LivenessTracker({
-      activeWindowMs: durationMs(c.get<string>('activeWindow', '4h'), 4 * HOUR),
-      thresholds: readThresholds(c),
-    });
+    this.activeWindowMs = durationMs(c.get<string>('activeWindow', '4h'), 4 * HOUR);
+    const tracker = new LivenessTracker({ activeWindowMs: this.activeWindowMs, thresholds: readThresholds(c) });
     tracker.onError = err => this.log.warn(`live tracker: ${String(err)}`);
     this.unsubscribe = tracker.onChange(({ membershipChanged }) => {
       if (membershipChanged) void this.refreshIndex();          // a session appeared or left (D6)
@@ -111,7 +138,11 @@ export class LiveHost implements vscode.Disposable {
   }
 
   private publish(): void {
-    this.snapshot = buildSnapshot(this.index, this.liveness, { indexing: this.indexing !== null, scope: this.scope, inScope: this.inScope });
+    const raw = this.tracker?.liveness ?? new Map<string, Liveness>();
+    const r = applyClosed(raw, this.closed, { now: Date.now(), activeWindowMs: this.activeWindowMs });
+    if (r.changed) { this.closed = r.markers; void this.ctx.globalState.update(CLOSED_KEY, r.markers); }
+    this.live = r.liveness;
+    this.snapshot = buildSnapshot(this.index, this.live, { indexing: this.indexing !== null, scope: this.scope, inScope: this.inScope });
     this.emitter.fire(this.snapshot);
   }
 

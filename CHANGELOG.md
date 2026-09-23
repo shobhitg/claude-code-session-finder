@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.0
+
+**History is now Closed, and you can close a session.** Clicking a row under
+the old History resumed the session, and resuming writes its transcript, so
+one accidental click promoted a finished session to Active for four hours
+with no way back. Every active row now ends its actions with an `×`: it moves
+the session under **Closed** at once and closes its Claude Code tab. `Delete`
+on a focused row and **Claude: Close Session** in the palette do the same.
+Closing the tab stops the session, so one Claude is still working in asks
+first. A closed session stays closed until its transcript is written again
+after the close — you resumed it and sent a message — or you open it from
+the view. Closed sessions read as not live everywhere: the status bar, the
+picker's glyphs, the filter's results and the Session View. The section is
+called Closed rather than Archive because the action that puts a session
+there closes its tab, and because Claude Code itself calls these closed
+sessions.
+
 ## 0.5.3
 
 **The cost meter is on one absolute scale.** 0.5.2 scaled it to each model's

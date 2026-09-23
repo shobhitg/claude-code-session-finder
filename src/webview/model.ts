@@ -101,7 +101,7 @@ function historyRow(r: HistoryRow, opts: ViewOpts): RowVM {
   return {
     kind: 'session', sessionId: r.sessionId, title: r.title, meta: metaLabel(r), time: historyLabel(r),
     iconClass: iconClass('history'), state: 'history', missing: !r.cwdExists, selected: r.sessionId === opts.activeId,
-    stateLabel: 'Finished earlier',
+    stateLabel: 'Closed · click to resume',
   };
 }
 
@@ -116,12 +116,14 @@ export function viewModel(s: Snapshot, now: number, opts: ViewOpts): ViewModel {
       : { kind: 'link', title: 'All projects · show this workspace only', meta: '', iconClass: iconClass('filter'), action: 'scope' });
   }
 
+  // HISTORY in the data model (spec §6: everything not ACTIVE) is labelled Closed in the view: the × on an
+  // active row puts a session here by closing its tab, and clicking a row here resumes it.
   const historyCount = Math.max(0, s.totalSessions - s.active.length);
   return {
     sections: [
       { id: 'active', label: 'Active', count: active.length, rows: active, skeleton: false,
         empty: active.length ? null : `Nothing running${s.scope === 'workspace' ? ' in this workspace' : ''}. Sessions touched in the last ${opts.activeWindowLabel} appear here.` },
-      { id: 'history', label: 'History', count: historyCount, rows: history,
+      { id: 'history', label: 'Closed', count: historyCount, rows: history,
         skeleton: s.indexing && history.length === 0, empty: null },
     ],
   };

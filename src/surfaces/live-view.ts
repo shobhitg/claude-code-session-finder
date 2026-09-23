@@ -11,6 +11,8 @@ import type { OpenWhere } from '../core/open-args.js';
 import { executePlan, folderUri, openTranscript } from '../open.js';
 
 export const VIEW_ID = 'sessionFinder.live';
+/** The webview type of a Claude Code session tab (`vscode.TabInputWebview.viewType` contains it). */
+const CLAUDE_TAB = 'claudeVSCodePanel';
 
 // One member per `type`, not `'transcript' | 'copyLink' | 'reveal'` in one member: the early
 // returns in onMessage narrow by discriminant, and a shared member would leave `raw` un-narrowed
@@ -24,7 +26,8 @@ type Inbound =
   | { type: 'view'; sessionId: string }
   | { type: 'transcript'; sessionId: string }
   | { type: 'copyLink'; sessionId: string }
-  | { type: 'reveal'; sessionId: string };
+  | { type: 'reveal'; sessionId: string }
+  | { type: 'close'; sessionId: string };
 
 /** Spec §12: every field read from a webview message is checked first; unknown shapes are ignored. */
 function isInbound(m: unknown): m is Inbound {
@@ -34,7 +37,7 @@ function isInbound(m: unknown): m is Inbound {
     case 'ready': case 'search': case 'toggleScope': return true;
     case 'filter': return typeof o.q === 'string';
     case 'open': return typeof o.sessionId === 'string' && (o.where === 'tab' || o.where === 'right');
-    case 'view': case 'transcript': case 'copyLink': case 'reveal': return typeof o.sessionId === 'string';
+    case 'view': case 'transcript': case 'copyLink': case 'reveal': case 'close': return typeof o.sessionId === 'string';
     default: return false;
   }
 }
@@ -97,7 +100,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
       this.log?.debug(`active tab: not a webview (${input?.constructor.name ?? 'none'}) — highlight kept`);
       return;
     }
-    if (input.viewType.includes('claudeVSCodePanel')) {
+    if (input.viewType.includes(CLAUDE_TAB)) {
       if (this.opened && Date.now() - this.opened.at < 5_000) { this.learn(tab.label, this.opened.sessionId); this.opened = null; }
       this.activeTab = { kind: 'claude', label: tab.label };
     }
@@ -105,6 +108,42 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     else { this.log?.debug(`active tab: webview ${input.viewType} — not a session`); return; }
     this.log?.info(`active tab: ${input.viewType} "${tab.label}" → session ${this.activeId() ?? 'not found in the list'}`);
     this.postActive();
+  }
+
+  /**
+   * The × on an ACTIVE row, Delete on a focused one, and `Claude: Close Session`. Closing a Claude Code
+   * tab shuts its session down, so one Claude is still working in asks first; the rest close at once.
+   * The tabs are resolved BEFORE the marker is set — afterwards the session may be in no list at all —
+   * and the marker is set before they close, so the row moves under CLOSED as the tab goes.
+   */
+  async closeSession(sessionId: string): Promise<void> {
+    const row = this.host.snapshot.active.find(r => r.sessionId === sessionId);
+    if (!row) return;                                                   // already closed, or gone
+    if (row.state === 'running') {
+      const choice = await vscode.window.showWarningMessage(`Close “${row.title}”?`,
+        { modal: true, detail: 'Claude is still working in this session. Closing its tab stops it; you can resume it from Closed later.' }, 'Close');
+      if (choice !== 'Close') return;
+    }
+    const tabs = this.tabsOf(sessionId);
+    await this.host.close(sessionId);
+    if (tabs.length) await vscode.window.tabGroups.close(tabs);
+    // The highlight follows the active tab and is kept over files; if it pointed at this session, nothing is behind it now.
+    if (this.activeId() === sessionId) { this.activeTab = null; this.postActive(); }
+    this.log?.info(`closed session ${sessionId} ("${row.title}"), ${tabs.length} tab(s)`);
+    vscode.window.setStatusBarMessage(`Closed “${row.title}”${tabs.length ? '' : ' — no tab of its own was open in this window'}`, 4000);
+  }
+
+  /** Every Claude Code tab in this window whose label this sidebar resolves to `sessionId` — exactly the tabs it would highlight for it. */
+  private tabsOf(sessionId: string): vscode.Tab[] {
+    const out: vscode.Tab[] = [];
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        const input = tab.input;
+        if (!(input instanceof vscode.TabInputWebview) || !input.viewType.includes(CLAUDE_TAB)) continue;
+        if ((this.learned.get(tab.label) ?? resolveTabSession(tab.label, this.host.snapshot)) === sessionId) out.push(tab);
+      }
+    }
+    return out;
   }
 
   private postActive(): void {
@@ -180,6 +219,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
         return;
       }
       if (raw.type === 'view') { await vscode.commands.executeCommand('sessionFinder.openSessionView', raw.sessionId); return; }
+      if (raw.type === 'close') { await this.closeSession(raw.sessionId); return; }
       const m = this.host.session(raw.sessionId);
       if (!m) { vscode.window.showWarningMessage('That session is not in the index yet — try again in a moment.'); return; }
       if (raw.type === 'transcript') { await openTranscript(m.file); return; }

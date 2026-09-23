@@ -4,7 +4,7 @@ See what every Claude Code session is doing, find any past conversation by what
 was said in it, and read a session's full story — agents included — without
 resuming it.
 
-![The Sessions view beside a Session View: a running session with two agents, a session waiting on a permission prompt, one that is your turn, and recent history](docs/images/hero.png)
+![The Sessions view beside a Session View: a running session with two agents, one asking a question, one waiting on a permission prompt, one that is your turn, one interrupted, and the closed sessions below](docs/images/hero.png)
 
 > Formerly **Claude Code Session Finder**. Same extension id, so an existing
 > install updates in place; the commands, settings and keybinding are unchanged.
@@ -61,7 +61,7 @@ shows up too. Only sessions written within `sessionFinder.activeWindow`
 
 ## Browse sessions
 
-The **Sessions** view lists what is live and what is history **for this
+The **Sessions** view lists what is live and what is closed **for this
 workspace**: sessions from its folders, their git repository and every worktree
 of it. Sessions from other projects stay out until you press the filter button
 in the view title (or `sessionFinder.sidebarScope`). The status bar and the
@@ -73,19 +73,30 @@ you as you switch between Claude Code tabs and Session Views.
 - **Active** — sessions written in the last `activeWindow`, most urgent first:
   needs you, your turn, running, stalled. The time label says how long a
   session has been quiet.
-- **History** — the 50 most recent finished sessions, with their project,
-  branch and PR, and **Search all…** for everything older.
+- **Closed** — the 50 most recent sessions that are not active, with their
+  project, branch and PR, and **Search all…** for everything older. Clicking
+  one resumes it, which makes it active.
+
+**Closing a session.** Resuming a session writes its transcript, so one
+accidental click under Closed promotes a finished session to Active for the
+whole `activeWindow`. The `×` at the end of an active row's actions (or
+`Delete` on the focused row, or **Claude: Close Session** from the palette)
+puts it back under Closed at once and closes its Claude Code tab. Closing the
+tab stops the session, so if Claude is still working in it you are asked
+first. A closed session stays closed until its transcript is written again
+after the close — you resumed it and sent a message — or you open it from
+the view.
 
 **Filter box.** Type at the top of the view (or press `/`) to search inside the
 listed sessions with the same syntax as the picker below — words, `"phrase"`,
 `pr:123`, `since:all`. Results replace the list and stay on screen: open one in
 a tab, read another in the Session View, come back, refine, and `Esc` or the
-`×` restores Active and History. Deep `!` searches stay in the picker.
+`×` restores Active and Closed. Deep `!` searches stay in the picker.
 
 `↑` `↓` move · `Enter` opens in a tab · `Shift+Enter` opens in the right panel ·
-`V` opens the Session View · `T` opens the raw transcript · `/` filters. Hover
-or focus a row for the same actions as buttons, plus a copyable deep link and
-"reveal folder".
+`V` opens the Session View · `T` opens the raw transcript · `Delete` closes the
+session · `/` filters. Hover or focus a row for the same actions as buttons,
+plus a copyable deep link.
 
 Opening in the right panel uses Claude Code's own "Open in Side Bar", which also
 makes that the default for new sessions until you run **Claude Code: Open in New

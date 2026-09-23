@@ -152,6 +152,9 @@ main:focus-visible { outline: none; }
 }
 .action:hover { background: var(--s-toolbar); }
 .action:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+/* the × that closes a session: set apart from the four that only look, and absent on a row that is already closed */
+.action--close { margin-left: var(--sp-1); }
+.action[hidden] { display: none; }
 
 /* ─── the "search all…" row ────────────────────────────────────────────────── */
 .row--link { grid-template-rows: 22px; min-height: 22px; }

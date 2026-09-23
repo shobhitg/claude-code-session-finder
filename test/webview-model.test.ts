@@ -60,15 +60,15 @@ describe('viewModel', () => {
   };
   const opts = { activeWindowLabel: '4h', searchKey: 'Ctrl+Alt+S' };
 
-  it('builds ACTIVE and HISTORY with counts, states and the search-all link', () => {
+  it('builds ACTIVE and CLOSED (HISTORY in the data model) with counts, states and the search-all link', () => {
     const vm = viewModel(snap, now, opts);
-    expect(vm.sections.map(s => [s.id, s.label, s.count])).toEqual([['active', 'Active', 2], ['history', 'History', 38]]);
+    expect(vm.sections.map(s => [s.id, s.label, s.count])).toEqual([['active', 'Active', 2], ['history', 'Closed', 38]]);
     const [active, history] = vm.sections;
     expect(active!.rows[0]).toMatchObject({ kind: 'session', sessionId: 'a', state: 'running', missing: false,
                                             iconClass: 'codicon codicon-loading codicon-modifier-spin' });
     expect(active!.rows[1]).toMatchObject({ kind: 'session', state: 'attention', reason: 'your-turn', missing: true,
                                             iconClass: 'codicon codicon-comment-discussion' });
-    expect(history!.rows[0]).toMatchObject({ kind: 'session', sessionId: 'h', state: 'history', time: 'Sep 15 · 31 msgs' });
+    expect(history!.rows[0]).toMatchObject({ kind: 'session', sessionId: 'h', state: 'history', time: 'Sep 15 · 31 msgs', stateLabel: 'Closed · click to resume' });
     expect(history!.rows.at(-2)).toEqual({ kind: 'link', title: 'Search all 40 sessions…', meta: 'Ctrl+Alt+S',
                                             iconClass: 'codicon codicon-search', action: 'search' });
     expect(history!.rows.at(-1)).toMatchObject({ kind: 'link', action: 'scope', title: 'All projects · show this workspace only' });

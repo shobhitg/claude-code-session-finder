@@ -197,6 +197,7 @@ saving. Not doing it.
 | D8 | Ship in **two stages**: Stage 1 = engine + status bar + Quick Pick icons + the L10 fix (**0.2.0**); Stage 2 = webview browser + right-panel open + `custom-title` (**0.3.0**). | Stage 1 answers the original question in days and proves the classifier on real use before the UI is built on it. |
 | D9 | The browser has **no search box**. HISTORY shows the 50 most recent sessions and a "Search all N sessions…" row that opens the Quick Pick. | `Ctrl+Alt+S` is already the best content-search surface; a second one would compete with it. |
 | D10 | **No telemetry, no network.** Unchanged from v0.1. | Privacy stance is part of the marketplace listing. |
+| D11 | **HISTORY is labelled "Closed", and an ACTIVE row can be closed** (§9.1): a marker keeps the session out of liveness until its transcript is written again after the close, and its Claude Code tab is closed with it. | Resuming writes the transcript, so one click under HISTORY promoted a finished session to ACTIVE with no way back. Closing the tab is what "done with this" means, and Claude Code's own vocabulary is "closed session"; "Archive" would imply deliberate filing for rows that merely aged out. |
 
 ## 5. Architecture
 
@@ -375,7 +376,7 @@ Protocol (all messages are plain JSON; unknown `type`s are ignored):
 |---|---|
 | view → host | `{ type: 'ready' }` on load — host answers with a snapshot |
 | host → view | `{ type: 'snapshot', snapshot: Snapshot, now: number }` |
-| view → host | `{ type: 'open', sessionId, where: 'tab' \| 'right' }` · `{ type: 'transcript', sessionId }` · `{ type: 'copyLink', sessionId }` · `{ type: 'reveal', sessionId }` · `{ type: 'search' }` |
+| view → host | `{ type: 'open', sessionId, where: 'tab' \| 'right' }` · `{ type: 'transcript', sessionId }` · `{ type: 'copyLink', sessionId }` · `{ type: 'reveal', sessionId }` · `{ type: 'close', sessionId }` · `{ type: 'search' }` |
 
 The webview persists only UI state (collapsed sections) via `vscode.getState()/setState()`.
 CSP: `default-src 'none'; style-src ${cspSource}; font-src ${cspSource}; script-src 'nonce-…'`;
@@ -393,18 +394,32 @@ Layout:
 │ ▸ ⟳ Slack thread discussion                    just now  │   running: spinner (codicon-loading spin)
 │     aida · shobhit/slack-thread                          │
 │ ▸ ⚠ Ant and Ian reporting                      2.1 h     │   stalled: dimmed
-│ HISTORY                                           163    │
+│ CLOSED                                            163    │   HISTORY in the data model (D11)
 │   ◷ Sequencing triage briefs        Sep 15 · 31 msgs     │
 │   ◷ Figma skill                     Sep 14 · 88 msgs     │
 │   …                                                      │
 │   🔍 Search all 167 sessions…            Ctrl+Alt+S      │   → sessionFinder.search
 └──────────────────────────────────────────────────────────┘
-   hover / focus on a row reveals actions:  ⧉ tab   ▥ right panel   ⎘ link   ▤ folder   {} transcript
+   hover / focus on a row reveals actions:  ▤ view   ▥ right panel   ⎘ link   {} transcript   × close (ACTIVE rows)
 ```
 
 Keyboard: the list is a roving-tabindex `listbox`; `↑/↓` move, `Enter` opens in a tab,
-`Shift+Enter` opens in the right panel, `T` transcript, `/` opens the Quick Pick, `Esc` clears
-focus. Focus ring is `1px solid var(--s-focus)`, inset.
+`Shift+Enter` opens in the right panel, `T` transcript, `V` Session View, `Delete` closes, `/` opens
+the Quick Pick, `Esc` clears focus. Focus ring is `1px solid var(--s-focus)`, inset.
+
+**Closing a session (D11, `core/closed.ts`).** Resuming a session writes its transcript, so a click
+under CLOSED promotes the session to ACTIVE for the whole `activeWindow`. The `×` on an ACTIVE row
+(also `Delete`, and `sessionFinder.closeSession`) records a marker — session id → the moment of the
+close — in `globalState`, and the host leaves a marked session out of the liveness every surface
+reads while nothing has written its transcript after the close. Claude Code shuts a session down
+when its tab closes and may write once more on the way out, so writes within a 10 s grace do not
+count; anything later (the user resumed it and sent a message) is real activity, and the marker
+goes. Opening a closed session from here drops the marker at once. The view then closes every
+Claude Code tab whose label the sidebar resolves to that session — the same label → id resolution
+the highlight uses — so the row moves as the tab goes. A session Claude is still working in
+(`running`) asks first, because closing the tab stops it. A right-panel session has no tab: only
+the marker applies. Markers are pruned when their session is written past the grace or when they
+are older than `activeWindow` + grace.
 
 Empty and loading states: ACTIVE empty → *"Nothing running. Sessions touched in the last 4 h
 appear here."* HISTORY while the cold index builds → three skeleton rows; `indexing: true` in
@@ -481,7 +496,7 @@ IDE's spinner. Under reduced motion it becomes a static `codicon-circle-large-fi
 | attention · tool-or-permission | `bell-dot` | `--st-needs` | 600 | 2 px left accent in `--st-needs` | "quiet 3 m" |
 | attention · your-turn | `comment-discussion` | `--s-fg` | 400 | — | "3 m ago" |
 | attention · stalled | `warning` | `--st-stalled` | 400 | opacity .7 | "2.1 h" |
-| history | `history` | `--st-idle` | 400 | — | "Sep 15 · 31 msgs" |
+| history (labelled Closed) | `history` | `--st-idle` | 400 | — | "Sep 15 · 31 msgs" |
 | folder missing | suffix `⚠ folder missing` in `--s-muted` (v0.1 wording) | | | | |
 
 **Section headers** follow VS Code: uppercase, `--size-meta`, letter-spacing .04em,
@@ -539,6 +554,7 @@ shows its own warning and opens in the activity-bar sidebar instead; nothing to 
 - `live.test.ts` — tracker with fake `fs` + clock: sweep gates by window; tick reads only
   changed files (assert on the fake's read count); a threshold crossing with no I/O fires
   `onChange`; identical recomputation does **not** fire; `stop()` cancels timers.
+- `closed.test.ts` — the close marker (D11): holds through the grace, expires on a later write, pruned past the window.
 - `rows.test.ts` — ordering, HISTORY exclusion of active ids, the 50 cap, id-prefix title for
   an unindexed session, `indexing` flag.
 - `open-args.test.ts` — the exact command/argument arrays for `tab` and `right` (L10): the

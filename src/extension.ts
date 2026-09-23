@@ -59,6 +59,10 @@ export function activate(ctx: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('sessionFinder.refresh', () => Promise.all([host.sweepNow(), host.refreshIndex()])),
     vscode.commands.registerCommand('sessionFinder.openInTab', (id?: string) => openFromPalette(ctx, host, id, 'tab')),
     vscode.commands.registerCommand('sessionFinder.openInRightPanel', (id?: string) => openFromPalette(ctx, host, id, 'right')),
+    vscode.commands.registerCommand('sessionFinder.closeSession', async (id?: string) => {
+      const sessionId = id ?? await pickActive(host, 'Close which session?');
+      if (sessionId) await live.closeSession(sessionId);
+    }),
   );
   ctx.subscriptions.push(
     vscode.commands.registerCommand('sessionFinder.search', () => showSearchQuickPick(ctx, host.liveness)),
@@ -69,7 +73,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
     const sessionId = id ?? await pickSessionId(host);
     if (sessionId) await sessions.open(sessionId);
   }));
-  openHooks.onOpened = (id, where) => live.noteOpened(id, where);
+  // A session opened from here is active again whatever its closed marker said (live-host.ts reopen).
+  openHooks.onOpened = (id, where) => { void host.reopen(id); live.noteOpened(id, where); };
   live.noteActiveTab();
 
   // I2: openFolder focusing an ALREADY-OPEN window is the outcome spec §9 assumes, and
@@ -97,17 +102,19 @@ export function activate(ctx: vscode.ExtensionContext): void {
 
 export function deactivate(): void { /* nothing to tear down */ }
 
+/** A Quick Pick over the ACTIVE sessions, for the palette commands. */
+async function pickActive(host: LiveHost, placeHolder: string): Promise<string | undefined> {
+  const rows = host.snapshot.active;
+  const picked = await vscode.window.showQuickPick(
+    rows.map(r => ({ label: `$(${stateIcon(r)}) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '),
+                     id: r.sessionId, alwaysShow: true })),                                     // F7
+    { placeHolder: rows.length ? placeHolder : 'No active sessions' });
+  return picked?.id;
+}
+
 /** Palette entry points: pick an ACTIVE session (or take an id) and open it where asked. */
 async function openFromPalette(ctx: vscode.ExtensionContext, host: LiveHost, sessionId: string | undefined, where: OpenWhere): Promise<void> {
-  let id = sessionId;
-  if (!id) {
-    const rows = host.snapshot.active;
-    const picked = await vscode.window.showQuickPick(
-      rows.map(r => ({ label: `$(${stateIcon(r)}) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '),
-                       id: r.sessionId, alwaysShow: true })),                                   // F7
-      { placeHolder: rows.length ? 'Open which session?' : 'No active sessions' });
-    id = picked?.id;
-  }
+  const id = sessionId ?? await pickActive(host, 'Open which session?');
   if (!id) return;
   const m = host.session(id);
   if (!m) { vscode.window.showWarningMessage('That session is not in the index yet — try again in a moment.'); return; }

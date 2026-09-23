@@ -110,6 +110,7 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   if (r.reason) li.dataset.reason = r.reason; else delete li.dataset.reason;
   li.title = r.title;
   li.setAttribute('aria-selected', String(r.selected));
+  li.querySelector<HTMLElement>('.action--close')!.hidden = r.state === 'history';   // nothing to close on a closed row
   const icon = li.querySelector<HTMLElement>('.row__icon')!;
   icon.className = `row__icon tip tip--left ${r.iconClass}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
   text('.row__title', r.title); text('.row__time', r.time);
@@ -145,12 +146,15 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
   }
   const id = r.sessionId;
   const li = h('li', { class: 'row', role: 'option', tabindex: '-1', 'data-id': id, 'data-key': keyOf(r) });
-  // Click resumes in a tab, so no button repeats that. Four that do something else, each saying what.
+  // Click resumes in a tab, so no button repeats that. Four that look, each saying what, then the one that closes.
+  const close = actionButton('close', 'Close: move to Closed and close its tab (Delete)', () => post({ type: 'close', sessionId: id }));
+  close.classList.add('action--close');
   const actions = h('span', { class: 'row__actions' },
     actionButton('type-hierarchy', 'Read it here: agents, timeline, transcript (V)', () => post({ type: 'view', sessionId: id })),
     actionButton('layout-sidebar-right', 'Resume in the right panel (Shift+Enter)', () => post({ type: 'open', sessionId: id, where: 'right' })),
     actionButton('link', 'Copy a link that reopens this session', () => post({ type: 'copyLink', sessionId: id })),
     actionButton('file-code', 'Open the raw transcript file (T)', () => post({ type: 'transcript', sessionId: id })),
+    close,
   );
   li.append(
     h('i', { class: 'row__icon', role: 'img' }),
@@ -304,7 +308,7 @@ function refreshTimes(): void {
   }
 }
 
-/** Roving focus: ↑/↓ move, Enter opens in a tab, Shift+Enter in the right panel, T transcript, V view, / filter. */
+/** Roving focus: ↑/↓ move, Enter opens in a tab, Shift+Enter in the right panel, T transcript, V view, Delete closes, / filter. */
 root.addEventListener('keydown', e => {
   const rows = Array.from(sectionsEl.querySelectorAll<HTMLElement>('.row'));   // not [...], which needs lib dom.iterable
   const current = document.activeElement as HTMLElement | null;
@@ -323,6 +327,7 @@ root.addEventListener('keydown', e => {
       break;
     case 't': case 'T': if (id) post({ type: 'transcript', sessionId: id }); break;
     case 'v': case 'V': if (id) post({ type: 'view', sessionId: id }); break;
+    case 'Delete': case 'Backspace': if (id) { e.preventDefault(); post({ type: 'close', sessionId: id }); } break;   // the host ignores a closed row
     case '/': e.preventDefault(); focusFilter(); break;
     case 'Escape': if (filtering()) setFilter(''); else current?.blur(); break;
   }
