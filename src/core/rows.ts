@@ -118,7 +118,7 @@ export function resolveTabSession(label: string, s: Snapshot): string | undefine
   return (rows.find(r => r.title === l) ?? rows.find(r => labelMatchesTitle(l, r.title)))?.sessionId;
 }
 
-export interface Titled { sessionId: string; title: string }
+export interface Titled { sessionId: string; title: string; lastTs?: number }
 export interface TabRef { key: string; label: string }
 
 /** Every session a tab label could be: a trusted learned label names one; otherwise every known session it fits. */
@@ -129,9 +129,9 @@ export function candidateSessions(label: string, learned: ReadonlyMap<string, st
 
 /** Every session the sidebar knows a title for: the whole index, plus live rows the index has not seen yet. */
 export function knownTitles(index: SearchIndex | null, s: Snapshot, firstPrompt: Map<string, string>): Titled[] {
-  const out: Titled[] = (index?.sessions ?? []).map(m => ({ sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt) }));
+  const out: Titled[] = (index?.sessions ?? []).map(m => ({ sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt), lastTs: m.lastTs }));
   const seen = new Set(out.map(t => t.sessionId));
-  for (const r of s.active) if (!seen.has(r.sessionId)) out.push({ sessionId: r.sessionId, title: r.title });
+  for (const r of s.active) if (!seen.has(r.sessionId)) out.push({ sessionId: r.sessionId, title: r.title, lastTs: r.lastWriteMs });
   return out;
 }
 
@@ -153,6 +153,23 @@ export function trustedLearned(label: string, learned: ReadonlyMap<string, strin
   if (id === undefined) return undefined;
   const title = known.find(k => k.sessionId === id)?.title;
   return title === undefined || labelMatchesTitle(label, title) ? id : undefined;
+}
+
+/**
+ * The sessions the open Claude Code tabs stand for — kept ACTIVE whatever their age, so that a session
+ * with a tab is never listed as closed. An ambiguous label goes to the most recently written candidate,
+ * as the highlight does; a label no known session fits pins nothing.
+ */
+export function pinnedSessions(tabs: readonly TabRef[], learned: ReadonlyMap<string, string>, known: readonly Titled[]): string[] {
+  const lastOf = (id: string): number => known.find(k => k.sessionId === id)?.lastTs ?? 0;
+  const out: string[] = [];
+  for (const t of tabs) {
+    const ids = candidateSessions(t.label, learned, known);
+    if (!ids.length) continue;
+    const pick = ids.reduce((best, id) => lastOf(id) > lastOf(best) ? id : best);
+    if (!out.includes(pick)) out.push(pick);
+  }
+  return out;
 }
 
 /**

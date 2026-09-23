@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import type { LiveHost } from '../live-host.js';
-import { firstPrompts, resolveTabSession, rowsForHits, knownTitles, labelMatchesTitle, tabsToClose, trustedLearned, candidateSessions, type Snapshot, type TabRef, type Titled } from '../core/rows.js';
-import { parseQuery, search } from '../core/query.js';
+import { firstPrompts, resolveTabSession, rowsForHits, knownTitles, labelMatchesTitle, tabsToClose, trustedLearned, candidateSessions, pinnedSessions, type Snapshot, type TabRef, type Titled } from '../core/rows.js';
+import { durationMs, parseQuery, search } from '../core/query.js';
 import type { SearchIndex } from '../core/types.js';
 import { VIEW_TYPE as SESSION_VIEW_TYPE } from './session-view.js';
 import { planOpen } from '../core/resolve.js';
@@ -103,6 +103,19 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
    * highlight where it was — you are still working in that session.
    */
   noteActiveTab(): void {
+    try { this.trackActiveTab(); } finally { this.updatePins(); }
+  }
+
+  /**
+   * The sessions the open Claude Code tabs stand for are pinned: the tracker keeps them ACTIVE past the
+   * window (the row then wears an age tag), so a session with a tab is never listed as closed. Recomputed
+   * on every tab change and every snapshot — titles the index has just learned can change the answer.
+   */
+  private updatePins(): void {
+    this.host.setPinned(new Set(pinnedSessions(this.claudeTabs().map(t => t.ref), this.learned, this.known())));
+  }
+
+  private trackActiveTab(): void {
     const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
     const input = tab?.input;
     if (!tab || !(input instanceof vscode.TabInputWebview)) {
@@ -251,7 +264,8 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     const cfg = vscode.workspace.getConfiguration('sessionFinder');
     const activeWindow = cfg.get<string>('activeWindow', '4h');
     const contextBudget = Math.max(1_000, cfg.get<number>('contextBudget', 1_000_000));
-    void this.view.webview.postMessage({ type: 'snapshot', snapshot, now: Date.now(), activeWindow, contextBudget, active: this.activeId() });
+    this.updatePins();
+    void this.view.webview.postMessage({ type: 'snapshot', snapshot, now: Date.now(), activeWindow, activeWindowMs: durationMs(activeWindow, 4 * 3_600_000), contextBudget, active: this.activeId() });
   }
 
   /** The inline filter: the Quick Pick's prose search, as rows that stay on screen. Deep (!) stays in the picker. */

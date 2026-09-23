@@ -42,6 +42,8 @@ export class LiveHost implements vscode.Disposable {
   private activeWindowMs = 4 * HOUR;
   /** The tracker's liveness minus the closed sessions — what every surface reads as "live". */
   private live: ReadonlyMap<string, Liveness> = new Map();
+  /** Sessions behind an open Claude Code tab (the sidebar tells us): ACTIVE whatever their age. */
+  private pinned: ReadonlySet<string> = new Set();
   /** This workspace's folders, main checkouts and worktrees — what "this project" means for the sidebar. */
   private roots: string[] = [];
 
@@ -82,6 +84,9 @@ export class LiveHost implements vscode.Disposable {
 
   get liveness(): ReadonlyMap<string, Liveness> { return this.live; }
 
+  /** The sessions the open Claude Code tabs stand for — the tracker keeps them ACTIVE past the window. */
+  setPinned(ids: ReadonlySet<string>): void { this.pinned = ids; this.tracker?.setPinned(ids); }
+
   /**
    * Close a session: it moves under CLOSED at once and stays there until its transcript is written
    * again after the close (core/closed.ts). The tab, if any, is the view's business.
@@ -110,6 +115,7 @@ export class LiveHost implements vscode.Disposable {
     const c = vscode.workspace.getConfiguration('sessionFinder');
     this.activeWindowMs = durationMs(c.get<string>('activeWindow', '4h'), 4 * HOUR);
     const tracker = new LivenessTracker({ activeWindowMs: this.activeWindowMs, thresholds: readThresholds(c) });
+    tracker.setPinned(this.pinned);
     tracker.onError = err => this.log.warn(`live tracker: ${String(err)}`);
     this.unsubscribe = tracker.onChange(({ membershipChanged }) => {
       if (membershipChanged) void this.refreshIndex();          // a session appeared or left (D6)

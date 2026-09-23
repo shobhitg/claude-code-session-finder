@@ -55,8 +55,8 @@ Hover a glyph for the sentence behind it. Rows are ordered by how much they need
 
 State is derived from the last conversational record of each recently written
 transcript, so a session in another window, another worktree, or a terminal
-shows up too. Only sessions written within `sessionFinder.activeWindow`
-(default 4 h) carry a state; `sessionFinder.toolQuietSeconds` (60) and
+shows up too. Sessions written within `sessionFinder.activeWindow`
+(default 4 h), or open in a Claude Code tab in this window, carry a state; `sessionFinder.toolQuietSeconds` (60) and
 `sessionFinder.stalledMinutes` (15) tune the two thresholds.
 
 ## Browse sessions
@@ -70,9 +70,11 @@ search picker always cover every project.
 The row for the session in your active editor tab is highlighted, and follows
 you as you switch between Claude Code tabs and Session Views.
 
-- **Active** — sessions written in the last `activeWindow`, most urgent first:
-  needs you, your turn, running, stalled. The time label says how long a
-  session has been quiet.
+- **Active** — sessions written in the last `activeWindow`, or open in a
+  Claude Code tab in this window, most urgent first: needs you, your turn,
+  running, stalled. The time label says how long a session has been quiet. A
+  session kept here only by its tab, past the window, wears an orange
+  `> 4 hours old` tag: close it when you mean to, and not before.
 - **Closed** — the 50 most recent sessions that are not active, with their
   project, branch and PR, and **Search all…** for everything older. Clicking
   one resumes it, which makes it active.

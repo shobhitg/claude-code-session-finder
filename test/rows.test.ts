@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSnapshot, projectLabel, stateIcon, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions } from '../src/core/rows.js';
+import { buildSnapshot, projectLabel, stateIcon, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions, pinnedSessions, knownTitles } from '../src/core/rows.js';
 import type { SessionHit } from '../src/core/query.js';
 import type { SearchIndex, SessionMeta } from '../src/core/types.js';
 import type { Liveness } from '../src/core/state.js';
@@ -201,5 +201,26 @@ describe('candidateSessions (a tab label, in either direction)', () => {
     expect(candidateSessions('Email submission on call…', new Map(), known)).toEqual(['e', 'f']);
     expect(candidateSessions('Token usage optimizatio…', new Map([['Token usage optimizatio…', 'e']]), known)).toEqual(['g']);   // accident ignored
     expect(candidateSessions('Claude Code', new Map(), known)).toEqual([]);
+  });
+});
+
+describe('pinnedSessions (which sessions the open Claude Code tabs keep ACTIVE)', () => {
+  const known = [
+    { sessionId: 'e', title: 'Email submission on calls page', lastTs: 500 },
+    { sessionId: 'f', title: 'Email submission on call sheets', lastTs: 900 },
+    { sessionId: 'g', title: 'Token usage optimization for the indexer', lastTs: 100 },
+  ];
+  const tab = (key: string, label: string) => ({ key, label });
+  it('pins the learned or unique session; for an ambiguous label, the most recently written candidate', () => {
+    const tabs = [tab('1', 'Token usage optimizatio…'), tab('2', 'Email submission on call…'), tab('3', 'Claude Code')];
+    expect(pinnedSessions(tabs, new Map(), known)).toEqual(['g', 'f']);
+    expect(pinnedSessions(tabs, new Map([['Email submission on call…', 'e']]), known)).toEqual(['g', 'e']);
+    expect(pinnedSessions([], new Map(), known)).toEqual([]);
+  });
+  it('knownTitles carries each session\'s last write for that choice', () => {
+    const s = buildSnapshot(index, new Map([live('new-not-indexed', { kind: 'running' }, 4)]));
+    const k = knownTitles(index, s, firstPrompts(index));
+    expect(k.find(t => t.sessionId === 'a')).toEqual({ sessionId: 'a', title: 'Ledger GUI', lastTs: 900 });
+    expect(k.find(t => t.sessionId === 'new-not-indexed')).toEqual({ sessionId: 'new-not-indexed', title: 'new-not-', lastTs: 4 });
   });
 });

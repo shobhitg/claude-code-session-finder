@@ -11,7 +11,10 @@ export interface RowVM {
   stateLabel: string;
   /** how expensive the next turn is: context size against the model's window */
   heat?: Heat;
+  /** written longer ago than the active window — here only because its tab is open */
+  age?: AgeTag;
 }
+export interface AgeTag { label: string; title: string }
 export type HeatTier = 'low' | 'mid' | 'warm' | 'high' | 'full';
 export interface Heat { tokens: number; budget: number; pct: number; tier: HeatTier; label: string; title: string }
 export interface LinkVM { kind: 'link'; title: string; meta: string; iconClass: string; action: 'search' | 'scope' }
@@ -20,7 +23,7 @@ export interface SectionVM {
   empty: string | null; skeleton: boolean;
 }
 export interface ViewModel { sections: SectionVM[] }
-export interface ViewOpts { activeWindowLabel: string; searchKey: string; reducedMotion?: boolean; activeId?: string | null; contextBudget?: number }
+export interface ViewOpts { activeWindowLabel: string; activeWindowMs?: number; searchKey: string; reducedMotion?: boolean; activeId?: string | null; contextBudget?: number }
 
 /** `loading~spin` → `codicon codicon-loading codicon-modifier-spin` (the IDE's own spinner). */
 export function iconClass(name: string): string {
@@ -49,6 +52,25 @@ export function timeLabel(row: Pick<LiveRow, 'state' | 'reason' | 'lastWriteMs'>
     case 'interrupted': return `interrupted · ${fmtDuration(quiet)}`;
     default: return fmtDuration(quiet);
   }
+}
+
+const WINDOW_UNITS: Record<string, string> = { h: 'hour', d: 'day', w: 'week', m: 'month' };
+/** "4h" → "4 hours": the activeWindow setting spelled out, for the age tag. Anything unparseable is shown as typed. */
+export function fmtWindow(spec: string): string {
+  const m = /^(\d+)\s*([hdwm])?$/.exec(spec.trim().toLowerCase());
+  if (!m) return spec;
+  const n = Number(m[1]); const unit = WINDOW_UNITS[m[2] ?? 'd'] ?? 'day';
+  return `${n} ${unit}${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * An ACTIVE session written longer ago than the window is there only because its tab is open. A
+ * standing tag says so, and the user closes it (or not) on purpose instead of the list deciding.
+ */
+export function ageTag(row: Pick<LiveRow, 'lastWriteMs'>, now: number, opts: ViewOpts): AgeTag | undefined {
+  if (!opts.activeWindowMs || now - row.lastWriteMs <= opts.activeWindowMs) return undefined;
+  return { label: `> ${fmtWindow(opts.activeWindowLabel)} old`,
+           title: `Last written ${fmtDuration(now - row.lastWriteMs)} ago — older than the ${opts.activeWindowLabel} active window. It is still here because its tab is open; press × or close the tab to move it under Closed.` };
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -94,6 +116,8 @@ function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
   };
   if (r.reason) vm.reason = r.reason;
   if (r.contextTokens) vm.heat = heatOf(r.contextTokens, opts.contextBudget);
+  const age = ageTag(r, now, opts);
+  if (age) vm.age = age;
   return vm;
 }
 
@@ -122,7 +146,7 @@ export function viewModel(s: Snapshot, now: number, opts: ViewOpts): ViewModel {
   return {
     sections: [
       { id: 'active', label: 'Active', count: active.length, rows: active, skeleton: false,
-        empty: active.length ? null : `Nothing running${s.scope === 'workspace' ? ' in this workspace' : ''}. Sessions touched in the last ${opts.activeWindowLabel} appear here.` },
+        empty: active.length ? null : `Nothing running${s.scope === 'workspace' ? ' in this workspace' : ''}. Sessions touched in the last ${opts.activeWindowLabel}, or open in a tab, appear here.` },
       { id: 'history', label: 'Closed', count: historyCount, rows: history,
         skeleton: s.indexing && history.length === 0, empty: null },
     ],

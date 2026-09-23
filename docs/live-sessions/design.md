@@ -197,6 +197,7 @@ saving. Not doing it.
 | D8 | Ship in **two stages**: Stage 1 = engine + status bar + Quick Pick icons + the L10 fix (**0.2.0**); Stage 2 = webview browser + right-panel open + `custom-title` (**0.3.0**). | Stage 1 answers the original question in days and proves the classifier on real use before the UI is built on it. |
 | D9 | The browser has **no search box**. HISTORY shows the 50 most recent sessions and a "Search all N sessions…" row that opens the Quick Pick. | `Ctrl+Alt+S` is already the best content-search surface; a second one would compete with it. |
 | D10 | **No telemetry, no network.** Unchanged from v0.1. | Privacy stance is part of the marketplace listing. |
+| D12 | **An open Claude Code tab pins its session ACTIVE** past `activeWindow` (`LivenessTracker.setPinned`, fed by the sidebar's tab → session resolution), and such a row wears a standing "> N hours old" tag; only tabless sessions age out. | With the × closing tabs, a session listed under Closed while its tab was open contradicted itself. The user closes old tabs on purpose; the list does not decide for them. |
 | D11 | **HISTORY is labelled "Closed", and an ACTIVE row can be closed** (§9.1): a marker keeps the session out of liveness until its transcript is written again after the close, and its Claude Code tab is closed with it. | Resuming writes the transcript, so one click under HISTORY promoted a finished session to ACTIVE with no way back. Closing the tab is what "done with this" means, and Claude Code's own vocabulary is "closed session"; "Archive" would imply deliberate filing for rows that merely aged out. |
 
 ## 5. Architecture
@@ -429,7 +430,14 @@ The other direction uses the same rules with a lighter hand, since a marker is n
 Claude Code tab closed by hand (`onDidChangeTabs` → `closed`) marks its session closed when its label is
 a trusted learned one or fits exactly one known session; an ambiguous label on the tab that was active
 takes the highlight's resolution; an ambiguous background tab changes nothing. Its learned label is
-forgotten with it. Our own Session View panels are not session tabs. A right-panel session has no tab: only
+forgotten with it. Our own Session View panels are not session tabs.
+
+**Pinned by a tab (D12).** `pinnedSessions` maps the open Claude Code tabs to sessions with the same
+candidate rules (an ambiguous label → the most recently written candidate) and the host hands the set to
+the tracker, whose sweep keeps a pinned session whatever its age. The row is an ordinary live row —
+verdict, glyph, time label — plus an age tag (`ageTag`, model.ts) once `now − lastWriteMs` exceeds the
+window: "> 4 hours old", orange, on line 2 beside the cost meter so hover never hides it, with the last
+write time in its tooltip. Pins are recomputed on every tab change and every snapshot. A right-panel session has no tab: only
 the marker applies. Markers are pruned when their session is written past the grace or when they
 are older than `activeWindow` + grace.
 

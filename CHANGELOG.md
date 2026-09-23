@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0
+
+**A session with an open tab never ages into Closed.** Until now a session
+left Active once its transcript was older than `activeWindow`, tab or no tab,
+so the morning after, yesterday's tabs sat under Closed while still open — and
+now that the × closes tabs, "closed" has to mean closed. Active is now: written
+within the window, **or open in a Claude Code tab in this window**. A session
+kept there only by its tab wears a standing orange tag, `> 4 hours old` (the
+window as you set it), whose tooltip says when it was last written. You close
+it when you decide to, with the × or the tab's own close button, and it moves
+under Closed at once. Sessions with no tab age out as before; there is nothing
+to close for them. Which sessions the tabs stand for follows the same label
+rules as closing; an ambiguous label goes to the most recently written
+candidate.
+
 ## 0.6.1
 
 **Closing a session now closes the right tab, or none.** 0.6.0 identified a

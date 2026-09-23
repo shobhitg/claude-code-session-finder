@@ -156,3 +156,24 @@ describe('LivenessTracker.start/stop', () => {
     tracker.stop();
   });
 });
+
+describe('LivenessTracker pins (a session behind an open tab never ages out)', () => {
+  it('keeps a pinned session past the window, with its state; unpinning lets the next sweep drop it', async () => {
+    const t0 = 100 * H;
+    const h = harness([main('fresh', t0 - MIN), main('tabbed', t0 - 26 * H)], { '/p/-w/fresh.jsonl': 'awaiting-tool', '/p/-w/tabbed.jsonl': 'turn-ended' }, t0);
+    h.tracker.setPinned(new Set(['tabbed']));
+    await h.tracker.sweep();
+    expect([...h.tracker.liveness.keys()].sort()).toEqual(['fresh', 'tabbed']);
+    expect(h.tracker.liveness.get('tabbed')).toMatchObject({ state: { kind: 'attention', reason: 'your-turn' }, lastWriteMs: t0 - 26 * H });
+    h.tracker.setPinned(new Set());
+    await h.tracker.sweep();
+    expect([...h.tracker.liveness.keys()]).toEqual(['fresh']);
+    expect(h.changes.at(-1)!.membershipChanged).toBe(true);
+  });
+  it('a pin for a session with no transcript is harmless', async () => {
+    const h = harness([main('fresh', 100 * H - MIN)], {}, 100 * H);
+    h.tracker.setPinned(new Set(['ghost']));
+    await h.tracker.sweep();
+    expect([...h.tracker.liveness.keys()]).toEqual(['fresh']);
+  });
+});

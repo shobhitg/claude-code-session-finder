@@ -49,6 +49,8 @@ export class LivenessTracker {
   private sweepTimer: ReturnType<typeof setInterval> | undefined;
   private tickTimer: ReturnType<typeof setInterval> | undefined;
   private busy = false;
+  /** Sessions kept ACTIVE whatever their age: the ones behind an open Claude Code tab (the sidebar supplies them). */
+  private pinned: ReadonlySet<string> = new Set();
   private readonly root: string;
   private readonly thresholds: Thresholds;
   private readonly sweepMs: number;
@@ -66,6 +68,13 @@ export class LivenessTracker {
 
   get liveness(): LivenessMap { return this.current; }
 
+  /** Replace the pinned set. A change is swept at once while the tracker runs, so the list follows the tabs. */
+  setPinned(ids: ReadonlySet<string>): void {
+    if (ids.size === this.pinned.size && [...ids].every(id => this.pinned.has(id))) return;
+    this.pinned = new Set(ids);
+    if (this.sweepTimer) void this.run(() => this.sweep());
+  }
+
   onChange(cb: (c: Change) => void): () => void {
     this.listeners.add(cb);
     return () => { this.listeners.delete(cb); };
@@ -82,7 +91,7 @@ export class LivenessTracker {
     const now = this.deps.now();
     const next = new Map<string, Tracked>();
     for (const [sessionId, group] of bySession) {
-      if (now - effectiveMtime(group) > this.opts.activeWindowMs) continue;          // L6, L7
+      if (now - effectiveMtime(group) > this.opts.activeWindowMs && !this.pinned.has(sessionId)) continue;   // L6, L7; a pinned session never ages out
       const main = pickMainFile(group);                                              // L8
       if (!main) continue;                                                           // parent transcript gone
       const key = keyOf(main);

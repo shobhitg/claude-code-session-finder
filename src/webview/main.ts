@@ -7,7 +7,7 @@
 // the hover state under the pointer — the list flickered. Rows are keyed by session id and updated
 // in place; only a row that is new fades in; a row that changes position slides (FLIP); and while
 // the pointer is over the list the order is held until it leaves.
-import { viewModel, resultsModel, stableOrder, timeLabel, type ViewModel, type SectionVM, type RowVM, type LinkVM } from './model.js';
+import { viewModel, resultsModel, stableOrder, timeLabel, ageTag, type ViewModel, type ViewOpts, type SectionVM, type RowVM, type LinkVM, type AgeTag } from './model.js';
 import type { Snapshot, SearchRow } from '../core/rows.js';
 
 declare function acquireVsCodeApi(): {
@@ -18,7 +18,7 @@ declare function acquireVsCodeApi(): {
 const api = acquireVsCodeApi();
 
 type Inbound =
-  | { type: 'snapshot'; snapshot: Snapshot; now: number; activeWindow: string; contextBudget: number; active: string | null }
+  | { type: 'snapshot'; snapshot: Snapshot; now: number; activeWindow: string; activeWindowMs: number; contextBudget: number; active: string | null }
   | { type: 'results'; q: string; deep: boolean; rows: SearchRow[]; now: number; indexing: boolean }
   | { type: 'active'; sessionId: string | null }
   | { type: 'focusFilter'; q?: string };
@@ -30,6 +30,7 @@ let activeId: string | null = null;
 let scrolledTo: string | null = null;       // the selected row we last scrolled into view
 let clockOffset = 0;                       // host clock − webview clock; labels use the host's clock
 let activeWindow = '4h';
+let activeWindowMs = 4 * 3_600_000;
 let contextBudget = 1_000_000;
 let orderPending = false;                  // a reorder arrived while the pointer was over the list
 const ui: UiState = (api.getState() as UiState | undefined) ?? { collapsed: {} };
@@ -129,10 +130,18 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
     const label = heat.querySelector<HTMLElement>('.heat__label')!;
     if (label.textContent !== r.heat.label) label.textContent = r.heat.label;
   } else if (heat.firstChild) { heat.replaceChildren(); delete heat.dataset.tip; heat.removeAttribute('aria-label'); delete li.dataset.heat; }
+  setAge(li.querySelector<HTMLElement>('.row__age')!, r.age);
   const snippet = li.querySelector<HTMLElement>('.row__snippet');
   if (r.snippet && !snippet) li.append(h('span', { class: 'row__snippet' }, r.snippet));
   else if (r.snippet && snippet) { if (snippet.textContent !== r.snippet) snippet.textContent = r.snippet; }
   else snippet?.remove();
+}
+
+/** The age tag: text when the session is past the window, empty (and hidden by CSS) otherwise. */
+function setAge(el: HTMLElement, age: AgeTag | undefined): void {
+  if (!age) { if (el.textContent) { el.textContent = ''; delete el.dataset.tip; el.removeAttribute('aria-label'); } return; }
+  if (el.textContent !== age.label) el.textContent = age.label;
+  el.dataset.tip = age.title; el.setAttribute('aria-label', age.title);
 }
 
 function rowEl(r: RowVM | LinkVM): HTMLLIElement {
@@ -162,7 +171,9 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
     h('span', { class: 'row__time' }),
     actions,
     h('span', { class: 'row__meta' }),
-    h('span', { class: 'row__heat tip', role: 'img' }),
+    h('span', { class: 'row__aside' },
+      h('span', { class: 'row__age tip' }),
+      h('span', { class: 'row__heat tip', role: 'img' })),
   );
   li.addEventListener('click', () => post({ type: 'open', sessionId: id, where: 'tab' }));
   updateRow(li, r);
@@ -250,6 +261,7 @@ function reconcileSection(s: SectionVM, hold: boolean): { el: HTMLElement; defer
 }
 
 const hostNow = (): number => Date.now() + clockOffset;
+const viewOpts = (): ViewOpts => ({ activeWindowLabel: activeWindow, activeWindowMs, searchKey, reducedMotion, activeId, contextBudget });
 
 /**
  * First-seen order of ACTIVE sessions, persisted with the webview: the host sorts each urgency group
@@ -271,7 +283,7 @@ function noteSeen(s: Snapshot): Map<string, number> {
 function render(force = false): void {
   if (!snapshot) return;
   const focusedId = (document.activeElement as HTMLElement | null)?.dataset.id;
-  const opts = { activeWindowLabel: activeWindow, searchKey, reducedMotion, activeId, contextBudget };
+  const opts = viewOpts();
   const q = ui.filter ?? '';
   const vm: ViewModel = filtering()
     ? resultsModel(results && results.q === q ? results.rows : null, q, results?.deep ?? false, hostNow(), opts)
@@ -296,15 +308,19 @@ function render(force = false): void {
 }
 sectionsEl.addEventListener('mouseleave', () => { if (orderPending) render(true); });
 
-/** Between snapshots only the relative-time labels change (spec §8) — update those, not the tree. */
+/** Between snapshots only the relative-time labels change (spec §8) — update those, and the age tag a session may just have earned, not the tree. */
 function refreshTimes(): void {
   if (!snapshot) return;
-  const now = hostNow();
+  const now = hostNow(); const opts = viewOpts();
   const rows = filtering() ? (results?.rows ?? []).flatMap(r => r.live ? [{ sessionId: r.sessionId, ...r.live }] : []) : snapshot.active;
   for (const r of rows) {
-    const el = sectionsEl.querySelector<HTMLElement>(`.row[data-id="${r.sessionId}"] .row__time`);
+    const li = sectionsEl.querySelector<HTMLElement>(`.row[data-id="${r.sessionId}"]`);
+    if (!li) continue;
+    const el = li.querySelector<HTMLElement>('.row__time');
     const label = timeLabel(r, now);
     if (el && el.textContent !== label) el.textContent = label;
+    const age = li.querySelector<HTMLElement>('.row__age');
+    if (age) setAge(age, ageTag(r, now, opts));
   }
 }
 
@@ -341,7 +357,7 @@ window.addEventListener('message', (e: MessageEvent<Inbound>) => {
   switch (m.type) {
     case 'snapshot': {
       const scopeChanged = snapshot !== null && snapshot.scope !== m.snapshot.scope;
-      snapshot = m.snapshot; activeWindow = m.activeWindow; contextBudget = m.contextBudget; clockOffset = m.now - Date.now(); activeId = m.active;
+      snapshot = m.snapshot; activeWindow = m.activeWindow; activeWindowMs = m.activeWindowMs; contextBudget = m.contextBudget; clockOffset = m.now - Date.now(); activeId = m.active;
       render(scopeChanged);
       if (filtering()) post({ type: 'filter', q: ui.filter ?? '' });   // the index moved; re-ask so results stay current
       return;

@@ -89,9 +89,18 @@ main:focus-visible { outline: none; }
 }
 .row__missing { margin-left: var(--sp-1); }
 
+/* ─── line 2, right: the age tag, then the cost meter ─────────────────────── */
+.row__aside { grid-column: 3; grid-row: 2; display: flex; align-items: center; gap: var(--sp-1); }
+/* a session kept ACTIVE past the window by its open tab says so, always — hover changes nothing on line 2 */
+.row__age {
+  font-size: var(--size-meta); line-height: 14px; padding: 0 5px; border-radius: 8px; white-space: nowrap;
+  color: var(--st-warm); border: 1px solid var(--st-warm);
+}
+.row__age:empty { display: none; }
+
 /* ─── cost meter: context size against the model's window ──────────────────── */
 .row__heat {
-  grid-column: 3; grid-row: 2; display: flex; align-items: center; gap: var(--sp-1);
+  display: flex; align-items: center; gap: var(--sp-1);
   font-family: var(--mono); font-size: var(--size-meta); font-variant-numeric: tabular-nums; color: var(--s-muted); white-space: nowrap;
 }
 .heat__track { width: 28px; height: 4px; border-radius: 2px; background: var(--s-badge-bg); overflow: hidden; }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder, heatOf } from '../src/webview/model.js';
+import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder, heatOf, fmtWindow, ageTag } from '../src/webview/model.js';
 import type { Snapshot, LiveRow, HistoryRow, SearchRow } from '../src/core/rows.js';
 
 const S = 1_000, M = 60 * S, H = 60 * M;
@@ -82,7 +82,7 @@ describe('viewModel', () => {
   });
   it('empty ACTIVE explains the window; indexing shows a skeleton and no link', () => {
     const vm = viewModel({ active: [], history: [], totalSessions: 0, indexing: true, scope: 'all' }, now, opts);
-    expect(vm.sections[0]!.empty).toBe('Nothing running. Sessions touched in the last 4h appear here.');
+    expect(vm.sections[0]!.empty).toBe('Nothing running. Sessions touched in the last 4h, or open in a tab, appear here.');
     expect(vm.sections[1]!.skeleton).toBe(true);
     expect(vm.sections[1]!.rows).toEqual([]);
   });
@@ -162,5 +162,28 @@ describe('heatOf (the cost meter): one absolute scale, five tiers', () => {
                            history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, { activeWindowLabel: '4h', searchKey: 'k', contextBudget: 200_000 });
     expect(vm.sections[0]!.rows[0]).toMatchObject({ heat: { tier: 'high', label: '168k' } });
     expect(vm.sections[0]!.rows[1]).not.toHaveProperty('heat');
+  });
+});
+
+describe('the age tag: an ACTIVE session older than the window is there only because its tab is open', () => {
+  const opts = { activeWindowLabel: '4h', activeWindowMs: 4 * H, searchKey: 'k' };
+  it('fmtWindow spells the setting out', () => {
+    expect(fmtWindow('4h')).toBe('4 hours');
+    expect(fmtWindow('1h')).toBe('1 hour');
+    expect(fmtWindow('1d')).toBe('1 day');
+    expect(fmtWindow('2w')).toBe('2 weeks');
+    expect(fmtWindow('nonsense')).toBe('nonsense');
+  });
+  it('ageTag appears past the window, in the row and in results, and names the window', () => {
+    const old = live({ sessionId: 'o', state: 'attention', reason: 'your-turn', lastWriteMs: now - 26 * H });
+    expect(ageTag(old, now, opts)).toMatchObject({ label: '> 4 hours old' });
+    expect(ageTag(old, now, opts)!.title).toContain('26 h ago');
+    expect(ageTag(live({ lastWriteMs: now - 3 * H }), now, opts)).toBeUndefined();
+    expect(ageTag(old, now, { activeWindowLabel: '4h', searchKey: 'k' })).toBeUndefined();          // no window known: no tag
+    const vm = viewModel({ active: [old, live({ sessionId: 'a' })], history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, opts);
+    expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'o', age: { label: '> 4 hours old' } });
+    expect(vm.sections[0]!.rows[1]).not.toHaveProperty('age');
+    expect(vm.sections[0]!.empty).toBeNull();
+    expect(viewModel({ active: [], history: [], totalSessions: 0, indexing: false, scope: 'all' }, now, opts).sections[0]!.empty).toContain('open in a tab');
   });
 });
