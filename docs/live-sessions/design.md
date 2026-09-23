@@ -417,7 +417,19 @@ count; anything later (the user resumed it and sent a message) is real activity,
 goes. Opening a closed session from here drops the marker at once. The view then closes every
 Claude Code tab whose label the sidebar resolves to that session — the same label → id resolution
 the highlight uses — so the row moves as the tab goes. A session Claude is still working in
-(`running`) asks first, because closing the tab stops it. A right-panel session has no tab: only
+(`running`) asks first, because closing the tab stops it. Tabs carry no session id, only a label —
+the title cut to 24 characters plus "…" — so identification is by rules in `rows.ts`:
+`labelMatchesTitle` reads the ellipsis as a proper prefix (Claude Code's own matcher does the same);
+a label is *learned* for a session only when its tab was not there before our own open and it can be
+that session's title (the first tab event after an open reports the previously active tab); a learned
+label is trusted only while it fits the session's title; and `tabsToClose` closes a tab only when it
+can be nobody else's — its label is on no other open tab and exactly one known session fits it.
+Otherwise the tab stays open and a message says so: a wrongly closed tab stops somebody else's session.
+The other direction uses the same rules with a lighter hand, since a marker is not destructive: a
+Claude Code tab closed by hand (`onDidChangeTabs` → `closed`) marks its session closed when its label is
+a trusted learned one or fits exactly one known session; an ambiguous label on the tab that was active
+takes the highlight's resolution; an ambiguous background tab changes nothing. Its learned label is
+forgotten with it. Our own Session View panels are not session tabs. A right-panel session has no tab: only
 the marker applies. Markers are pruned when their session is written past the grace or when they
 are older than `activeWindow` + grace.
 

@@ -47,7 +47,9 @@ export function activate(ctx: vscode.ExtensionContext): void {
     sessions,
     vscode.window.registerWebviewViewProvider(VIEW_ID, live),
     // The sidebar follows the active editor tab: a Claude Code session tab or one of our Session Views.
-    vscode.window.tabGroups.onDidChangeTabs(() => live.noteActiveTab()),
+    // A Claude Code tab that closes takes its session under CLOSED (noteClosedTabs runs first: it reads
+    // which tab WAS active).
+    vscode.window.tabGroups.onDidChangeTabs(e => { live.noteClosedTabs(e.closed); live.noteActiveTab(); }),
     vscode.window.tabGroups.onDidChangeTabGroups(() => live.noteActiveTab()),
     vscode.commands.registerCommand('sessionFinder.showAllProjects', () => host.toggleScope()),
     vscode.commands.registerCommand('sessionFinder.showThisWorkspace', () => host.toggleScope()),
@@ -74,6 +76,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
     if (sessionId) await sessions.open(sessionId);
   }));
   // A session opened from here is active again whatever its closed marker said (live-host.ts reopen).
+  openHooks.onOpening = (id, where) => live.noteOpening(id, where);
   openHooks.onOpened = (id, where) => { void host.reopen(id); live.noteOpened(id, where); };
   live.noteActiveTab();
 

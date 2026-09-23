@@ -90,16 +90,87 @@ export function rowsForHits(hits: SessionHit[], liveness: ReadonlyMap<string, Li
   });
 }
 
+const ELLIPSIS = /(?:…|\.\.\.)$/;
+
 /**
- * Which row a Claude Code editor tab points at. Claude Code titles its tab with the session's
- * title, so an exact title match wins, ACTIVE before HISTORY; a prefix match covers a truncated
- * label. Nothing matches → undefined, and the sidebar highlights nothing rather than guessing.
+ * Could this Claude Code tab label be this session's title? Claude Code cuts a long title to 24
+ * characters and an ellipsis, and its own matcher reads that as "a proper prefix of the title";
+ * a label without an ellipsis is the whole title. (A label cut without an ellipsis, as older
+ * builds did, still matches as a prefix.) Never the reverse: "Fix tests" is not "Fix".
+ */
+export function labelMatchesTitle(label: string, title: string): boolean {
+  const l = label.trim(), t = title.trim();
+  if (!l || !t) return false;
+  if (l === t) return true;
+  if (ELLIPSIS.test(l)) { const cut = l.replace(ELLIPSIS, ''); return cut !== '' && t !== cut && t.startsWith(cut); }
+  return t.startsWith(l);
+}
+
+/**
+ * Which row a Claude Code editor tab points at, for the highlight: an exact title match wins,
+ * ACTIVE before HISTORY, then the ellipsis rule. Nothing matches → undefined, and the sidebar
+ * highlights nothing rather than guessing.
  */
 export function resolveTabSession(label: string, s: Snapshot): string | undefined {
   const l = label.trim(); if (!l) return undefined;
   // Several sessions can share one AI title; the one written most recently is the likeliest tab.
   const rows = [...[...s.active].sort((a, b) => b.lastWriteMs - a.lastWriteMs), ...s.history];
-  return (rows.find(r => r.title === l) ?? rows.find(r => r.title.startsWith(l) || l.startsWith(r.title)))?.sessionId;
+  return (rows.find(r => r.title === l) ?? rows.find(r => labelMatchesTitle(l, r.title)))?.sessionId;
+}
+
+export interface Titled { sessionId: string; title: string }
+export interface TabRef { key: string; label: string }
+
+/** Every session a tab label could be: a trusted learned label names one; otherwise every known session it fits. */
+export function candidateSessions(label: string, learned: ReadonlyMap<string, string>, known: readonly Titled[]): string[] {
+  const byLearned = trustedLearned(label, learned, known);
+  return byLearned !== undefined ? [byLearned] : tabMatches(label, known);
+}
+
+/** Every session the sidebar knows a title for: the whole index, plus live rows the index has not seen yet. */
+export function knownTitles(index: SearchIndex | null, s: Snapshot, firstPrompt: Map<string, string>): Titled[] {
+  const out: Titled[] = (index?.sessions ?? []).map(m => ({ sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt) }));
+  const seen = new Set(out.map(t => t.sessionId));
+  for (const r of s.active) if (!seen.has(r.sessionId)) out.push({ sessionId: r.sessionId, title: r.title });
+  return out;
+}
+
+/** Every known session a tab label could belong to (24 characters of title are often shared). */
+export function tabMatches(label: string, known: readonly Titled[]): string[] {
+  const out: string[] = [];
+  for (const k of known) if (labelMatchesTitle(label, k.title) && !out.includes(k.sessionId)) out.push(k.sessionId);
+  return out;
+}
+
+/**
+ * A label learned from one of our own opens names a session exactly — unless that session has a
+ * title the label cannot be, in which case the tab that was active a moment after the open was
+ * somebody else's (it happens: the tab event fires before the new tab is active) and the entry is
+ * ignored. A session with no known title cannot be checked and is taken at its word.
+ */
+export function trustedLearned(label: string, learned: ReadonlyMap<string, string>, known: readonly Titled[]): string | undefined {
+  const id = learned.get(label);
+  if (id === undefined) return undefined;
+  const title = known.find(k => k.sessionId === id)?.title;
+  return title === undefined || labelMatchesTitle(label, title) ? id : undefined;
+}
+
+/**
+ * Which Claude Code tabs to close for a session. Closing a tab stops the session in it, so a tab
+ * is closed only when it can be nobody else's: its label is on no other open tab, and either a
+ * trusted learned label names the session or exactly one known session fits the label. A tab that
+ * might be the session's but cannot be told apart is returned as `ambiguous` — left open, and said so.
+ */
+export function tabsToClose(sessionId: string, tabs: readonly TabRef[], learned: ReadonlyMap<string, string>, known: readonly Titled[]): { close: TabRef[]; ambiguous: TabRef[] } {
+  const count = new Map<string, number>();
+  for (const t of tabs) count.set(t.label, (count.get(t.label) ?? 0) + 1);
+  const close: TabRef[] = [], ambiguous: TabRef[] = [];
+  for (const t of tabs) {
+    const ids = candidateSessions(t.label, learned, known);
+    if (!ids.includes(sessionId)) continue;
+    if (ids.length === 1 && count.get(t.label) === 1) close.push(t); else ambiguous.push(t);
+  }
+  return { close, ambiguous };
 }
 
 export function buildSnapshot(

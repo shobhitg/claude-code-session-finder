@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import type { LiveHost } from '../live-host.js';
-import { firstPrompts, resolveTabSession, rowsForHits, type Snapshot } from '../core/rows.js';
+import { firstPrompts, resolveTabSession, rowsForHits, knownTitles, labelMatchesTitle, tabsToClose, trustedLearned, candidateSessions, type Snapshot, type TabRef, type Titled } from '../core/rows.js';
 import { parseQuery, search } from '../core/query.js';
 import type { SearchIndex } from '../core/types.js';
 import { VIEW_TYPE as SESSION_VIEW_TYPE } from './session-view.js';
@@ -52,8 +52,10 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
   private indexTimer: ReturnType<typeof setInterval> | undefined;
   /** What the active editor tab is: a Claude Code session tab (known by its label) or one of our Session Views. */
   private activeTab: { kind: 'claude'; label: string } | { kind: 'own' | 'opened'; sessionId: string } | null = null;
-  /** A session this extension just opened; the Claude Code tab that activates next is its tab. */
-  private opened: { sessionId: string; at: number } | null = null;
+  /** The Claude Code tab labels present just before this extension asked Claude Code to open a session. */
+  private opening: { sessionId: string; before: Set<string> } | null = null;
+  /** A session this extension just opened; a Claude Code tab that was not there before and activates next is its tab. */
+  private opened: { sessionId: string; at: number; before: Set<string> } | null = null;
   /** Claude Code tab label → session id, learned from our own opens. Exact where titles are ambiguous. */
   private readonly learned: Map<string, string>;
   private pendingFilter: { q: string } | null = null;
@@ -72,11 +74,18 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
    * Claude Code tab that appears for it, so later switches to that tab resolve by id rather than by
    * title — three sessions can share one AI title. A right-panel open is not a tab; nothing to learn.
    */
+  /** Called from runOpen() BEFORE Claude Code is asked: remember which tabs exist, so the new one can be told from them. */
+  noteOpening(sessionId: string, where: OpenWhere): void {
+    this.opening = where === 'tab' ? { sessionId, before: new Set(this.claudeTabs().map(t => t.ref.label)) } : null;
+  }
+
   noteOpened(sessionId: string, where: OpenWhere): void {
     this.activeTab = { kind: 'opened', sessionId };
     this.postActive();
+    const before = this.opening?.sessionId === sessionId ? this.opening.before : new Set(this.claudeTabs().map(t => t.ref.label));
+    this.opening = null;
     if (where !== 'tab') return;
-    this.opened = { sessionId, at: Date.now() };
+    this.opened = { sessionId, at: Date.now(), before };
     // Re-activating an already-active tab fires no tab event; one late look covers that path.
     setTimeout(() => { if (this.opened?.sessionId === sessionId) this.noteActiveTab(); }, 1_500);
   }
@@ -101,7 +110,18 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     if (input.viewType.includes(CLAUDE_TAB)) {
-      if (this.opened && Date.now() - this.opened.at < 5_000) { this.learn(tab.label, this.opened.sessionId); this.opened = null; }
+      // The tab event fires before the new tab is active, so the first Claude tab seen after an open is
+      // usually the OLD one: learn only a label that was not there before the open, and only if it can
+      // be the opened session's title (a placeholder label is renamed later and matches by title then).
+      const o = this.opened;
+      if (o && Date.now() - o.at < 5_000) {
+        if (o.before.has(tab.label)) this.log?.debug(`tab "${tab.label}" was open before ${o.sessionId} was opened — not its tab`);
+        else {
+          const title = this.known().find(k => k.sessionId === o.sessionId)?.title;
+          if (title === undefined || labelMatchesTitle(tab.label, title)) { this.learn(tab.label, o.sessionId); this.opened = null; }
+          else this.log?.info(`not learning "${tab.label}" for ${o.sessionId}: its title is "${title}"`);
+        }
+      }
       this.activeTab = { kind: 'claude', label: tab.label };
     }
     else if (input.viewType.includes(SESSION_VIEW_TYPE)) { const id = this.ownActiveSession(); if (id) this.activeTab = { kind: 'own', sessionId: id }; }
@@ -114,7 +134,9 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
    * The × on an ACTIVE row, Delete on a focused one, and `Claude: Close Session`. Closing a Claude Code
    * tab shuts its session down, so one Claude is still working in asks first; the rest close at once.
    * The tabs are resolved BEFORE the marker is set — afterwards the session may be in no list at all —
-   * and the marker is set before they close, so the row moves under CLOSED as the tab goes.
+   * and the marker is set before they close, so the row moves under CLOSED as the tab goes. A tab is
+   * closed only when it can be nobody else's (rows.ts tabsToClose); one that cannot be told apart from
+   * another session's is left open, and a message says so.
    */
   async closeSession(sessionId: string): Promise<void> {
     const row = this.host.snapshot.active.find(r => r.sessionId === sessionId);
@@ -124,26 +146,67 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
         { modal: true, detail: 'Claude is still working in this session. Closing its tab stops it; you can resume it from Closed later.' }, 'Close');
       if (choice !== 'Close') return;
     }
-    const tabs = this.tabsOf(sessionId);
+    const all = this.claudeTabs();
+    const { close, ambiguous } = tabsToClose(sessionId, all.map(t => t.ref), this.learned, this.known());
+    const tabs = all.filter(t => close.includes(t.ref)).map(t => t.tab);
     await this.host.close(sessionId);
     if (tabs.length) await vscode.window.tabGroups.close(tabs);
     // The highlight follows the active tab and is kept over files; if it pointed at this session, nothing is behind it now.
     if (this.activeId() === sessionId) { this.activeTab = null; this.postActive(); }
-    this.log?.info(`closed session ${sessionId} ("${row.title}"), ${tabs.length} tab(s)`);
-    vscode.window.setStatusBarMessage(`Closed “${row.title}”${tabs.length ? '' : ' — no tab of its own was open in this window'}`, 4000);
+    const labels = (refs: TabRef[]) => refs.map(r => `"${r.label}"`).join(', ');
+    this.log?.info(`closed session ${sessionId} ("${row.title}"): closed ${tabs.length} tab(s) [${labels(close)}], left ${ambiguous.length} ambiguous [${labels(ambiguous)}]`);
+    if (ambiguous.length) {
+      void vscode.window.showWarningMessage(`“${row.title}” is closed, but its tab was left open: the tab “${ambiguous[0]!.label}” could also be another session's, and closing a tab stops the session in it. Close it by hand.`);
+    } else {
+      vscode.window.setStatusBarMessage(`Closed “${row.title}”${tabs.length ? '' : ' — no tab of its own was open in this window'}`, 4000);
+    }
   }
 
-  /** Every Claude Code tab in this window whose label this sidebar resolves to `sessionId` — exactly the tabs it would highlight for it. */
-  private tabsOf(sessionId: string): vscode.Tab[] {
-    const out: vscode.Tab[] = [];
-    for (const group of vscode.window.tabGroups.all) {
-      for (const tab of group.tabs) {
-        const input = tab.input;
-        if (!(input instanceof vscode.TabInputWebview) || !input.viewType.includes(CLAUDE_TAB)) continue;
-        if ((this.learned.get(tab.label) ?? resolveTabSession(tab.label, this.host.snapshot)) === sessionId) out.push(tab);
+  /** Every Claude Code session tab in this window, with the label-and-position reference the pure rules work on. */
+  private claudeTabs(): Array<{ tab: vscode.Tab; ref: TabRef }> {
+    const out: Array<{ tab: vscode.Tab; ref: TabRef }> = [];
+    vscode.window.tabGroups.all.forEach((group, gi) => group.tabs.forEach((tab, ti) => {
+      const input = tab.input;
+      if (input instanceof vscode.TabInputWebview && input.viewType.includes(CLAUDE_TAB)) out.push({ tab, ref: { key: `${gi}:${ti}`, label: tab.label } });
+    }));
+    return out;
+  }
+
+  /** Every session with a known title — the whole index plus unindexed live rows — for checking labels against. */
+  private known(): Titled[] {
+    return knownTitles(this.host.searchIndex, this.host.snapshot, this.firstPromptsCached());
+  }
+
+  private firstPromptsCached(): Map<string, string> {
+    const index = this.host.searchIndex;
+    if (index && this.titlesFor !== index) { this.titles = firstPrompts(index); this.titlesFor = index; }
+    return this.titles;
+  }
+
+  /**
+   * Called on every tab change with the tabs that closed, BEFORE noteActiveTab. A Claude Code tab closed
+   * by hand is its session's end for now, so the session moves under CLOSED — the other direction of the ×.
+   * The label must be tellable: a trusted learned label or a unique title match; an ambiguous label on the
+   * tab that was active takes the resolution the highlight showed; an ambiguous background tab changes
+   * nothing. A learned label goes with its tab. Our own Session View panels are not session tabs.
+   */
+  noteClosedTabs(closed: readonly vscode.Tab[]): void {
+    for (const tab of closed) {
+      const input = tab.input;
+      if (!(input instanceof vscode.TabInputWebview) || !input.viewType.includes(CLAUDE_TAB)) continue;
+      const ids = candidateSessions(tab.label, this.learned, this.known());
+      const wasActive = this.activeTab?.kind === 'claude' && this.activeTab.label === tab.label;
+      const id = ids.length === 1 ? ids[0] : ids.length > 1 && wasActive ? resolveTabSession(tab.label, this.host.snapshot) : undefined;
+      if (this.learned.delete(tab.label)) void this.ctx.workspaceState.update('tabLabels', Object.fromEntries(this.learned));
+      // The tab behind the highlight is gone; noteActiveTab (next) sets a new one if another session tab took over.
+      if (wasActive) { this.activeTab = null; this.postActive(); }
+      if (id !== undefined && this.host.snapshot.active.some(r => r.sessionId === id)) {
+        this.log?.info(`tab "${tab.label}" closed → session ${id} moves under Closed`);
+        void this.host.close(id);
+      } else {
+        this.log?.info(`tab "${tab.label}" closed → ${ids.length > 1 ? `ambiguous (${ids.join(', ')})` : ids.length ? 'session not active' : 'no known session'}; nothing changes`);
       }
     }
-    return out;
   }
 
   private postActive(): void {
@@ -154,7 +217,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     const a = this.activeTab;
     if (!a) return null;
     if (a.kind !== 'claude') return a.sessionId;
-    return this.learned.get(a.label) ?? resolveTabSession(a.label, this.host.snapshot) ?? null;
+    return trustedLearned(a.label, this.learned, this.known()) ?? resolveTabSession(a.label, this.host.snapshot) ?? null;
   }
 
   /** The title-bar search button and `Claude: Filter Sessions`: focus the inline filter, optionally with a query. */
@@ -197,9 +260,9 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     const index = this.host.searchIndex;
     const defaultWindow = vscode.workspace.getConfiguration('sessionFinder').get<string>('defaultWindow', '60d');
     const parsed = parseQuery(q, defaultWindow, Date.now());
-    if (index && this.titlesFor !== index) { this.titles = firstPrompts(index); this.titlesFor = index; }
+    const titles = this.firstPromptsCached();
     const rows = index && !parsed.deep && q.trim()
-      ? rowsForHits(search(index, parsed, Date.now()).filter(h => this.host.inScope(h.session)), this.host.liveness, this.titles) : [];
+      ? rowsForHits(search(index, parsed, Date.now()).filter(h => this.host.inScope(h.session)), this.host.liveness, titles) : [];
     void this.view.webview.postMessage({ type: 'results', q, deep: parsed.deep, rows, now: Date.now(), indexing: !index });
   }
 

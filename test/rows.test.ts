@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSnapshot, projectLabel, stateIcon, rowsForHits, resolveTabSession, firstPrompts } from '../src/core/rows.js';
+import { buildSnapshot, projectLabel, stateIcon, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions } from '../src/core/rows.js';
 import type { SessionHit } from '../src/core/query.js';
 import type { SearchIndex, SessionMeta } from '../src/core/types.js';
 import type { Liveness } from '../src/core/state.js';
@@ -124,5 +124,82 @@ describe('rowsForHits / resolveTabSession', () => {
     expect(dup.active.map(r => r.sessionId)).toEqual(['x', 'y']);
     expect(resolveTabSession('Same', dup)).toBe('y');
     expect(resolveTabSession('  ', s)).toBeUndefined();
+  });
+});
+
+describe('tab labels (Claude Code cuts titles to 24 characters + "…")', () => {
+  const known = [
+    { sessionId: 'e', title: 'Email submission on calls page' },
+    { sessionId: 'f', title: 'Email submission on call sheets' },     // same 24-character prefix as e
+    { sessionId: 'g', title: 'Token usage optimization for the indexer' },
+    { sessionId: 'h', title: 'Short title' },
+  ];
+  it('labelMatchesTitle: exact, or the label minus its ellipsis is a proper prefix of the title; never the reverse', () => {
+    expect(labelMatchesTitle('Short title', 'Short title')).toBe(true);
+    expect(labelMatchesTitle('Email submission on call…', 'Email submission on calls page')).toBe(true);
+    expect(labelMatchesTitle('Email submission on call...', 'Email submission on calls page')).toBe(true);
+    expect(labelMatchesTitle('Email submission on call…', 'Email submission on call')).toBe(false);   // nothing was cut off
+    expect(labelMatchesTitle('Match the Figma frame', 'Match the Figma frame for the sequences dialog')).toBe(true);
+    expect(labelMatchesTitle('Fix tests', 'Fix')).toBe(false);
+    expect(labelMatchesTitle('  ', 'Fix')).toBe(false);
+  });
+  it('resolveTabSession understands the ellipsis', () => {
+    const s = buildSnapshot({ ...index, sessions: [meta({ sessionId: 'e', title: 'Email submission on calls page' })], prose: [] },
+                            new Map([live('e', { kind: 'attention', reason: 'your-turn' }, 5)]));
+    expect(resolveTabSession('Email submission on call…', s)).toBe('e');
+  });
+  it('tabMatches lists every known session a label could be', () => {
+    expect(tabMatches('Email submission on call…', known)).toEqual(['e', 'f']);
+    expect(tabMatches('Token usage optimizatio…', known)).toEqual(['g']);
+    expect(tabMatches('Claude Code', known)).toEqual([]);
+  });
+  it('trustedLearned drops a learned label that cannot be the session it names', () => {
+    const learned = new Map([['Token usage optimizatio…', 'e'], ['Email submission on call…', 'e'], ['Claude Code', 'zz-unknown']]);
+    expect(trustedLearned('Token usage optimizatio…', learned, known)).toBeUndefined();     // learned by accident: e is "Email…"
+    expect(trustedLearned('Email submission on call…', learned, known)).toBe('e');
+    expect(trustedLearned('Claude Code', learned, known)).toBe('zz-unknown');                 // no title to check against
+    expect(trustedLearned('Nope', learned, known)).toBeUndefined();
+  });
+  describe('tabsToClose: only a tab that can be nobody else\'s', () => {
+    const tab = (key: string, label: string) => ({ key, label });
+    it('closes the tab a trusted learned label names, and nothing whose label points elsewhere', () => {
+      const learned = new Map([['Email submission on call…', 'e']]);
+      const tabs = [tab('1', 'Email submission on call…'), tab('2', 'Token usage optimizatio…')];
+      expect(tabsToClose('e', tabs, learned, known)).toEqual({ close: [tabs[0]], ambiguous: [] });
+      expect(tabsToClose('g', tabs, learned, known)).toEqual({ close: [tabs[1]], ambiguous: [] });
+    });
+    it('falls back to the title only when exactly one known session fits the label', () => {
+      const tabs = [tab('1', 'Token usage optimizatio…'), tab('2', 'Email submission on call…')];
+      expect(tabsToClose('g', tabs, new Map(), known).close).toEqual([tabs[0]]);
+      // e and f share the label's 24 characters: leave it open and say so
+      expect(tabsToClose('e', tabs, new Map(), known)).toEqual({ close: [], ambiguous: [tabs[1]] });
+    });
+    it('a label carried by two open tabs is ambiguous even when learned', () => {
+      const learned = new Map([['Email submission on call…', 'e']]);
+      const tabs = [tab('1', 'Email submission on call…'), tab('2', 'Email submission on call…')];
+      expect(tabsToClose('e', tabs, learned, known)).toEqual({ close: [], ambiguous: tabs });
+    });
+    it('a learned label that cannot be the session is ignored in favour of the title', () => {
+      const learned = new Map([['Token usage optimizatio…', 'e']]);                          // the accident from the log
+      const tabs = [tab('1', 'Token usage optimizatio…'), tab('2', 'Email submission on call…')];
+      const r = tabsToClose('e', tabs, learned, known);
+      expect(r.close).toEqual([]);                                                          // e's own tab is ambiguous with f
+      expect(r.ambiguous).toEqual([tabs[1]]);
+      expect(tabsToClose('g', tabs, learned, known).close).toEqual([tabs[0]]);              // g gets its tab back
+    });
+  });
+});
+
+describe('candidateSessions (a tab label, in either direction)', () => {
+  const known = [
+    { sessionId: 'e', title: 'Email submission on calls page' },
+    { sessionId: 'f', title: 'Email submission on call sheets' },
+    { sessionId: 'g', title: 'Token usage optimization for the indexer' },
+  ];
+  it('is the trusted learned session alone, else every known session the label fits', () => {
+    expect(candidateSessions('Email submission on call…', new Map([['Email submission on call…', 'f']]), known)).toEqual(['f']);
+    expect(candidateSessions('Email submission on call…', new Map(), known)).toEqual(['e', 'f']);
+    expect(candidateSessions('Token usage optimizatio…', new Map([['Token usage optimizatio…', 'e']]), known)).toEqual(['g']);   // accident ignored
+    expect(candidateSessions('Claude Code', new Map(), known)).toEqual([]);
   });
 });

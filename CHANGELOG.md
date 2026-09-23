@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.1
+
+**Closing a session now closes the right tab, or none.** 0.6.0 identified a
+session's tab by its label, and two things about labels were wrong. Claude Code
+cuts a tab title to 24 characters and an ellipsis, which the title matcher did
+not understand, so most tabs resolved to nothing. And the label "learned" for
+a session you had just opened from the view was taken from the first tab
+event after the open — which fires before the new tab is active, so it was the
+previously active tab's label. Put together, the × could leave the session's
+own tab open and close another session's tab instead. Now the ellipsis is read
+as "a proper prefix of the title" (as Claude Code itself does), only a tab that
+was not there before the open is learned, a learned label that cannot fit its
+session's title is ignored, and a tab is closed only when it can be nobody
+else's: its label is on no other open tab, and exactly one known session fits
+it. A tab that cannot be told apart is left open and a message says so.
+
+**Closing a tab closes the session too.** Close a Claude Code tab yourself
+and its session moves under Closed, by the same label rules: a learned or
+uniquely matching label; for a label two sessions could carry, the tab you
+had active takes the session the sidebar was highlighting, and a background
+tab changes nothing. Closing one of this extension's own Session View panels
+does not count — it never resumed anything.
+
 ## 0.6.0
 
 **History is now Closed, and you can close a session.** Clicking a row under

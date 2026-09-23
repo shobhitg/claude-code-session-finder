@@ -83,9 +83,12 @@ whole `activeWindow`. The `×` at the end of an active row's actions (or
 `Delete` on the focused row, or **Claude: Close Session** from the palette)
 puts it back under Closed at once and closes its Claude Code tab. Closing the
 tab stops the session, so if Claude is still working in it you are asked
-first. A closed session stays closed until its transcript is written again
-after the close — you resumed it and sent a message — or you open it from
-the view.
+first. A tab that cannot be told apart from another session's (Claude Code
+labels tabs with the first 24 characters of the title) is left open, and a
+message says so. It works the other way too: closing a Claude Code tab
+yourself moves its session under Closed. A closed session stays closed until
+its transcript is written again after the close — you resumed it and sent a
+message — or you open it from the view.
 
 **Filter box.** Type at the top of the view (or press `/`) to search inside the
 listed sessions with the same syntax as the picker below — words, `"phrase"`,
