@@ -185,6 +185,8 @@
     "check:fixtures": "node scripts/check-fixtures.mjs test/fixtures",
     "vscode:prepublish": "node esbuild.mjs --no-sourcemap",
     "package": "npx --no @vscode/vsce package --no-dependencies",
+    "try": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/try-local.mjs",
+    "try:done": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/try-local.mjs --done",
     "publish:ovsx": "ovsx publish -p $OVSX_TOKEN",
     "publish:vsce": "vsce publish"
   },

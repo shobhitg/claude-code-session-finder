@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSnapshot, projectLabel, stateIcon, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions, pinnedSessions, knownTitles } from '../src/core/rows.js';
+import { buildSnapshot, projectLabel, stateIcon, statusText, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions, pinnedSessions, knownTitles } from '../src/core/rows.js';
 import type { SessionHit } from '../src/core/query.js';
 import type { SearchIndex, SessionMeta } from '../src/core/types.js';
 import type { Liveness } from '../src/core/state.js';
@@ -222,5 +222,23 @@ describe('pinnedSessions (which sessions the open Claude Code tabs keep ACTIVE)'
     const k = knownTitles(index, s, firstPrompts(index));
     expect(k.find(t => t.sessionId === 'a')).toEqual({ sessionId: 'a', title: 'Ledger GUI', lastTs: 900 });
     expect(k.find(t => t.sessionId === 'new-not-indexed')).toEqual({ sessionId: 'new-not-indexed', title: 'new-not-', lastTs: 4 });
+  });
+});
+
+describe('statusText', () => {
+  const running = { state: 'running' as const }, attention = { state: 'attention' as const };
+
+  it('counts running and needs-you sessions, omitting a zero count', () => {
+    expect(statusText([running, attention, attention])).toBe('$(loading~spin) 1  $(bell-dot) 2');
+    expect(statusText([running])).toBe('$(loading~spin) 1');
+  });
+
+  it('hides the item when nothing is active', () => {
+    expect(statusText([])).toBeUndefined();
+  });
+
+  it('leads with the dev build marker, even when nothing is active', () => {
+    expect(statusText([attention], 'dev 17:59')).toBe('$(beaker) dev 17:59  $(bell-dot) 1');
+    expect(statusText([], 'dev 17:59')).toBe('$(beaker) dev 17:59');
   });
 });

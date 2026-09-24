@@ -36,6 +36,7 @@ const claim = (ctx: vscode.ExtensionContext) =>
 export function activate(ctx: vscode.ExtensionContext): void {
   // Stage 1 (spec §9.2): the status bar is the glanceable answer to "which sessions are running?".
   const log = vscode.window.createOutputChannel('Claude Code Sessions', { log: true });
+  log.info(`activated ${ctx.extension.packageJSON.version}`);     // which build this window runs
   const host = new LiveHost(ctx, log);
   const status = createStatusBar(ctx);
   ctx.subscriptions.push(log, host, host.onSnapshot(s => status.update(s)));

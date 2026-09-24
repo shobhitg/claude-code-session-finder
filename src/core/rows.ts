@@ -41,6 +41,20 @@ export function stateIcon(row: { state: 'running' | 'attention'; reason?: Attent
   }
 }
 
+/**
+ * Spec §9.2 status bar text: "$(loading~spin) 1  $(bell-dot) 3", a zero count omitting its segment;
+ * undefined (hidden) when nothing is active. A dev build (`npm run try`) leads with its marker and always shows.
+ */
+export function statusText(active: readonly { state: 'running' | 'attention' }[], dev?: string): string | undefined {
+  const running = active.filter(r => r.state === 'running').length;
+  const attention = active.length - running;
+  const parts: string[] = [];
+  if (dev) parts.push(`$(beaker) ${dev}`);
+  if (running) parts.push(`$(loading~spin) ${running}`);
+  if (attention) parts.push(`$(bell-dot) ${attention}`);
+  return parts.length ? parts.join('  ') : undefined;
+}
+
 /** One sentence per state — the glyph's tooltip everywhere it is drawn. */
 export function stateLabel(row: { state: 'running' | 'attention'; reason?: AttentionReason }): string {
   if (row.state === 'running') return 'Claude is working';
