@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.2
+
+**Nothing on a row moves when you hover it.** The five row buttons used to
+take the place of the time label on hover, which shoved the age tag sideways.
+They now have a spot of their own at the right end of the first line — the ×
+in the top-right corner of the row, the time just before them — laid out at
+all times and simply invisible until the pointer or keyboard focus reaches the
+row. The age tag moves to the second line, directly before the cost meter.
+Nothing else moves. The buttons are a little smaller to pay for their reserved
+spot. A sidebar narrower than 380 px cannot spare it beside the title, so
+there the buttons take the time's place on hover, as before.
+
 ## 0.7.1
 
 **Looking at a session is not activity.** Opening a session — in a tab, or

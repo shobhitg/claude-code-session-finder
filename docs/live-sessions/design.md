@@ -437,7 +437,8 @@ candidate rules (an ambiguous label → the most recently written candidate) and
 the tracker, whose sweep keeps a pinned session whatever its age. The row is an ordinary live row —
 verdict, glyph, time label — plus an age tag (`ageTag`, model.ts) once `now − lastWriteMs` exceeds the
 window: "> 19 h" (whole hours, then days), a filled orange pill, red after a day, at the right end of
-line 1 in place of the time label it would duplicate (the tooltip keeps that label). Pins are recomputed
+line 2 just before the cost meter, standing in for the time label it would duplicate (the tooltip keeps
+that label). Pins are recomputed
 on every tab change and every snapshot, and a pinned session's closed marker is dropped (`applyClosed`).
 
 **Activity is the conversation, not the file (0.7.1).** Resuming or merely viewing a session appends
@@ -530,10 +531,13 @@ IDE's spinner. Under reduced motion it becomes a static `codicon-circle-large-fi
 **Section headers** follow VS Code: uppercase, `--size-meta`, letter-spacing .04em,
 `--s-header-fg`, a chevron codicon, and a count in a `--s-badge-*` pill.
 
-**Row anatomy:** icon column 16 px + `--sp-2`; line 1 = title (ellipsis) + right-aligned time
-in `--mono` with `font-variant-numeric: tabular-nums`; line 2 = `project · branch · PR #n` in
-`--s-muted` at `--size-meta`. Hover shows the action cluster right-aligned on line 1; focus
-shows it too (keyboard users must not need a mouse).
+**Row anatomy:** icon column 16 px + `--sp-2`; line 1 = title (ellipsis) + right-aligned time in
+`--mono` with `font-variant-numeric: tabular-nums` (empty on an old row); line 2 = `project · branch ·
+PR #n` in `--s-muted` at `--size-meta`, then the age tag, then the cost meter. Line 1 ends with the action cluster's own spot,
+the × in the row's top-right corner; the actions are laid out always and only made visible on hover
+and on focus (keyboard users must not need a mouse), so nothing moves under the pointer (0.7.2). Below
+a 380 px sidebar (a container query) the slot cannot be spared beside the title and the actions take
+the time's place on hover instead.
 
 **Motion:** hover background and accent fade over `--dur`; a row entering ACTIVE fades in over
 `--dur`; state changes crossfade the icon. Nothing moves that the user did not cause except

@@ -23,6 +23,14 @@ describe('webview stylesheets (spec §10, D7)', () => {
   it('respects prefers-reduced-motion', () => {
     expect(tokens).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });
+  it('hover and focus only reveal the row actions — nothing on a row moves under the pointer (outside the narrow-sidebar fallback)', () => {
+    const style = sheets[1]![1];
+    const wide = style.replace(/@container[^{]*\{(?:[^{}]*\{[^}]*\})*[^}]*\}/g, '');   // the narrow fallback swaps on purpose
+    expect(wide).toMatch(/\.row__actions \{[^}]*visibility: hidden/);
+    expect(wide).toMatch(/\.row:hover \.row__actions, \.row:focus-within \.row__actions \{ visibility: visible; \}/);
+    for (const rule of wide.match(/\.row:(?:hover|focus-within)[^{]*\{[^}]*\}/g) ?? []) expect(rule, rule).not.toMatch(/display:/);
+    expect(style).toMatch(/@container \(max-width: 380px\)/);
+  });
   it('styles every state the models can emit', () => {
     const style = sheets[1]![1], session = sheets[2]![1];
     for (const sel of ['[data-state="running"]', '[data-reason="tool-or-permission"]', '[data-reason="your-turn"]', '[data-reason="stalled"]', '[data-reason="question"]', '[data-reason="interrupted"]', '[data-state="history"]', '[aria-selected="true"]', '[data-heat="low"]', '[data-heat="mid"]', '[data-heat="warm"]', '[data-heat="high"]', '[data-heat="full"]', '.tip']) expect(style, sel).toContain(sel);

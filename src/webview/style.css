@@ -54,8 +54,7 @@ main:focus-visible { outline: none; }
 .list { list-style: none; margin: 0; padding: 0; }
 .row {
   position: relative;
-  display: grid; grid-template-columns: 16px 1fr auto; grid-template-rows: 22px 22px;
-  column-gap: var(--sp-2); align-items: center;
+  display: flex; align-items: center; gap: var(--sp-2);
   min-height: var(--row); padding: 0 var(--sp-2) 0 var(--sp-3);
   cursor: pointer;
   transition: background var(--dur) var(--ease);
@@ -72,15 +71,19 @@ main:focus-visible { outline: none; }
 .row[aria-selected="true"] .row__time { color: inherit; opacity: .85; }
 
 .row__icon {
-  grid-row: 1 / span 2; font-size: 16px; line-height: 1;
+  flex: none; width: 16px; font-size: 16px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
   transition: color var(--dur) var(--ease);
 }
-.row__title { grid-column: 2; grid-row: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-/* line 1, right end: the age tag (always), then the time — or, on hover and focus, the actions */
-.row__end { grid-column: 3; grid-row: 1; display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-1); min-width: 0; }
+/* Each line sizes on its own, so what line 2 holds (the actions' spot, the meter) never narrows the title. */
+.row__lines { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.row__line { display: flex; align-items: center; gap: var(--sp-2); height: 22px; min-width: 0; }
+.row__title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* line 1, right end: the time (empty on an old row — the age tag on line 2 stands in for it). */
+.row__end { flex: none; display: flex; align-items: center; gap: var(--sp-1); }
+/* line 2, just before the cost meter: how long an old session has been quiet */
 .row__age {
-  font-size: var(--size-meta); font-weight: 600; line-height: 15px; padding: 0 6px; border-radius: 8px; white-space: nowrap;
+  flex: none; font-size: var(--size-meta); font-weight: 600; line-height: 15px; padding: 0 6px; border-radius: 8px; white-space: nowrap;
   background: var(--st-warm); color: var(--s-bg);
 }
 .row__age[data-tier="stale"] { background: var(--st-error); }
@@ -90,15 +93,15 @@ main:focus-visible { outline: none; }
   color: var(--s-muted); white-space: nowrap;
 }
 .row__meta {
-  grid-column: 2; grid-row: 2;
+  flex: 1; min-width: 0;
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   font-size: var(--size-meta); color: var(--s-muted);
 }
 .row__missing { margin-left: var(--sp-1); }
 
-/* ─── cost meter: context size against the model's window ──────────────────── */
+/* ─── cost meter: context size against the model's window — line 2, right end ── */
 .row__heat {
-  grid-column: 3; grid-row: 2; display: flex; align-items: center; gap: var(--sp-1);
+  flex: none; display: flex; align-items: center; gap: var(--sp-1);
   font-family: var(--mono); font-size: var(--size-meta); font-variant-numeric: tabular-nums; color: var(--s-muted); white-space: nowrap;
 }
 .heat__track { width: 28px; height: 4px; border-radius: 2px; background: var(--s-badge-bg); overflow: hidden; }
@@ -124,9 +127,8 @@ main:focus-visible { outline: none; }
 }
 .tip:hover::after, .tip:focus-visible::after { opacity: 1; }
 .tip--left::after { right: auto; left: 0; }
-.row--snippet { grid-template-rows: 22px 22px 18px; }
 .row__snippet {
-  grid-column: 2 / span 2; grid-row: 3; padding-bottom: 2px;
+  height: 18px; padding-bottom: 2px;
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   font-size: var(--size-meta); color: var(--s-muted); font-style: italic;
 }
@@ -149,12 +151,21 @@ main:focus-visible { outline: none; }
 .row[data-reason="stalled"] { opacity: .7; }
 .row[data-state="history"] .row__icon { color: var(--st-idle); }
 
-/* ─── row actions: shown on hover AND on keyboard focus ────────────────────── */
-.row__actions { display: none; gap: 2px; }
-.row:hover .row__actions, .row:focus-within .row__actions { display: flex; }
-.row:hover .row__time,    .row:focus-within .row__time    { display: none; }
+/* ─── row actions: line 1's right end, laid out always, visible on hover AND on keyboard focus ───
+   Every button, tag and label has a spot of its own; hovering only makes the actions visible, so nothing
+   on the row moves under the pointer. The × is the top-right corner of the row. */
+.row__actions { flex: none; display: flex; gap: 0; visibility: hidden; }
+.row:hover .row__actions, .row:focus-within .row__actions { visibility: visible; }
+/* A narrow sidebar cannot spare the slot beside the title: below 380px the actions take the time's place
+   on hover instead, as before 0.7.2. */
+main { container-type: inline-size; }
+@container (max-width: 380px) {
+  .row__actions { display: none; }
+  .row:hover .row__actions, .row:focus-within .row__actions { display: flex; }
+  .row:hover .row__end, .row:focus-within .row__end { display: none; }
+}
 .action {
-  width: 22px; height: 22px; border-radius: var(--radius);
+  width: 20px; height: 20px; border-radius: var(--radius);
   display: inline-flex; align-items: center; justify-content: center; color: inherit;
 }
 .action:hover { background: var(--s-toolbar); }
@@ -164,8 +175,7 @@ main:focus-visible { outline: none; }
 .action[hidden] { display: none; }
 
 /* ─── the "search all…" row ────────────────────────────────────────────────── */
-.row--link { grid-template-rows: 22px; min-height: 22px; }
-.row--link .row__icon { grid-row: 1; }
+.row--link { min-height: 22px; }
 .row--link .row__title { color: var(--s-link); }
 .row--link .row__time { font-family: var(--mono); }
 

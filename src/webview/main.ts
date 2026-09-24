@@ -132,7 +132,7 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   } else if (heat.firstChild) { heat.replaceChildren(); delete heat.dataset.tip; heat.removeAttribute('aria-label'); delete li.dataset.heat; }
   setAge(li.querySelector<HTMLElement>('.row__age')!, r.age);
   const snippet = li.querySelector<HTMLElement>('.row__snippet');
-  if (r.snippet && !snippet) li.append(h('span', { class: 'row__snippet' }, r.snippet));
+  if (r.snippet && !snippet) li.querySelector('.row__lines')!.append(h('span', { class: 'row__snippet' }, r.snippet));
   else if (r.snippet && snippet) { if (snippet.textContent !== r.snippet) snippet.textContent = r.snippet; }
   else snippet?.remove();
 }
@@ -148,8 +148,9 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
   if (r.kind === 'link') {
     const li = h('li', { class: 'row row--link', role: 'option', tabindex: '-1', 'data-action': r.action, 'data-key': keyOf(r) },
       h('i', { class: `row__icon ${r.iconClass}`, 'aria-hidden': 'true' }),
-      h('span', { class: 'row__title' }, r.title),
-      h('span', { class: 'row__time' }, r.meta));
+      h('span', { class: 'row__lines' }, h('span', { class: 'row__line' },
+        h('span', { class: 'row__title' }, r.title),
+        h('span', { class: 'row__time' }, r.meta))));
     li.addEventListener('click', () => linkAction(r.action));
     return li;
   }
@@ -165,15 +166,20 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
     actionButton('file-code', 'Open the raw transcript file (T)', () => post({ type: 'transcript', sessionId: id })),
     close,
   );
+  // Two lines that size on their own. Line 1: title, then the time, then the actions in a spot that is
+  // theirs whether or not they show — the × in the top-right corner. Line 2: project · branch, then the
+  // age tag (which stands in for the time on an old row), then the cost meter. Nothing moves on hover.
   li.append(
     h('i', { class: 'row__icon', role: 'img' }),
-    h('span', { class: 'row__title' }),
-    h('span', { class: 'row__end' },
-      h('span', { class: 'row__age tip' }),
-      h('span', { class: 'row__time' }),
-      actions),
-    h('span', { class: 'row__meta' }),
-    h('span', { class: 'row__heat tip', role: 'img' }),
+    h('span', { class: 'row__lines' },
+      h('span', { class: 'row__line' },
+        h('span', { class: 'row__title' }),
+        h('span', { class: 'row__end' }, h('span', { class: 'row__time' })),
+        actions),
+      h('span', { class: 'row__line' },
+        h('span', { class: 'row__meta' }),
+        h('span', { class: 'row__age tip' }),
+        h('span', { class: 'row__heat tip', role: 'img' }))),
   );
   li.addEventListener('click', () => post({ type: 'open', sessionId: id, where: 'tab' }));
   updateRow(li, r);
