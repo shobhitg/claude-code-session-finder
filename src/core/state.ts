@@ -19,22 +19,26 @@ export interface Liveness {
   sessionId: string;
   verdict: TailVerdict;
   state: LiveState;
-  /** max mtime over the main copy(ies) AND subagent files (L7) */
+  /**
+   * When something last HAPPENED: the timestamp of the last conversational record (a prompt, a reply,
+   * a turn boundary), or a subagent file's mtime if newer (L7). Not the main file's mtime — merely
+   * opening a session appends sidecars (cost-state, mode, last-prompt…) and that is not activity.
+   */
   lastWriteMs: number;
   /** context the model was last given: input + cache-read + cache-creation tokens of the newest assistant record */
   contextTokens?: number;
   model?: string;
 }
 
-/** Everything the tail of a transcript tells us in one read. */
-export interface TailInfo { verdict: TailVerdict; contextTokens?: number; model?: string }
+/** Everything the tail of a transcript tells us in one read. `lastTs`: when the verdict record was written. */
+export interface TailInfo { verdict: TailVerdict; contextTokens?: number; model?: string; lastTs?: number }
 
 const CONVERSATIONAL = new Set(['user', 'assistant', 'system']);
 /** system subtypes that end a turn. Others (e.g. compact_boundary) are not boundaries and are skipped. */
 const TURN_BOUNDARY = new Set(['turn_duration', 'away_summary', 'local_command']);
 
 interface Usage { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number }
-interface Rec { type?: string; subtype?: string; isSidechain?: boolean; message?: { stop_reason?: string | null; content?: unknown; usage?: Usage; model?: string } }
+interface Rec { type?: string; subtype?: string; isSidechain?: boolean; timestamp?: string; message?: { stop_reason?: string | null; content?: unknown; usage?: Usage; model?: string } }
 
 /** Esc in Claude Code writes this as a user message; the loop is over until you type again. */
 const INTERRUPTED = /^\s*\[Request interrupted by user(?: for tool use)?\]\s*$/;
@@ -74,6 +78,7 @@ export function readTailInfo(text: string): TailInfo {
         if (n > 0) { info.contextTokens = n; if (typeof d.message?.model === 'string') info.model = d.message.model; }
       }
       if (verdict !== null) continue;
+      stamp(d);
       const stop = d.message?.stop_reason;
       if (stop === 'end_turn') verdict = 'turn-ended';
       else if (stop === 'tool_use') verdict = asksQuestion(d.message?.content) ? 'awaiting-answer' : 'awaiting-tool';
@@ -82,13 +87,21 @@ export function readTailInfo(text: string): TailInfo {
     }
     if (verdict !== null) continue;
     if (d.type === 'system') {
-      if (d.subtype && TURN_BOUNDARY.has(d.subtype)) verdict = 'turn-ended';
+      if (d.subtype && TURN_BOUNDARY.has(d.subtype)) { verdict = 'turn-ended'; stamp(d); }
       continue;
     }
+    stamp(d);
     verdict = INTERRUPTED.test(textOf(d.message?.content)) ? 'interrupted' : 'awaiting-model';   // user: prompt, tool_result, or Esc
   }
   info.verdict = verdict ?? 'unknown';
   return info;
+
+  /** The verdict record's own timestamp — when the conversation last moved. Sidecars never get here. */
+  function stamp(d: Rec): void {
+    if (info.lastTs !== undefined || typeof d.timestamp !== 'string') return;
+    const t = Date.parse(d.timestamp);
+    if (Number.isFinite(t)) info.lastTs = t;
+  }
 }
 
 export const classifyTail = (text: string): TailVerdict => readTailInfo(text).verdict;

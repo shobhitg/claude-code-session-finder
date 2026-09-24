@@ -17,7 +17,7 @@ export function isClosed(closedAt: number | undefined, lastWriteMs: number, grac
   return closedAt !== undefined && lastWriteMs <= closedAt + graceMs;
 }
 
-export interface ApplyClosedOpts { now: number; activeWindowMs: number; graceMs?: number }
+export interface ApplyClosedOpts { now: number; activeWindowMs: number; graceMs?: number; /** sessions with an open tab: their markers go */ pinned?: ReadonlySet<string> }
 export interface ApplyClosedResult {
   /** `liveness` without the sessions that are closed */
   liveness: Map<string, Liveness>;
@@ -30,7 +30,8 @@ export interface ApplyClosedResult {
  * Split liveness into what still counts as live and prune the markers that no longer matter:
  * one whose session was written after the grace (it is ACTIVE again), and one older than the
  * active window plus the grace (its session cannot be in the window any more, whether or not the
- * tracker has swept yet — so a marker for a session the tracker has not seen is kept until then).
+ * tracker has swept yet — so a marker for a session the tracker has not seen is kept until then), and
+ * one whose session is pinned: its tab is open (again), and a session with a tab is not closed.
  */
 export function applyClosed(liveness: ReadonlyMap<string, Liveness>, markers: ClosedMarkers, opts: ApplyClosedOpts): ApplyClosedResult {
   const grace = opts.graceMs ?? CLOSE_GRACE_MS;
@@ -39,7 +40,7 @@ export function applyClosed(liveness: ReadonlyMap<string, Liveness>, markers: Cl
   for (const [id, at] of Object.entries(markers)) {
     const l = liveness.get(id);
     const valid = typeof at === 'number' && Number.isFinite(at);
-    const keep = valid && opts.now - at <= opts.activeWindowMs + grace && (!l || isClosed(at, l.lastWriteMs, grace));
+    const keep = valid && !opts.pinned?.has(id) && opts.now - at <= opts.activeWindowMs + grace && (!l || isClosed(at, l.lastWriteMs, grace));
     if (keep) kept[id] = at; else changed = true;
   }
   const out = new Map<string, Liveness>();

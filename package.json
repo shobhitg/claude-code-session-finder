@@ -2,7 +2,7 @@
   "name": "claude-code-session-finder",
   "displayName": "Claude Code Sessions & Agents",
   "description": "See which Claude Code sessions are running or waiting on you, browse and search every session's content, and open any of them in a tab or the right panel.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {
@@ -107,7 +107,7 @@
           "type": "string",
           "default": "4h",
           "pattern": "^\\s*\\d+\\s*[hdwm]?\\s*$",
-          "description": "Sessions written within this window, or open in a Claude Code tab in this window, are ACTIVE and show a live state (running / needs you). Examples: 2h, 8h, 1d. A session kept there only by its tab wears a \"> 4 hours old\" tag so you can close it yourself; everything else, and any session you close from the view, is listed under Closed."
+          "description": "Sessions written within this window, or open in a Claude Code tab in this window, are ACTIVE and show a live state (running / needs you). Examples: 2h, 8h, 1d. A session kept there only by its tab wears a tag saying how long it has been quiet (\"> 19 h\") so you can close it yourself; everything else, and any session you close from the view, is listed under Closed."
         },
         "sessionFinder.toolQuietSeconds": {
           "type": "number",

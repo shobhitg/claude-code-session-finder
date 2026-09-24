@@ -182,3 +182,13 @@ describe('readTail / readVerdict', () => {
     expect(await readVerdict(f, 0)).toBe('unknown');
   });
 });
+
+describe('readTailInfo — when the conversation last moved', () => {
+  it('takes the timestamp of the verdict record; the sidecars a mere resume appends do not count', () => {
+    const t = readTailInfo([assistant('end_turn', { timestamp: '2026-09-23T01:00:00.000Z' }),
+      line({ type: 'system', subtype: 'stop_hook_summary', timestamp: '2026-09-23T01:00:05.000Z' }), sidecars].join('\n'));
+    expect(t).toMatchObject({ verdict: 'turn-ended', lastTs: Date.parse('2026-09-23T01:00:00.000Z') });
+    expect(readTailInfo(assistant('end_turn'))).toEqual({ verdict: 'turn-ended' });                 // no timestamp: nothing claimed
+    expect(readTailInfo([user({ timestamp: 'garbage' }), sidecars].join('\n')).lastTs).toBeUndefined();
+  });
+});

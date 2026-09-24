@@ -72,9 +72,11 @@ you as you switch between Claude Code tabs and Session Views.
 
 - **Active** — sessions written in the last `activeWindow`, or open in a
   Claude Code tab in this window, most urgent first: needs you, your turn,
-  running, stalled. The time label says how long a session has been quiet. A
-  session kept here only by its tab, past the window, wears an orange
-  `> 4 hours old` tag: close it when you mean to, and not before.
+  running, stalled. The time label says how long a session has been quiet — the time
+  of the last prompt or reply, not of the file, so looking at a session does
+  not count. One kept here only by its tab, past the window, wears an orange
+  `> 19 h` tag instead (red after a day): close it when you mean to, and not
+  before.
 - **Closed** — the 50 most recent sessions that are not active, with their
   project, branch and PR, and **Search all…** for everything older. Clicking
   one resumes it, which makes it active.

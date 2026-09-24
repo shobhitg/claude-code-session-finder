@@ -174,14 +174,22 @@ describe('the age tag: an ACTIVE session older than the window is there only bec
     expect(fmtWindow('2w')).toBe('2 weeks');
     expect(fmtWindow('nonsense')).toBe('nonsense');
   });
-  it('ageTag appears past the window, in the row and in results, and names the window', () => {
+  it('says how old in whole hours, then days, and turns stale after a day; the tooltip keeps the time label it replaces', () => {
+    const at = (ms: number) => ageTag(live({ state: 'attention', reason: 'your-turn', lastWriteMs: now - ms }), now, opts);
+    expect(at(3 * H)).toBeUndefined();
+    expect(at(4.5 * H)).toMatchObject({ label: '> 4 h', tier: 'old' });
+    expect(at(19.2 * H)).toMatchObject({ label: '> 19 h', tier: 'old' });
+    expect(at(26 * H)).toMatchObject({ label: '> 26 h', tier: 'stale' });
+    expect(at(50 * H)).toMatchObject({ label: '> 2 d', tier: 'stale' });
+    expect(at(26 * H)!.title).toContain('done · 26 h ago');
+    expect(at(26 * H)!.title).toContain('4 hours');
+  });
+  it('ageTag appears past the window, in the row and in results', () => {
     const old = live({ sessionId: 'o', state: 'attention', reason: 'your-turn', lastWriteMs: now - 26 * H });
-    expect(ageTag(old, now, opts)).toMatchObject({ label: '> 4 hours old' });
-    expect(ageTag(old, now, opts)!.title).toContain('26 h ago');
     expect(ageTag(live({ lastWriteMs: now - 3 * H }), now, opts)).toBeUndefined();
     expect(ageTag(old, now, { activeWindowLabel: '4h', searchKey: 'k' })).toBeUndefined();          // no window known: no tag
     const vm = viewModel({ active: [old, live({ sessionId: 'a' })], history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, opts);
-    expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'o', age: { label: '> 4 hours old' } });
+    expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'o', age: { label: '> 26 h', tier: 'stale' } });
     expect(vm.sections[0]!.rows[1]).not.toHaveProperty('age');
     expect(vm.sections[0]!.empty).toBeNull();
     expect(viewModel({ active: [], history: [], totalSessions: 0, indexing: false, scope: 'all' }, now, opts).sections[0]!.empty).toContain('open in a tab');

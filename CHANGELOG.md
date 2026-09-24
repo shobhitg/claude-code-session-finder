@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.1
+
+**Looking at a session is not activity.** Opening a session — in a tab, or
+with `claude -r` in a terminal — makes Claude Code append bookkeeping records
+to its transcript (`cost-state`, `mode`, `last-prompt`…), which moved the file's
+modification time, so a session idle since yesterday read "done · 2 m ago" the
+moment you glanced at it, and its age tag vanished. Activity is now the
+timestamp of the last conversational record — a prompt, a reply, a turn
+boundary — or a subagent's write if newer, and the active window is judged by
+it too: a session you only looked at stays where it was.
+
+**The tag says how old.** `> 19 h` in whole hours, then `> 2 d`; a filled
+orange pill that turns red once a day has passed. It stands in for the corner
+time, which said the same thing twice; the tooltip keeps that label ("done ·
+19 h ago") and the rule. And a session whose tab is open can no longer sit
+under Closed: a marker set while its tab is still open is dropped.
+
 ## 0.7.0
 
 **A session with an open tab never ages into Closed.** Until now a session

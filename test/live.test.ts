@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { LivenessTracker, type TrackerDeps, type Change } from '../src/core/live.js';
 import type { SourceFile } from '../src/core/discover.js';
-import type { TailVerdict } from '../src/core/state.js';
+import type { TailInfo, TailVerdict } from '../src/core/state.js';
 
 const MIN = 60_000, H = 60 * MIN;
 
 /** An in-memory corpus: the tracker only ever sees it through the injected deps. */
-function harness(files: SourceFile[], verdicts: Record<string, TailVerdict>, start = 100 * H) {
+function harness(files: SourceFile[], verdicts: Record<string, TailVerdict | TailInfo>, start = 100 * H) {
   let clock = start;
   const reads: string[] = [];
   const deps: TrackerDeps = {
@@ -175,5 +175,36 @@ describe('LivenessTracker pins (a session behind an open tab never ages out)', (
     h.tracker.setPinned(new Set(['ghost']));
     await h.tracker.sweep();
     expect([...h.tracker.liveness.keys()]).toEqual(['fresh']);
+  });
+});
+
+describe('activity is the last conversational record, not the file (a resume only appends sidecars)', () => {
+  it('lastWriteMs comes from the tail timestamp when the file is newer; a newer subagent write still wins (L7)', async () => {
+    const t0 = 100 * H;
+    const h = harness([main('a', t0 - MIN), main('b', t0 - MIN), sub('b', t0 - 30_000)],
+      { '/p/-w/a.jsonl': { verdict: 'turn-ended', lastTs: t0 - 2 * H }, '/p/-w/b.jsonl': { verdict: 'awaiting-tool', lastTs: t0 - 2 * H } }, t0);
+    await h.tracker.sweep();
+    expect(h.tracker.liveness.get('a')!.lastWriteMs).toBe(t0 - 2 * H);
+    expect(h.tracker.liveness.get('b')!.lastWriteMs).toBe(t0 - 30_000);
+  });
+  it('a file touched within the window whose conversation is older than the window is not ACTIVE — unless a tab pins it', async () => {
+    const t0 = 100 * H;
+    const h = harness([main('viewed', t0 - MIN)], { '/p/-w/viewed.jsonl': { verdict: 'turn-ended', lastTs: t0 - 30 * H } }, t0);
+    await h.tracker.sweep();
+    expect([...h.tracker.liveness.keys()]).toEqual([]);
+    h.tracker.setPinned(new Set(['viewed']));
+    await h.tracker.sweep();
+    expect(h.tracker.liveness.get('viewed')).toMatchObject({ lastWriteMs: t0 - 30 * H, state: { kind: 'attention', reason: 'your-turn' } });
+    expect(h.changes.at(-1)!.membershipChanged).toBe(true);
+  });
+  it('crossing the window between sweeps drops the session on a tick, as a membership change', async () => {
+    const t0 = 100 * H;
+    const h = harness([main('edge', t0 - MIN)], { '/p/-w/edge.jsonl': { verdict: 'turn-ended', lastTs: t0 - 4 * H + MIN } }, t0);
+    await h.tracker.sweep();
+    expect([...h.tracker.liveness.keys()]).toEqual(['edge']);
+    h.advance(2 * MIN);
+    await h.tracker.tick();
+    expect([...h.tracker.liveness.keys()]).toEqual([]);
+    expect(h.changes.at(-1)!.membershipChanged).toBe(true);
   });
 });

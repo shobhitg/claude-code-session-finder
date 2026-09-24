@@ -101,9 +101,8 @@ export class LivenessTracker {
         : toInfo(await this.deps.readVerdict(main.path, main.size));
       next.set(sessionId, { sessionId, files: group, main, key, info });
     }
-    const membershipChanged = next.size !== this.tracked.size || [...next.keys()].some(k => !this.tracked.has(k));
     this.tracked = next;
-    this.publish(membershipChanged);
+    this.publish();
   }
 
   async tick(): Promise<void> {
@@ -123,7 +122,7 @@ export class LivenessTracker {
         t.main = main;
       }
     }
-    this.publish(false);
+    this.publish();
   }
 
   start(): void {
@@ -139,17 +138,25 @@ export class LivenessTracker {
     this.sweepTimer = this.tickTimer = undefined;
   }
 
-  private publish(membershipChanged: boolean): void {
+  /**
+   * The ACTIVE set is judged twice: the sweep by file mtime (cheap, before any tail is read), and here
+   * by when the conversation last moved — a resume appends sidecars and touches the file, and that is
+   * not activity. A pinned session (its tab is open) is ACTIVE whatever its age. Membership change is
+   * read off the emitted set, so a session aging out on a tick is one too.
+   */
+  private publish(): void {
     const now = this.deps.now();
     const next = new Map<string, Liveness>();
     for (const t of this.tracked.values()) {
-      const lastWriteMs = effectiveMtime(t.files);
+      const lastWriteMs = activityMs(t);
+      if (now - lastWriteMs > this.opts.activeWindowMs && !this.pinned.has(t.sessionId)) continue;
       const state = resolveState(t.info.verdict, now - lastWriteMs, this.thresholds);
       const l: Liveness = { sessionId: t.sessionId, verdict: t.info.verdict, state, lastWriteMs };
       if (t.info.contextTokens !== undefined) l.contextTokens = t.info.contextTokens;
       if (t.info.model !== undefined) l.model = t.info.model;
       next.set(t.sessionId, l);
     }
+    const membershipChanged = next.size !== this.current.size || [...next.keys()].some(k => !this.current.has(k));
     const changed = membershipChanged || !sameLiveness(this.current, next);
     this.current = next;
     if (changed) for (const cb of this.listeners) cb({ liveness: next, membershipChanged });
@@ -161,6 +168,13 @@ export class LivenessTracker {
     this.busy = true;
     try { await phase(); } catch (err) { this.onError?.(err); } finally { this.busy = false; }
   }
+}
+
+/** When something last happened: the verdict record's timestamp (else the main file's mtime), or a newer subagent write (L7). */
+function activityMs(t: Tracked): number {
+  let m = t.info.lastTs ?? t.main.mtimeMs;
+  for (const f of t.files) if (f.kind === 'subagent' && f.mtimeMs > m) m = f.mtimeMs;
+  return m;
 }
 
 function sameLiveness(a: ReadonlyMap<string, Liveness>, b: ReadonlyMap<string, Liveness>): boolean {

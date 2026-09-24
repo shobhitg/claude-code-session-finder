@@ -145,7 +145,7 @@ export class LiveHost implements vscode.Disposable {
 
   private publish(): void {
     const raw = this.tracker?.liveness ?? new Map<string, Liveness>();
-    const r = applyClosed(raw, this.closed, { now: Date.now(), activeWindowMs: this.activeWindowMs });
+    const r = applyClosed(raw, this.closed, { now: Date.now(), activeWindowMs: this.activeWindowMs, pinned: this.pinned });
     if (r.changed) { this.closed = r.markers; void this.ctx.globalState.update(CLOSED_KEY, r.markers); }
     this.live = r.liveness;
     this.snapshot = buildSnapshot(this.index, this.live, { indexing: this.indexing !== null, scope: this.scope, inScope: this.inScope });

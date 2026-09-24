@@ -114,7 +114,7 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   li.querySelector<HTMLElement>('.action--close')!.hidden = r.state === 'history';   // nothing to close on a closed row
   const icon = li.querySelector<HTMLElement>('.row__icon')!;
   icon.className = `row__icon tip tip--left ${r.iconClass}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
-  text('.row__title', r.title); text('.row__time', r.time);
+  text('.row__title', r.title); text('.row__time', r.age ? '' : r.time);   // the age tag stands in for the time
   const meta = li.querySelector<HTMLElement>('.row__meta')!;
   const metaText = r.meta + (r.missing ? '⚠ folder missing' : '');
   if (meta.textContent !== metaText) {
@@ -139,9 +139,9 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
 
 /** The age tag: text when the session is past the window, empty (and hidden by CSS) otherwise. */
 function setAge(el: HTMLElement, age: AgeTag | undefined): void {
-  if (!age) { if (el.textContent) { el.textContent = ''; delete el.dataset.tip; el.removeAttribute('aria-label'); } return; }
+  if (!age) { if (el.textContent) { el.textContent = ''; delete el.dataset.tip; delete el.dataset.tier; el.removeAttribute('aria-label'); } return; }
   if (el.textContent !== age.label) el.textContent = age.label;
-  el.dataset.tip = age.title; el.setAttribute('aria-label', age.title);
+  el.dataset.tier = age.tier; el.dataset.tip = age.title; el.setAttribute('aria-label', age.title);
 }
 
 function rowEl(r: RowVM | LinkVM): HTMLLIElement {
@@ -168,12 +168,12 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
   li.append(
     h('i', { class: 'row__icon', role: 'img' }),
     h('span', { class: 'row__title' }),
-    h('span', { class: 'row__time' }),
-    actions,
-    h('span', { class: 'row__meta' }),
-    h('span', { class: 'row__aside' },
+    h('span', { class: 'row__end' },
       h('span', { class: 'row__age tip' }),
-      h('span', { class: 'row__heat tip', role: 'img' })),
+      h('span', { class: 'row__time' }),
+      actions),
+    h('span', { class: 'row__meta' }),
+    h('span', { class: 'row__heat tip', role: 'img' }),
   );
   li.addEventListener('click', () => post({ type: 'open', sessionId: id, where: 'tab' }));
   updateRow(li, r);
@@ -316,11 +316,12 @@ function refreshTimes(): void {
   for (const r of rows) {
     const li = sectionsEl.querySelector<HTMLElement>(`.row[data-id="${r.sessionId}"]`);
     if (!li) continue;
+    const age = ageTag(r, now, opts);
     const el = li.querySelector<HTMLElement>('.row__time');
-    const label = timeLabel(r, now);
+    const label = age ? '' : timeLabel(r, now);
     if (el && el.textContent !== label) el.textContent = label;
-    const age = li.querySelector<HTMLElement>('.row__age');
-    if (age) setAge(age, ageTag(r, now, opts));
+    const ageEl = li.querySelector<HTMLElement>('.row__age');
+    if (ageEl) setAge(ageEl, age);
   }
 }
 

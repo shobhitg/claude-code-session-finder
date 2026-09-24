@@ -40,6 +40,12 @@ describe('applyClosed', () => {
     expect(stale.markers).toEqual({});
     expect(stale.changed).toBe(true);
   });
+  it('a pinned session (its tab is open) loses its marker', () => {
+    const r = applyClosed(new Map([live('a', T - S)]), { a: T }, { now: T + 5 * S, activeWindowMs: WINDOW, pinned: new Set(['a']) });
+    expect([...r.liveness.keys()]).toEqual(['a']);
+    expect(r.markers).toEqual({});
+    expect(r.changed).toBe(true);
+  });
   it('ignores malformed markers', () => {
     const r = applyClosed(new Map([live('a', T - S)]), { a: 'soon' as unknown as number, b: NaN }, { now: T, activeWindowMs: WINDOW });
     expect([...r.liveness.keys()]).toEqual(['a']);

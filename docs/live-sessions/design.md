@@ -436,8 +436,16 @@ forgotten with it. Our own Session View panels are not session tabs.
 candidate rules (an ambiguous label → the most recently written candidate) and the host hands the set to
 the tracker, whose sweep keeps a pinned session whatever its age. The row is an ordinary live row —
 verdict, glyph, time label — plus an age tag (`ageTag`, model.ts) once `now − lastWriteMs` exceeds the
-window: "> 4 hours old", orange, on line 2 beside the cost meter so hover never hides it, with the last
-write time in its tooltip. Pins are recomputed on every tab change and every snapshot. A right-panel session has no tab: only
+window: "> 19 h" (whole hours, then days), a filled orange pill, red after a day, at the right end of
+line 1 in place of the time label it would duplicate (the tooltip keeps that label). Pins are recomputed
+on every tab change and every snapshot, and a pinned session's closed marker is dropped (`applyClosed`).
+
+**Activity is the conversation, not the file (0.7.1).** Resuming or merely viewing a session appends
+sidecars (`cost-state`, `mode`, `last-prompt`, `atis-latch`) and moves the transcript's mtime — measured
+on real transcripts: files touched minutes ago whose last message was 18–23 h earlier. `readTailInfo`
+therefore also returns `lastTs`, the verdict record's own timestamp, and the tracker's `lastWriteMs` is
+that (or a newer subagent mtime, L7); mtime remains only the sweep's cheap pre-filter, and `publish` judges
+the window by `lastWriteMs` too, so a glanced-at session is neither "just now" nor ACTIVE. A right-panel session has no tab: only
 the marker applies. Markers are pruned when their session is written past the grace or when they
 are older than `activeWindow` + grace.
 

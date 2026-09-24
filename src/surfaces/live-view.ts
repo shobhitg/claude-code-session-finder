@@ -147,7 +147,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
    * The × on an ACTIVE row, Delete on a focused one, and `Claude: Close Session`. Closing a Claude Code
    * tab shuts its session down, so one Claude is still working in asks first; the rest close at once.
    * The tabs are resolved BEFORE the marker is set — afterwards the session may be in no list at all —
-   * and the marker is set before they close, so the row moves under CLOSED as the tab goes. A tab is
+   * and closed before it, because a session whose tab is open is pinned and cannot be closed. A tab is
    * closed only when it can be nobody else's (rows.ts tabsToClose); one that cannot be told apart from
    * another session's is left open, and a message says so.
    */
@@ -162,14 +162,16 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     const all = this.claudeTabs();
     const { close, ambiguous } = tabsToClose(sessionId, all.map(t => t.ref), this.learned, this.known());
     const tabs = all.filter(t => close.includes(t.ref)).map(t => t.tab);
-    await this.host.close(sessionId);
+    // Tabs first: a session whose tab is still open stays pinned, and a pinned session's marker is dropped.
     if (tabs.length) await vscode.window.tabGroups.close(tabs);
+    this.updatePins();
+    await this.host.close(sessionId);
     // The highlight follows the active tab and is kept over files; if it pointed at this session, nothing is behind it now.
     if (this.activeId() === sessionId) { this.activeTab = null; this.postActive(); }
     const labels = (refs: TabRef[]) => refs.map(r => `"${r.label}"`).join(', ');
     this.log?.info(`closed session ${sessionId} ("${row.title}"): closed ${tabs.length} tab(s) [${labels(close)}], left ${ambiguous.length} ambiguous [${labels(ambiguous)}]`);
     if (ambiguous.length) {
-      void vscode.window.showWarningMessage(`“${row.title}” is closed, but its tab was left open: the tab “${ambiguous[0]!.label}” could also be another session's, and closing a tab stops the session in it. Close it by hand.`);
+      void vscode.window.showWarningMessage(`“${row.title}” stays open: its tab “${ambiguous[0]!.label}” could also be another session's, and closing a tab stops the session in it. Close the tab by hand and the session moves under Closed.`);
     } else {
       vscode.window.setStatusBarMessage(`Closed “${row.title}”${tabs.length ? '' : ' — no tab of its own was open in this window'}`, 4000);
     }

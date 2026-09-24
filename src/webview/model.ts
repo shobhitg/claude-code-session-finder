@@ -14,7 +14,7 @@ export interface RowVM {
   /** written longer ago than the active window — here only because its tab is open */
   age?: AgeTag;
 }
-export interface AgeTag { label: string; title: string }
+export interface AgeTag { label: string; title: string; tier: 'old' | 'stale' }
 export type HeatTier = 'low' | 'mid' | 'warm' | 'high' | 'full';
 export interface Heat { tokens: number; budget: number; pct: number; tier: HeatTier; label: string; title: string }
 export interface LinkVM { kind: 'link'; title: string; meta: string; iconClass: string; action: 'search' | 'scope' }
@@ -64,13 +64,16 @@ export function fmtWindow(spec: string): string {
 }
 
 /**
- * An ACTIVE session written longer ago than the window is there only because its tab is open. A
- * standing tag says so, and the user closes it (or not) on purpose instead of the list deciding.
+ * An ACTIVE session quiet for longer than the window is there only because its tab is open. A standing
+ * tag says how long — whole hours, then days — in place of the corner time it would duplicate (the
+ * tooltip keeps that label), orange, and red once it is a day old. The user closes it on purpose.
  */
-export function ageTag(row: Pick<LiveRow, 'lastWriteMs'>, now: number, opts: ViewOpts): AgeTag | undefined {
-  if (!opts.activeWindowMs || now - row.lastWriteMs <= opts.activeWindowMs) return undefined;
-  return { label: `> ${fmtWindow(opts.activeWindowLabel)} old`,
-           title: `Last written ${fmtDuration(now - row.lastWriteMs)} ago — older than the ${opts.activeWindowLabel} active window. It is still here because its tab is open; press × or close the tab to move it under Closed.` };
+export function ageTag(row: Pick<LiveRow, 'state' | 'reason' | 'lastWriteMs'>, now: number, opts: ViewOpts): AgeTag | undefined {
+  const quiet = now - row.lastWriteMs;
+  if (!opts.activeWindowMs || quiet <= opts.activeWindowMs) return undefined;
+  const hours = Math.floor(quiet / 3_600_000);
+  return { label: hours >= 48 ? `> ${Math.floor(hours / 24)} d` : `> ${hours} h`, tier: hours >= 24 ? 'stale' : 'old',
+           title: `${timeLabel(row, now)} — more than ${fmtWindow(opts.activeWindowLabel)} since anything happened here; it is listed because its tab is open. Press × or close the tab to move it under Closed.` };
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
