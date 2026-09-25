@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import type { LiveHost } from '../live-host.js';
-import { firstPrompts, resolveTabSession, rowsForHits, knownTitles, labelMatchesTitle, tabsToClose, trustedLearned, candidateSessions, pinnedSessions, type Snapshot, type TabRef, type Titled } from '../core/rows.js';
+import { firstPrompts, resolveTabSession, rowsForHits, knownTitles, labelMatchesTitle, tabsToClose, trustedLearned, candidateSessions, pinnedSessions, closedForGood, type Snapshot, type TabRef, type Titled } from '../core/rows.js';
 import { durationMs, parseQuery, search } from '../core/query.js';
 import type { SearchIndex } from '../core/types.js';
 import { VIEW_TYPE as SESSION_VIEW_TYPE } from './session-view.js';
@@ -64,7 +64,8 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
 
   constructor(private readonly ctx: vscode.ExtensionContext, private readonly host: LiveHost,
               private readonly ownActiveSession: () => string | undefined = () => undefined,
-              private readonly log?: vscode.LogOutputChannel) {
+              private readonly log?: vscode.LogOutputChannel,
+              private readonly ownVisibleSessions: () => string[] = () => []) {
     this.learned = new Map(Object.entries(ctx.workspaceState.get<Record<string, string>>('tabLabels') ?? {}));
     ctx.subscriptions.push(host.onSnapshot(s => this.post(s)));
   }
@@ -103,7 +104,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
    * highlight where it was — you are still working in that session.
    */
   noteActiveTab(): void {
-    try { this.trackActiveTab(); } finally { this.updatePins(); }
+    try { this.trackActiveTab(); } finally { this.updatePins(); this.updateOnScreen(); }
   }
 
   /**
@@ -113,6 +114,23 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
    */
   private updatePins(): void {
     this.host.setPinned(new Set(pinnedSessions(this.claudeTabs().map(t => t.ref), this.learned, this.known())));
+  }
+
+  /**
+   * The sessions on screen (D13): the visible tab of every editor group that is a Claude Code tab, and
+   * every visible Session View. The active group's tab resolves as the highlight does, a tab in another
+   * group by the pin rules. The host records a look at the ones waiting on you.
+   */
+  private updateOnScreen(): void {
+    const ids = new Set<string>(this.ownVisibleSessions());
+    vscode.window.tabGroups.all.forEach((group, gi) => {
+      const tab = group.activeTab; const input = tab?.input;
+      if (!tab || !(input instanceof vscode.TabInputWebview) || !input.viewType.includes(CLAUDE_TAB)) return;
+      const id = group.isActive && this.activeTab?.kind === 'claude' && this.activeTab.label === tab.label
+        ? this.activeId() : pinnedSessions([{ key: String(gi), label: tab.label }], this.learned, this.known())[0];
+      if (id) ids.add(id);
+    });
+    this.host.setOnScreen(ids);
   }
 
   private trackActiveTab(): void {
@@ -199,16 +217,19 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Called on every tab change with the tabs that closed, BEFORE noteActiveTab. A Claude Code tab closed
+   * Called on every tab change with the tabs that closed, BEFORE noteActiveTab. A tab moved to another
+   * editor group is not a close: its label is still open (closedForGood). A Claude Code tab closed
    * by hand is its session's end for now, so the session moves under CLOSED — the other direction of the ×.
    * The label must be tellable: a trusted learned label or a unique title match; an ambiguous label on the
    * tab that was active takes the resolution the highlight showed; an ambiguous background tab changes
    * nothing. A learned label goes with its tab. Our own Session View panels are not session tabs.
    */
   noteClosedTabs(closed: readonly vscode.Tab[]): void {
-    for (const tab of closed) {
-      const input = tab.input;
-      if (!(input instanceof vscode.TabInputWebview) || !input.viewType.includes(CLAUDE_TAB)) continue;
+    const claude = closed.filter(t => t.input instanceof vscode.TabInputWebview && t.input.viewType.includes(CLAUDE_TAB));
+    const open = this.claudeTabs().map(t => t.ref.label);
+    const gone = closedForGood(claude, open);
+    for (const tab of claude) if (!gone.includes(tab)) this.log?.info(`tab "${tab.label}" left a group but is still open (moved) — nothing changes`);
+    for (const tab of gone) {
       const ids = candidateSessions(tab.label, this.learned, this.known());
       const wasActive = this.activeTab?.kind === 'claude' && this.activeTab.label === tab.label;
       const id = ids.length === 1 ? ids[0] : ids.length > 1 && wasActive ? resolveTabSession(tab.label, this.host.snapshot) : undefined;
@@ -268,6 +289,9 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     const contextBudget = Math.max(1_000, cfg.get<number>('contextBudget', 1_000_000));
     this.updatePins();
     void this.view.webview.postMessage({ type: 'snapshot', snapshot, now: Date.now(), activeWindow, activeWindowMs: durationMs(activeWindow, 4 * 3_600_000), contextBudget, active: this.activeId() });
+    // After the post: titles the index just learned can resolve a tab, and a new look republishes — that
+    // snapshot must arrive after this one.
+    this.updateOnScreen();
   }
 
   /** The inline filter: the Quick Pick's prose search, as rows that stay on screen. Deep (!) stays in the picker. */
@@ -278,7 +302,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     const parsed = parseQuery(q, defaultWindow, Date.now());
     const titles = this.firstPromptsCached();
     const rows = index && !parsed.deep && q.trim()
-      ? rowsForHits(search(index, parsed, Date.now()).filter(h => this.host.inScope(h.session)), this.host.liveness, titles) : [];
+      ? rowsForHits(search(index, parsed, Date.now()).filter(h => this.host.inScope(h.session)), this.host.liveness, titles, { rings: this.host.rings }) : [];
     void this.view.webview.postMessage({ type: 'results', q, deep: parsed.deep, rows, now: Date.now(), indexing: !index });
   }
 

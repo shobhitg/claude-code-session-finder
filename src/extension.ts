@@ -43,7 +43,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // Stage 3: the Session View — agent tree, timeline and a readable transcript for ANY session,
   // read from disk without resuming it. Created first: the sidebar asks it which panel is the active tab.
   const sessions = new SessionViewManager(ctx, host, log);
-  const live = new LiveViewProvider(ctx, host, () => sessions.activeSessionId(), log);
+  const live = new LiveViewProvider(ctx, host, () => sessions.activeSessionId(), log, () => sessions.visibleSessionIds());
   ctx.subscriptions.push(
     sessions,
     vscode.window.registerWebviewViewProvider(VIEW_ID, live),

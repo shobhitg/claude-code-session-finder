@@ -136,13 +136,10 @@ main:focus-visible { outline: none; }
 /* ─── state language (spec §10 table) ──────────────────────────────────────── */
 .row[data-state="running"] .row__icon { color: var(--st-running); }
 .row[data-reason="tool-or-permission"] .row__icon { color: var(--st-needs); }
-.row[data-reason="tool-or-permission"] .row__title { font-weight: 600; }
-.row[data-reason="tool-or-permission"]::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--st-needs);
-}
 .row[data-reason="question"] .row__icon { color: var(--st-needs); }
-.row[data-reason="question"] .row__title { font-weight: 600; }
-.row[data-reason="question"]::before {
+/* The bell (D13): the ball is in your court and you have not seen it there. Seen, the row is plain. */
+.row[data-ringing="true"] .row__title { font-weight: 600; }
+.row[data-ringing="true"]::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--st-needs);
 }
 .row[data-reason="your-turn"] .row__icon { color: var(--s-fg); }

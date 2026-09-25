@@ -11,6 +11,10 @@ export interface LiveRow {
   lastWriteMs: number;
   /** context the model was last given, and the model — the cost meter */
   contextTokens?: number; model?: string;
+  /** quiet past the active window, listed only because its tab is open */
+  parked?: true;
+  /** the bell (core/looks.ts): the ball is in your court and you have not seen it there */
+  ringing?: true;
 }
 export interface HistoryRow {
   sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
@@ -21,7 +25,7 @@ export interface Snapshot { active: LiveRow[]; history: HistoryRow[]; totalSessi
 /** A row of the sidebar's inline filter: a HISTORY-shaped row plus what matched, and its live state if it has one. */
 export interface SearchRow extends HistoryRow {
   snippet: string | null; matches: number;
-  live?: { state: 'running' | 'attention'; reason?: AttentionReason; lastWriteMs: number; contextTokens?: number; model?: string };
+  live?: { state: 'running' | 'attention'; reason?: AttentionReason; lastWriteMs: number; contextTokens?: number; model?: string; ringing?: true };
 }
 
 /** The derivation quickpick.ts has used since v0.1: last `--` segment of the sanitized dir name. */
@@ -42,24 +46,41 @@ export function stateIcon(row: { state: 'running' | 'attention'; reason?: Attent
 }
 
 /**
- * Spec §9.2 status bar text: "$(loading~spin) 1  $(bell-dot) 3", a zero count omitting its segment;
- * undefined (hidden) when nothing is active. A dev build (`npm run try`) leads with its marker and always shows.
+ * Spec §9.2 status bar text: "$(loading~spin) 1  $(bell-dot) 3" — sessions running, and sessions that
+ * ring (D13), not every session that waits: one you have seen is quiet. A zero count omits its segment;
+ * undefined (hidden) when nothing runs and nothing rings. A dev build (`npm run try`) leads with its marker and always shows.
  */
-export function statusText(active: readonly { state: 'running' | 'attention' }[], dev?: string): string | undefined {
+export function statusText(active: readonly { state: 'running' | 'attention'; ringing?: true }[], dev?: string): string | undefined {
   const running = active.filter(r => r.state === 'running').length;
-  const attention = active.length - running;
+  const ringing = active.filter(r => r.ringing).length;
   const parts: string[] = [];
   if (dev) parts.push(`$(beaker) ${dev}`);
   if (running) parts.push(`$(loading~spin) ${running}`);
-  if (attention) parts.push(`$(bell-dot) ${attention}`);
+  if (ringing) parts.push(`$(bell-dot) ${ringing}`);
   return parts.length ? parts.join('  ') : undefined;
+}
+
+/**
+ * The closed Claude Code tabs that really closed a session. VS Code moves a tab to another editor group
+ * as an open there and a close here — in separate events — so a closed tab whose label is still on an
+ * open tab was moved (or shares its label with one that stays, whose pin would keep the session ACTIVE
+ * anyway). Without this, dragging a Claude Code tab aside closed its session and forgot its label.
+ */
+export function closedForGood<T extends { label: string }>(closed: readonly T[], openLabels: readonly string[]): T[] {
+  const open = new Set(openLabels);
+  return closed.filter(t => !open.has(t.label));
+}
+
+/** The status bar tooltip's order: what rings first, then the rest, each in the list's own order. */
+export function ringingFirst<T extends { state: string; ringing?: true }>(rows: readonly T[]): T[] {
+  return [...rows.filter(r => r.ringing), ...rows.filter(r => !r.ringing)];
 }
 
 /** One sentence per state — the glyph's tooltip everywhere it is drawn. */
 export function stateLabel(row: { state: 'running' | 'attention'; reason?: AttentionReason }): string {
   if (row.state === 'running') return 'Claude is working';
   switch (row.reason) {
-    case 'question': return 'Claude asked you a question';
+    case 'question': return 'Claude is waiting for your answer — a question, or a plan to approve';
     case 'tool-or-permission': return 'Waiting on a tool call or a permission prompt';
     case 'your-turn': return 'Claude finished — your turn';
     case 'interrupted': return 'Interrupted — waiting for you';
@@ -67,12 +88,17 @@ export function stateLabel(row: { state: 'running' | 'attention'; reason?: Atten
   }
 }
 
-/** Spec §6 ordering: things that need you, then things that are working, then things probably dead. */
+/**
+ * Spec §6 ordering: things that need you, then things that are working, then things probably dead — and
+ * below all of them, whatever their state, the sessions parked there by an open tab: a tab left open
+ * since yesterday does not need you more than a session working now.
+ */
 const RANK: Record<string, number> = {
   'attention/question': 0, 'attention/tool-or-permission': 1, 'attention/your-turn': 2, 'attention/interrupted': 3, running: 4, 'attention/stalled': 5,
 };
+const PARKED = 10;
 const rank = (l: Liveness) =>
-  RANK[l.state.kind === 'attention' ? `attention/${l.state.reason}` : 'running'] ?? 9;
+  l.parked ? PARKED : RANK[l.state.kind === 'attention' ? `attention/${l.state.reason}` : 'running'] ?? 9;
 
 function titleOf(m: SessionMeta | undefined, sessionId: string, firstPrompt: Map<string, string>): string {
   return m?.title ?? firstPrompt.get(sessionId)?.slice(0, 80) ?? sessionId.slice(0, 8);
@@ -89,9 +115,10 @@ export function firstPrompts(index: SearchIndex): Map<string, string> {
   return out;
 }
 
-/** Search hits as sidebar rows: same titles as the list, the best-matching line as a snippet, live state kept. */
-export function rowsForHits(hits: SessionHit[], liveness: ReadonlyMap<string, Liveness>, firstPrompt: Map<string, string>, limit = 50): SearchRow[] {
-  return hits.slice(0, limit).map(h => {
+/** Search hits as sidebar rows: same titles as the list, the best-matching line as a snippet, live state (and the bell) kept. */
+export function rowsForHits(hits: SessionHit[], liveness: ReadonlyMap<string, Liveness>, firstPrompt: Map<string, string>,
+                            opts: { limit?: number; rings?: (l: Liveness) => boolean } = {}): SearchRow[] {
+  return hits.slice(0, opts.limit ?? 50).map(h => {
     const m = h.session; const l = liveness.get(m.sessionId);
     const row: SearchRow = {
       sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt), project: projectLabel(m.projectDir),
@@ -99,7 +126,8 @@ export function rowsForHits(hits: SessionHit[], liveness: ReadonlyMap<string, Li
       snippet: h.best ? snippet(h.best.text, h.best.index) : null, matches: h.matchCount,
     };
     if (l) row.live = { state: l.state.kind, lastWriteMs: l.lastWriteMs, ...(l.state.kind === 'attention' ? { reason: l.state.reason } : {}),
-                        ...(l.contextTokens !== undefined ? { contextTokens: l.contextTokens } : {}), ...(l.model !== undefined ? { model: l.model } : {}) };
+                        ...(l.contextTokens !== undefined ? { contextTokens: l.contextTokens } : {}), ...(l.model !== undefined ? { model: l.model } : {}),
+                        ...(opts.rings?.(l) ? { ringing: true as const } : {}) };
     return row;
   });
 }
@@ -207,7 +235,7 @@ export function tabsToClose(sessionId: string, tabs: readonly TabRef[], learned:
 export function buildSnapshot(
   index: SearchIndex | null,
   liveness: ReadonlyMap<string, Liveness>,
-  opts: { historyLimit?: number; indexing?: boolean; scope?: SidebarScope; inScope?: (m: SessionMeta) => boolean } = {},
+  opts: { historyLimit?: number; indexing?: boolean; scope?: SidebarScope; inScope?: (m: SessionMeta) => boolean; rings?: (l: Liveness) => boolean } = {},
 ): Snapshot {
   const limit = opts.historyLimit ?? 50;
   const byId = new Map<string, SessionMeta>();
@@ -233,6 +261,8 @@ export function buildSnapshot(
       if (l.state.kind === 'attention') row.reason = l.state.reason;
       if (l.contextTokens !== undefined) row.contextTokens = l.contextTokens;
       if (l.model !== undefined) row.model = l.model;
+      if (l.parked) row.parked = true;
+      if (opts.rings?.(l)) row.ringing = true;
       return row;
     });
 

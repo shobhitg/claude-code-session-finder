@@ -36,20 +36,31 @@ Code, and nothing leaves your machine (see [Privacy](#privacy)).
 
 ## See what is running
 
-The status bar shows `⟳ 2  🔔 3`: two sessions working, three waiting on you.
-Hover for the list; click to search. The same glyphs mark rows in the Sessions
-view and in search results:
+The status bar shows `⟳ 2  🔔 3`: two sessions working, and three where the ball
+is in your court and you have not looked yet. Hover for the list, ringing ones
+first; click to open the Sessions view. The same glyphs mark rows in the
+Sessions view and in search results:
 
 | Glyph | State | Meaning |
 |---|---|---|
 | `⟳` spinning | running | the model is working — including long answers, which write nothing for a while |
-| `?` | asks you | Claude asked a question (`AskUserQuestion`) and is waiting for the answer |
+| `?` | asks you | Claude asked a question (`AskUserQuestion`) or has a plan for you to approve, and is waiting for the answer |
 | `🔔` | needs you | waiting on a tool call for a while: usually a **permission prompt**, sometimes a slow tool |
 | `💬` | done | Claude finished its turn and is waiting for you |
 | `⊘` | interrupted | you stopped it (`Esc`); nothing is running until you type again |
 | `⚠` | stalled | nothing written for 15+ minutes mid-turn; probably abandoned |
 
-Hover a glyph for the sentence behind it. Rows are ordered by how much they need you: question, permission, done, interrupted, running, stalled — and within a group they stay where they first appeared, so nothing shuffles under your pointer.
+**The bell** rings while the ball is in your court and you have not seen it
+there. A finished turn, an interruption or a quiet tool call stops ringing once
+you look at the session — its Claude Code tab or its Session View on screen in a
+focused window, in any editor group — and a reply that lands while you watch
+never rings. A question or a plan to approve keeps ringing until you answer it.
+A ringing row has the accent bar and a bold title; one you have seen is plain.
+Looking in one window quiets the bell in all of them. A session running in a
+terminal, or in Claude Code's side panel, has no tab to look at: it rings until
+you reply or close it.
+
+Hover a glyph for the sentence behind it. Rows are ordered by how much they need you: question, permission, done, interrupted, running, stalled — then the sessions kept only by an open tab, youngest first. Within a group a row stays where it is while Claude works, so nothing shuffles under your pointer; a session enters its group at the top when it starts, resumes or finishes.
 
 **Cost meter.** Each active row carries a small bar with its context size: the tokens the model was given on its last turn, and therefore what every further turn costs. One absolute scale for every session, ramping green → yellow → orange → red toward `sessionFinder.contextBudget` (1M by default, where compaction lands), and pinned full in deep red past it: compact or start a new session. Hover the bar for the numbers.
 
@@ -74,9 +85,9 @@ you as you switch between Claude Code tabs and Session Views.
   Claude Code tab in this window, most urgent first: needs you, your turn,
   running, stalled. The time label says how long a session has been quiet — the time
   of the last prompt or reply, not of the file, so looking at a session does
-  not count. One kept here only by its tab, past the window, wears an orange
-  `> 19 h` tag instead (red after a day): close it when you mean to, and not
-  before.
+  not count. One kept here only by its tab, past the window, is listed below
+  all of those and wears an orange `> 19h` or `> 2d 1h` tag instead (red after
+  a day): close it when you mean to, and not before.
 - **Closed** — the 50 most recent sessions that are not active, with their
   project, branch and PR, and **Search all…** for everything older. Clicking
   one resumes it, which makes it active.

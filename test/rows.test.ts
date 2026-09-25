@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSnapshot, projectLabel, stateIcon, statusText, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions, pinnedSessions, knownTitles } from '../src/core/rows.js';
+import { buildSnapshot, projectLabel, stateIcon, statusText, ringingFirst, closedForGood, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions, pinnedSessions, knownTitles } from '../src/core/rows.js';
 import type { SessionHit } from '../src/core/query.js';
 import type { SearchIndex, SessionMeta } from '../src/core/types.js';
 import type { Liveness } from '../src/core/state.js';
@@ -55,6 +55,34 @@ describe('buildSnapshot', () => {
     expect(s.active.map(r => r.sessionId)).toEqual(['d', 'e', 'c', 'a', 'b']);
   });
 
+  it('puts parked rows (kept only by their tab) below everything live, youngest first, whatever their state', () => {
+    const parked = (id: string, state: Liveness['state'], at: number): [string, Liveness] => {
+      const [k, l] = live(id, state, at); return [k, { ...l, parked: true }];
+    };
+    const liveness = new Map<string, Liveness>([
+      parked('old-q', { kind: 'attention', reason: 'question' }, 5),
+      parked('old-turn', { kind: 'attention', reason: 'your-turn' }, 30),
+      live('run', { kind: 'running' }, 99),
+      live('stall', { kind: 'attention', reason: 'stalled' }, 90),
+      parked('older-turn', { kind: 'attention', reason: 'your-turn' }, 20),
+      live('turn', { kind: 'attention', reason: 'your-turn' }, 80),
+    ]);
+    const s = buildSnapshot(index, liveness);
+    expect(s.active.map(r => r.sessionId)).toEqual(['turn', 'run', 'stall', 'old-turn', 'older-turn', 'old-q']);
+    expect(s.active.find(r => r.sessionId === 'old-q')).toMatchObject({ parked: true, state: 'attention', reason: 'question' });
+    expect(s.active.find(r => r.sessionId === 'run')).not.toHaveProperty('parked');
+  });
+
+  it('marks the rows that ring (the bell: the ball is in your court and you have not seen it)', () => {
+    const liveness = new Map<string, Liveness>([
+      live('a', { kind: 'attention', reason: 'your-turn' }, 50), live('b', { kind: 'attention', reason: 'your-turn' }, 40), live('c', { kind: 'running' }, 30),
+    ]);
+    const s = buildSnapshot(index, liveness, { rings: l => l.sessionId === 'a' });
+    expect(s.active.find(r => r.sessionId === 'a')).toMatchObject({ ringing: true });
+    expect(s.active.find(r => r.sessionId === 'b')).not.toHaveProperty('ringing');
+    expect(buildSnapshot(index, liveness).active.some(r => r.ringing)).toBe(false);          // no rule given: nothing rings
+  });
+
   it('joins index metadata onto live rows', () => {
     const s = buildSnapshot(index, new Map([live('a', { kind: 'running' }, 5)]));
     expect(s.active[0]).toMatchObject({
@@ -108,6 +136,9 @@ describe('rowsForHits / resolveTabSession', () => {
     ];
     const rows = rowsForHits(hits, new Map([live('a', { kind: 'attention', reason: 'your-turn' }, 5)]), firstPrompts(index));
     expect(rows[0]).toMatchObject({ sessionId: 'a', title: 'Ledger GUI', matches: 3, pr: 20231, live: { state: 'attention', reason: 'your-turn', lastWriteMs: 5 } });
+    expect(rows[0]!.live).not.toHaveProperty('ringing');
+    expect(rowsForHits(hits, new Map([live('a', { kind: 'attention', reason: 'your-turn' }, 5)]), firstPrompts(index), { rings: () => true })[0]!.live)
+      .toMatchObject({ ringing: true });
     expect(rows[0]!.snippet).toContain('paste the image');
     expect(rows[1]).toMatchObject({ sessionId: 'c', title: 'Match the Figma frame for the sequences dialog', snippet: null });
     expect(rows[1]).not.toHaveProperty('live');
@@ -226,19 +257,35 @@ describe('pinnedSessions (which sessions the open Claude Code tabs keep ACTIVE)'
 });
 
 describe('statusText', () => {
-  const running = { state: 'running' as const }, attention = { state: 'attention' as const };
+  const running = { state: 'running' as const }, seen = { state: 'attention' as const }, ringing = { state: 'attention' as const, ringing: true as const };
 
-  it('counts running and needs-you sessions, omitting a zero count', () => {
-    expect(statusText([running, attention, attention])).toBe('$(loading~spin) 1  $(bell-dot) 2');
-    expect(statusText([running])).toBe('$(loading~spin) 1');
+  it('counts running sessions and the ones that ring — not every session waiting — omitting a zero count', () => {
+    expect(statusText([running, ringing, ringing, seen])).toBe('$(loading~spin) 1  $(bell-dot) 2');
+    expect(statusText([running, seen])).toBe('$(loading~spin) 1');
   });
 
-  it('hides the item when nothing is active', () => {
+  it('hides the item when nothing runs and nothing rings', () => {
     expect(statusText([])).toBeUndefined();
+    expect(statusText([seen, seen])).toBeUndefined();
   });
 
-  it('leads with the dev build marker, even when nothing is active', () => {
-    expect(statusText([attention], 'dev 17:59')).toBe('$(beaker) dev 17:59  $(bell-dot) 1');
-    expect(statusText([], 'dev 17:59')).toBe('$(beaker) dev 17:59');
+  it('leads with the dev build marker, even when there is nothing to count', () => {
+    expect(statusText([ringing], 'dev 17:59')).toBe('$(beaker) dev 17:59  $(bell-dot) 1');
+    expect(statusText([seen], 'dev 17:59')).toBe('$(beaker) dev 17:59');
+  });
+
+  it('ringingFirst lists the ringing sessions first, each part in its own order', () => {
+    const rows = [{ id: 1, ...seen }, { id: 2, ...ringing }, { id: 3, ...running }, { id: 4, ...ringing }];
+    expect(ringingFirst(rows).map(r => r.id)).toEqual([2, 4, 1, 3]);
+  });
+});
+
+describe('closedForGood: a Claude Code tab whose label is still open was moved, not closed', () => {
+  it('drops a closed tab whose label is on a tab still open — VS Code moves a tab across groups as an open there and a close here', () => {
+    expect(closedForGood([{ label: 'A' }], ['A'])).toEqual([]);
+    expect(closedForGood([{ label: 'A' }, { label: 'B' }], ['A', 'C'])).toEqual([{ label: 'B' }]);
+  });
+  it('keeps what really closed', () => {
+    expect(closedForGood([{ label: 'A', n: 1 }], [])).toEqual([{ label: 'A', n: 1 }]);
   });
 });

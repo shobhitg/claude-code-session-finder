@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder, heatOf, fmtWindow, ageTag } from '../src/webview/model.js';
+import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder, noteArrivals, heatOf, fmtWindow, ageTag, type Arrivals } from '../src/webview/model.js';
 import type { Snapshot, LiveRow, HistoryRow, SearchRow } from '../src/core/rows.js';
 
 const S = 1_000, M = 60 * S, H = 60 * M;
@@ -15,26 +15,29 @@ const hist = (o: Partial<HistoryRow>): HistoryRow => ({
 
 describe('fmtDuration', () => {
   it('picks the unit by magnitude', () => {
-    expect(fmtDuration(40 * S)).toBe('40 s');
-    expect(fmtDuration(3 * M + 20 * S)).toBe('3 m');
-    expect(fmtDuration(2.1 * H)).toBe('2.1 h');
-    expect(fmtDuration(3 * H)).toBe('3 h');
-    expect(fmtDuration(72 * H)).toBe('3 d');
-    expect(fmtDuration(-5)).toBe('0 s');
+    expect(fmtDuration(40 * S)).toBe('40s');
+    expect(fmtDuration(3 * M + 20 * S)).toBe('3m');
+    expect(fmtDuration(2.1 * H)).toBe('2h 6m');
+    expect(fmtDuration(3 * H)).toBe('3h');
+    expect(fmtDuration(59 * M + 50 * S)).toBe('1h');                       // rounded to the minute first, then split
+    expect(fmtDuration(49 * H + 50 * M)).toBe('2d 1h');
+    expect(fmtDuration(25 * H)).toBe('1d 1h');
+    expect(fmtDuration(72 * H)).toBe('3d');
+    expect(fmtDuration(-5)).toBe('0s');
   });
 });
 
 describe('timeLabel (spec §10 table)', () => {
   it('running: just now, then quiet N', () => {
     expect(timeLabel(live({ lastWriteMs: now - 10 * S }), now)).toBe('just now');
-    expect(timeLabel(live({ lastWriteMs: now - 2 * M }), now)).toBe('quiet 2 m');
+    expect(timeLabel(live({ lastWriteMs: now - 2 * M }), now)).toBe('quiet 2m');
   });
   it('tool-or-permission says quiet; your-turn says done; a question asks; an interruption says so; stalled is bare', () => {
-    expect(timeLabel(live({ state: 'attention', reason: 'tool-or-permission', lastWriteMs: now - 3 * M }), now)).toBe('quiet 3 m');
-    expect(timeLabel(live({ state: 'attention', reason: 'your-turn', lastWriteMs: now - 3 * M }), now)).toBe('done · 3 m ago');
-    expect(timeLabel(live({ state: 'attention', reason: 'question', lastWriteMs: now - 40 * S }), now)).toBe('asks you · 40 s');
-    expect(timeLabel(live({ state: 'attention', reason: 'interrupted', lastWriteMs: now - 2 * M }), now)).toBe('interrupted · 2 m');
-    expect(timeLabel(live({ state: 'attention', reason: 'stalled', lastWriteMs: now - 2.1 * H }), now)).toBe('2.1 h');
+    expect(timeLabel(live({ state: 'attention', reason: 'tool-or-permission', lastWriteMs: now - 3 * M }), now)).toBe('quiet 3m');
+    expect(timeLabel(live({ state: 'attention', reason: 'your-turn', lastWriteMs: now - 3 * M }), now)).toBe('done · 3m ago');
+    expect(timeLabel(live({ state: 'attention', reason: 'question', lastWriteMs: now - 40 * S }), now)).toBe('asks you · 40s');
+    expect(timeLabel(live({ state: 'attention', reason: 'interrupted', lastWriteMs: now - 2 * M }), now)).toBe('interrupted · 2m');
+    expect(timeLabel(live({ state: 'attention', reason: 'stalled', lastWriteMs: now - 2.1 * H }), now)).toBe('2h 6m');
   });
 });
 
@@ -112,8 +115,22 @@ describe('resultsModel (the inline filter)', () => {
   });
 });
 
-describe('stableOrder', () => {
-  const opts = { activeWindowLabel: '4h', searchKey: 'Ctrl+Alt+S' };
+describe('the bell on a row', () => {
+  const opts = { activeWindowLabel: '4h', searchKey: 'k' };
+  it('a live row that rings says so; one you have seen does not', () => {
+    const vm = viewModel({ active: [live({ sessionId: 'r', state: 'attention', reason: 'your-turn', ringing: true }), live({ sessionId: 's', state: 'attention', reason: 'your-turn' })],
+                           history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, opts);
+    expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'r', ringing: true });
+    expect(vm.sections[0]!.rows[1]).not.toHaveProperty('ringing');
+  });
+  it('so does a filter result with a ringing live state', () => {
+    const row: SearchRow = { ...hist({ sessionId: 'r' }), snippet: null, matches: 1, live: { state: 'attention', reason: 'question', lastWriteMs: now, ringing: true } };
+    expect(resultsModel([row], 'x', false, now, opts).sections[0]!.rows[0]).toMatchObject({ ringing: true });
+  });
+});
+
+describe('stableOrder + noteArrivals: rows stay put, and enter their group at the top', () => {
+  const opts = { activeWindowLabel: '4h', activeWindowMs: 4 * H, searchKey: 'Ctrl+Alt+S' };
   const snap: Snapshot = {
     active: [
       live({ sessionId: 'p', state: 'attention', reason: 'tool-or-permission' }),
@@ -124,22 +141,70 @@ describe('stableOrder', () => {
     history: [], totalSessions: 4, indexing: false, scope: 'all',
   };
   const ids = (rows: ReturnType<typeof stableOrder>) => rows.map(r => r.kind === 'link' ? r.action : r.sessionId);
-  it('reorders within a state group by first appearance, newest first, and never across groups', () => {
+  /** One render, as the webview does it: stamp the arrivals, then order the ACTIVE section. */
+  const render = (prev: Arrivals | undefined, active: LiveRow[]) => {
+    const arrivals = noteArrivals(prev, active);
+    const rows = viewModel({ ...snap, active, totalSessions: active.length }, now, opts).sections[0]!.rows;
+    return { arrivals, ids: ids(stableOrder(rows, arrivals)) };
+  };
+
+  it('reorders within a state group by arrival, newest first, and never across groups', () => {
     const rows = viewModel(snap, now, opts).sections[0]!.rows;
-    // seen: r1 appeared first, r3 most recently — newest-seen goes on top, whatever the host's write order says
-    const seen = new Map([['r3', 3], ['r2', 2], ['r1', 1], ['p', 9]]);
-    expect(ids(stableOrder(rows, seen))).toEqual(['p', 'r3', 'r2', 'r1']);
+    // r1 arrived first, r3 most recently — the newest arrival goes on top, whatever the host's write order says
+    const arrivals: Arrivals = { n: 9, at: { r3: { n: 3, group: 'running/' }, r2: { n: 2, group: 'running/' }, r1: { n: 1, group: 'running/' }, p: { n: 9, group: 'attention/tool-or-permission' } } };
+    expect(ids(stableOrder(rows, arrivals))).toEqual(['p', 'r3', 'r2', 'r1']);
   });
-  it('a session that just wrote does not jump: identical seen order keeps the rows put across snapshots', () => {
-    const seen = new Map([['r1', 1], ['r2', 2], ['r3', 3]]);
-    const before = viewModel(snap, now, opts).sections[0]!.rows;
-    const swapped: Snapshot = { ...snap, active: [snap.active[0]!, { ...snap.active[3]!, lastWriteMs: now }, snap.active[1]!, snap.active[2]!] };
-    const after = viewModel(swapped, now, opts).sections[0]!.rows;
-    expect(ids(stableOrder(before, seen))).toEqual(ids(stableOrder(after, seen)));
+  it('on first sight the rows take the host order', () => {
+    expect(render(undefined, snap.active).ids).toEqual(['p', 'r1', 'r2', 'r3']);
+  });
+  it('a session that just wrote does not jump: it keeps its stamp while it stays in its group', () => {
+    const first = render(undefined, snap.active);
+    const swapped = [snap.active[0]!, { ...snap.active[3]!, lastWriteMs: now }, snap.active[1]!, snap.active[2]!];
+    const next = render(first.arrivals, swapped);
+    expect(next.ids).toEqual(first.ids);
+    expect(next.arrivals).toEqual(first.arrivals);
+  });
+  it('a session that changes state enters its new group at the top, and again when it comes back', () => {
+    const a = render(undefined, snap.active);
+    const r3 = snap.active[3]!;
+    // host order: r3 joins p's group, and was written more recently than p
+    const b = render(a.arrivals, [{ ...r3, state: 'attention', reason: 'tool-or-permission' }, snap.active[0]!, snap.active[1]!, snap.active[2]!]);
+    expect(b.ids).toEqual(['r3', 'p', 'r1', 'r2']);
+    const c = render(b.arrivals, snap.active);
+    expect(c.ids).toEqual(['p', 'r3', 'r1', 'r2']);
+  });
+  it('a session that leaves ACTIVE and comes back enters at the top, not at its old place', () => {
+    const a = render(undefined, snap.active);
+    expect(a.ids).toEqual(['p', 'r1', 'r2', 'r3']);
+    const b = render(a.arrivals, [snap.active[0]!, snap.active[1]!, snap.active[2]!]);
+    expect(b.arrivals.at).not.toHaveProperty('r3');
+    expect(render(b.arrivals, snap.active).ids).toEqual(['p', 'r3', 'r1', 'r2']);
+  });
+  it('parked rows keep the host order — youngest first — whatever their stamps', () => {
+    const parked = (id: string, ageH: number): LiveRow => live({ sessionId: id, state: 'attention', reason: 'your-turn', lastWriteMs: now - ageH * H, parked: true });
+    const rows = [parked('p6', 6), parked('p20', 20), parked('p50', 50)];
+    const arrivals: Arrivals = { n: 3, at: { p50: { n: 3, group: 'parked' }, p6: { n: 1, group: 'parked' }, p20: { n: 2, group: 'parked' } } };
+    expect(ids(stableOrder(viewModel({ ...snap, active: rows }, now, opts).sections[0]!.rows, arrivals))).toEqual(['p6', 'p20', 'p50']);
+  });
+  it('regression: a new or resumed session is not listed under the tab-parked ones, and lands on top when it finishes', () => {
+    const turn = { state: 'attention' as const, reason: 'your-turn' as const };
+    const parked = (id: string, ageH: number): LiveRow => live({ sessionId: id, ...turn, lastWriteMs: now - ageH * H, parked: true });
+    const running = (id: string): LiveRow => live({ sessionId: id, state: 'running', lastWriteMs: now });
+    const done = (id: string, agoS: number): LiveRow => live({ sessionId: id, ...turn, lastWriteMs: now - agoS * S });
+    // host order (buildSnapshot): fresh urgency groups, then parked youngest first
+    const a = render(undefined, [parked('spreadsheet', 6), parked('stampd', 20), parked('pr', 50)]);
+    const b = render(a.arrivals, [running('chrome'), parked('spreadsheet', 6), parked('stampd', 20), parked('pr', 50)]);
+    expect(b.ids).toEqual(['chrome', 'spreadsheet', 'stampd', 'pr']);
+    const c = render(b.arrivals, [running('stampd'), running('chrome'), parked('spreadsheet', 6), parked('pr', 50)]);
+    expect(c.ids).toEqual(['stampd', 'chrome', 'spreadsheet', 'pr']);            // resumed after chrome started → above it
+    const d = render(c.arrivals, [done('chrome', 5), running('stampd'), parked('spreadsheet', 6), parked('pr', 50)]);
+    expect(d.ids).toEqual(['chrome', 'stampd', 'spreadsheet', 'pr']);
+    const e = render(d.arrivals, [done('stampd', 1), done('chrome', 9), parked('spreadsheet', 6), parked('pr', 50)]);
+    expect(e.ids).toEqual(['stampd', 'chrome', 'spreadsheet', 'pr']);            // finished last → on top
   });
   it('leaves link rows in place and keeps groups contiguous', () => {
     const rows = viewModel({ ...snap, history: [hist({ sessionId: 'h' })] }, now, opts).sections[1]!.rows;
-    expect(ids(stableOrder(rows, new Map()))).toEqual(['h', 'search', 'scope']);
+    expect(ids(stableOrder(rows, noteArrivals(undefined, [])))).toEqual(['h', 'search', 'scope']);
   });
 });
 
@@ -174,14 +239,15 @@ describe('the age tag: an ACTIVE session older than the window is there only bec
     expect(fmtWindow('2w')).toBe('2 weeks');
     expect(fmtWindow('nonsense')).toBe('nonsense');
   });
-  it('says how old in whole hours, then days, and turns stale after a day; the tooltip keeps the time label it replaces', () => {
+  it('says how old in whole hours, then days and hours, and turns stale after a day; the tooltip keeps the time label it replaces', () => {
     const at = (ms: number) => ageTag(live({ state: 'attention', reason: 'your-turn', lastWriteMs: now - ms }), now, opts);
     expect(at(3 * H)).toBeUndefined();
-    expect(at(4.5 * H)).toMatchObject({ label: '> 4 h', tier: 'old' });
-    expect(at(19.2 * H)).toMatchObject({ label: '> 19 h', tier: 'old' });
-    expect(at(26 * H)).toMatchObject({ label: '> 26 h', tier: 'stale' });
-    expect(at(50 * H)).toMatchObject({ label: '> 2 d', tier: 'stale' });
-    expect(at(26 * H)!.title).toContain('done · 26 h ago');
+    expect(at(4.5 * H)).toMatchObject({ label: '> 4h', tier: 'old' });
+    expect(at(19.2 * H)).toMatchObject({ label: '> 19h', tier: 'old' });
+    expect(at(24.5 * H)).toMatchObject({ label: '> 1d', tier: 'stale' });
+    expect(at(26 * H)).toMatchObject({ label: '> 1d 2h', tier: 'stale' });
+    expect(at(49.9 * H)).toMatchObject({ label: '> 2d 1h', tier: 'stale' });
+    expect(at(26 * H)!.title).toContain('done · 1d 2h ago');
     expect(at(26 * H)!.title).toContain('4 hours');
   });
   it('ageTag appears past the window, in the row and in results', () => {
@@ -189,7 +255,7 @@ describe('the age tag: an ACTIVE session older than the window is there only bec
     expect(ageTag(live({ lastWriteMs: now - 3 * H }), now, opts)).toBeUndefined();
     expect(ageTag(old, now, { activeWindowLabel: '4h', searchKey: 'k' })).toBeUndefined();          // no window known: no tag
     const vm = viewModel({ active: [old, live({ sessionId: 'a' })], history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, opts);
-    expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'o', age: { label: '> 26 h', tier: 'stale' } });
+    expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'o', age: { label: '> 1d 2h', tier: 'stale' } });
     expect(vm.sections[0]!.rows[1]).not.toHaveProperty('age');
     expect(vm.sections[0]!.empty).toBeNull();
     expect(viewModel({ active: [], history: [], totalSessions: 0, indexing: false, scope: 'all' }, now, opts).sections[0]!.empty).toContain('open in a tab');

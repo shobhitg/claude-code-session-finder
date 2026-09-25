@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.8.0
+
+**The bell rings only while the ball is in your court.** The `🔔` count in the
+status bar used to be every session waiting in any way — and since 0.7.0 kept
+open tabs in Active, that meant every tab left open since yesterday. Now a
+session rings when it waits on you *and you have not seen it*: a finished turn,
+an interruption or a quiet tool call (maybe a permission prompt) stops ringing
+once you look at it — its Claude Code tab on screen in any editor group, or its
+Session View, in a focused window — and a reply that lands while you watch
+never rings. A question stays ringing until you answer it, and a plan waiting
+for approval (`ExitPlanMode`) now counts as a question too. A ringing row
+carries the accent bar and a bold title; a seen one is plain. Looking in one
+window quiets the bell in every window. The status bar hides when nothing runs
+and nothing rings, and its tooltip lists what rings first. The first run starts
+clean: nothing that finished before it rings.
+
+**Moving a Claude Code tab to another editor group no longer closes its
+session.** VS Code reports the move as a close in one group and an open in the
+other, and the close was taken at its word: the session dropped under Closed
+for a moment and its tab label was forgotten.
+
+**A session you just started or resumed is listed on top, not at the bottom.**
+Active is ordered by how much a session needs you, and a finished session
+("your turn") ranks above a running one. Since 0.7.0 kept every session with an
+open tab in Active, that put yesterday's open tabs — all "your turn" — above
+everything running, so a new or resumed session appeared under a wall of
+day-old rows. A session quiet past `activeWindow` and kept only by its tab is
+now **parked**: listed below everything live, youngest first, whatever its
+state. And within a group, a session enters at the top when it starts,
+resumes or finishes; before, it went back to wherever it had first appeared,
+which could be days ago. A running session still does not move because it
+wrote.
+
+**Paste and select all work in the filter box.** Cmd+V, Cmd+A and Cmd+Z did
+nothing there on macOS (the right-click menu did). VS Code performs those keys
+for a webview only when it sees them, and the filter kept its keys to itself so
+the list's shortcuts would not fire while you type; the list now just ignores
+keys typed into the filter. And a Cmd/Ctrl/Alt chord on a focused row is no
+longer read as the row's own letter — Cmd+V there opened the Session View.
+
+**Shorter durations.** Two units at most, no space inside one: `40s`, `3m`,
+`2h 6m`, `2d 1h` — in time labels (`done · 3m ago`), the Session View, and the
+age tag, which now reads `> 19h`, then `> 1d 2h` from a day on instead of
+`> 26 h`.
+
 ## 0.7.2
 
 **Nothing on a row moves when you hover it.** The five row buttons used to

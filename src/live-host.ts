@@ -6,6 +6,7 @@ import { durationMs } from './core/query.js';
 import { buildSnapshot, type Snapshot, type SidebarScope } from './core/rows.js';
 import { inScope } from './core/scope.js';
 import { applyClosed, type ClosedMarkers } from './core/closed.js';
+import { Bell, LooksFile } from './core/looks.js';
 import { workspaceRoots } from './scope-roots.js';
 import type { SearchIndex, SessionMeta } from './core/types.js';
 import type { Liveness, Thresholds } from './core/state.js';
@@ -46,16 +47,28 @@ export class LiveHost implements vscode.Disposable {
   private pinned: ReadonlySet<string> = new Set();
   /** This workspace's folders, main checkouts and worktrees — what "this project" means for the sidebar. */
   private roots: string[] = [];
+  /** D13: which sessions ring — the looks, shared by every window through a file in global storage. */
+  private readonly bell: Bell;
+  /** The rule of the last snapshot, for surfaces that build rows of their own (the inline filter). */
+  rings: (l: Liveness) => boolean = () => false;
+  private ringingKey = '';
 
   constructor(private readonly ctx: vscode.ExtensionContext, private readonly log: vscode.LogOutputChannel) {
     this.closed = ctx.globalState.get<ClosedMarkers>(CLOSED_KEY) ?? {};
+    this.bell = new Bell(new LooksFile(join(ctx.globalStorageUri.fsPath, 'looks.json')));
     this.rebuildTracker();
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('sessionFinder')) this.rebuildTracker();
       }),
-      // D6: nothing runs while the window is unfocused; the first focus event sweeps at once.
-      vscode.window.onDidChangeWindowState(s => (s.focused ? this.tracker?.start() : this.tracker?.stop())),
+      // D6: nothing runs while the window is unfocused; the first focus event sweeps at once. Another
+      // window may have looked at a session meanwhile, so the looks are re-read and the bell recomputed.
+      vscode.window.onDidChangeWindowState(s => {
+        if (!s.focused) { this.tracker?.stop(); return; }
+        this.bell.reload();
+        this.publish();
+        this.tracker?.start();
+      }),
       vscode.workspace.onDidChangeWorkspaceFolders(() => void this.refreshIndex()),
     );
     void this.syncScopeContext();
@@ -86,6 +99,13 @@ export class LiveHost implements vscode.Disposable {
 
   /** The sessions the open Claude Code tabs stand for — the tracker keeps them ACTIVE past the window. */
   setPinned(ids: ReadonlySet<string>): void { this.pinned = ids; this.tracker?.setPinned(ids); }
+
+  /** The sessions on screen in this window (the sidebar tells us): looking at one that waits on you quiets its bell. */
+  setOnScreen(ids: ReadonlySet<string>): void {
+    if (!this.bell.setOnScreen(ids)) return;
+    this.log.info(`on screen: ${ids.size ? [...ids].join(', ') : 'no session'}`);
+    this.publish();
+  }
 
   /**
    * Close a session: it moves under CLOSED at once and stays there until its transcript is written
@@ -148,8 +168,19 @@ export class LiveHost implements vscode.Disposable {
     const r = applyClosed(raw, this.closed, { now: Date.now(), activeWindowMs: this.activeWindowMs, pinned: this.pinned });
     if (r.changed) { this.closed = r.markers; void this.ctx.globalState.update(CLOSED_KEY, r.markers); }
     this.live = r.liveness;
-    this.snapshot = buildSnapshot(this.index, this.live, { indexing: this.indexing !== null, scope: this.scope, inScope: this.inScope });
+    this.rings = this.bell.update(this.live, vscode.window.state.focused);
+    this.snapshot = buildSnapshot(this.index, this.live, { indexing: this.indexing !== null, scope: this.scope, inScope: this.inScope, rings: this.rings });
+    this.logRinging();
     this.emitter.fire(this.snapshot);
+  }
+
+  /** One line whenever the set of ringing sessions changes — what to read when the bell seems wrong. */
+  private logRinging(): void {
+    const ringing = [...this.live.values()].filter(this.rings);
+    const key = ringing.map(l => l.sessionId).sort().join(',');
+    if (key === this.ringingKey) return;
+    this.ringingKey = key;
+    this.log.info(`bell: ${ringing.length} ringing${ringing.length ? ` — ${ringing.map(l => `${l.sessionId} (${l.state.kind === 'attention' ? l.state.reason : l.state.kind})`).join(', ')}` : ''}`);
   }
 
   /** Index metadata for a session id, or undefined until the next refresh indexes it. */

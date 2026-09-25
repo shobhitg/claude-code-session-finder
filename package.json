@@ -2,7 +2,7 @@
   "name": "claude-code-session-finder",
   "displayName": "Claude Code Sessions & Agents",
   "description": "See which Claude Code sessions are running or waiting on you, browse and search every session's content, and open any of them in a tab or the right panel.",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {

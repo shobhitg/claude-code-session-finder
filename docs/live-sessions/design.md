@@ -111,6 +111,7 @@ was writing this sentence. The tail *type* must carry the distinction:
 | Last conversational record | Quiet means | State |
 |---|---|---|
 | `assistant` · `stop_reason: tool_use` | a tool is running **or a permission prompt is showing** | attention after 60 s (`tool-or-permission`) |
+| `assistant` · `tool_use` of `AskUserQuestion` or `ExitPlanMode` | Claude asked, or has a plan to approve | attention immediately (`question`) |
 | `user` (prompt **or** tool_result) | the model is generating — normal for minutes | still running until 15 min, then `stalled` |
 | `assistant` · `end_turn`, `system/turn_duration`, `system/away_summary`, `system/local_command` | the turn is over | attention immediately (`your-turn`) |
 
@@ -198,6 +199,7 @@ saving. Not doing it.
 | D9 | The browser has **no search box**. HISTORY shows the 50 most recent sessions and a "Search all N sessions…" row that opens the Quick Pick. | `Ctrl+Alt+S` is already the best content-search surface; a second one would compete with it. |
 | D10 | **No telemetry, no network.** Unchanged from v0.1. | Privacy stance is part of the marketplace listing. |
 | D12 | **An open Claude Code tab pins its session ACTIVE** past `activeWindow` (`LivenessTracker.setPinned`, fed by the sidebar's tab → session resolution), and such a row wears a standing "> N hours old" tag; only tabless sessions age out. | With the × closing tabs, a session listed under Closed while its tab was open contradicted itself. The user closes old tabs on purpose; the list does not decide for them. |
+| D13 | **The bell rings while the ball is in your court and you have not seen it there** (`core/looks.ts`). A question — `AskUserQuestion`, or a plan waiting for approval (`ExitPlanMode`) — rings until Claude moves again. Your turn, an interruption and a quiet tool call ring until you *look*: the session's Claude Code tab is the visible tab of an editor group, or its Session View is visible, in a focused window, while it waits on you. Running and stalled never ring. The status bar counts ringing sessions only; a ringing row wears the needs-you look (accent bar, semibold). Looks live in `globalStorage/looks.json`, shared by every window, merged on write and re-read on window focus; a first run starts them "now". | 0.7.0 kept every open tab ACTIVE, and they all counted as "need you": the count stood at nine with nothing waiting. What needs you is what you have not acknowledged — except a question, which is not answered by being read. A permission prompt cannot be told from a long command (L4), so a quiet tool call clears on a look rather than staying sticky: a long build rings at most once. |
 | D11 | **HISTORY is labelled "Closed", and an ACTIVE row can be closed** (§9.1): a marker keeps the session out of liveness until its transcript is written again after the close, and its Claude Code tab is closed with it. | Resuming writes the transcript, so one click under HISTORY promoted a finished session to ACTIVE with no way back. Closing the tab is what "done with this" means, and Claude Code's own vocabulary is "closed session"; "Archive" would imply deliberate filing for rows that merely aged out. |
 
 ## 5. Architecture
@@ -288,7 +290,9 @@ export interface LiveRow {
   sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
   cwdExists: boolean;
   state: 'running' | 'attention'; reason?: AttentionReason;
-  lastWriteMs: number;              // the view renders "quiet 2 m" from this and its own clock
+  lastWriteMs: number;              // the view renders "quiet 2m" from this and its own clock
+  parked?: true;                    // quiet past the window, ACTIVE only because its tab is open (D12)
+  ringing?: true;                   // the bell (D13): the ball is in your court and you have not seen it
 }
 export interface HistoryRow {
   sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
@@ -298,9 +302,18 @@ export interface Snapshot { active: LiveRow[]; history: HistoryRow[]; totalSessi
 ```
 
 Ordering inside ACTIVE (D5 rationale: things that need you first, then things that are
-working, then things that are probably dead): `attention/tool-or-permission` →
-`attention/your-turn` → `running` → `attention/stalled`; within a group, `lastWriteMs`
-descending. HISTORY: `lastTs` descending, excluding ACTIVE session ids, first 50.
+working, then things that are probably dead): `attention/question` → `attention/tool-or-permission` →
+`attention/your-turn` → `attention/interrupted` → `running` → `attention/stalled` → **parked**; within
+a group, `lastWriteMs` descending. Parked (0.8.0) is every session quiet past the window and kept only
+by its tab, whatever its state: before it had its own group, a tab left open since yesterday ranked as
+"your turn" above every running session, so a session you had just started or resumed was listed under
+a wall of day-old ones. HISTORY: `lastTs` descending, excluding ACTIVE session ids, first 50.
+
+The webview then keeps rows still (`stableOrder`): within a group they are ordered by **arrival in that
+group**, newest on top (`noteArrivals` stamps a row when it is new to ACTIVE, back in it, or in a new
+state), so a row never moves because it wrote, and a session you just started, resumed, or that just
+finished is the first of its kind. Parked rows keep the host's order — nothing in there writes. Until
+0.8.0 the stamp was first sight only, so a resumed session went back to the slot it had days before.
 
 `Baton` gains `where?: 'tab' | 'right'` so a cross-window hand-off preserves the requested
 target. Absent means `'tab'`; a baton written by v0.1 still parses.
@@ -406,7 +419,11 @@ Layout:
 
 Keyboard: the list is a roving-tabindex `listbox`; `↑/↓` move, `Enter` opens in a tab,
 `Shift+Enter` opens in the right panel, `T` transcript, `V` Session View, `Delete` closes, `/` opens
-the Quick Pick, `Esc` clears focus. Focus ring is `1px solid var(--s-focus)`, inset.
+the Quick Pick, `Esc` clears focus. Focus ring is `1px solid var(--s-focus)`, inset. These are plain
+keys only: a Cmd/Ctrl/Alt chord, and anything typed into the filter, is left alone. **No webview keydown
+handler may stop propagation** (`webview-keys.test.ts`): VS Code's webview host listens on the window and
+performs Cmd+V, Cmd+A and Cmd+Z for the webview itself, blocking the browser's own clipboard keys on desktop,
+so a key that never reaches the window does nothing (0.8.0: paste was dead in the filter on macOS).
 
 **Closing a session (D11, `core/closed.ts`).** Resuming a session writes its transcript, so a click
 under CLOSED promotes the session to ACTIVE for the whole `activeWindow`. The `×` on an ACTIVE row
@@ -435,8 +452,9 @@ forgotten with it. Our own Session View panels are not session tabs.
 **Pinned by a tab (D12).** `pinnedSessions` maps the open Claude Code tabs to sessions with the same
 candidate rules (an ambiguous label → the most recently written candidate) and the host hands the set to
 the tracker, whose sweep keeps a pinned session whatever its age. The row is an ordinary live row —
-verdict, glyph, time label — plus an age tag (`ageTag`, model.ts) once `now − lastWriteMs` exceeds the
-window: "> 19 h" (whole hours, then days), a filled orange pill, red after a day, at the right end of
+verdict, glyph, time label — marked `parked` by the tracker, which sorts it below everything live (§6),
+plus an age tag (`ageTag`, model.ts) once `now − lastWriteMs` exceeds the
+window: "> 19h" (whole hours, then days and hours: "> 2d 1h"), a filled orange pill, red after a day, at the right end of
 line 2 just before the cost meter, standing in for the time label it would duplicate (the tooltip keeps
 that label). Pins are recomputed
 on every tab change and every snapshot, and a pinned session's closed marker is dropped (`applyClosed`).
@@ -456,10 +474,11 @@ the snapshot drives this.
 
 ### 9.2 Status bar (`surfaces/statusbar.ts`) — Stage 1
 
-Left-aligned item, text `$(loading~spin) 1 · $(bell-dot) 3` (running count, attention count;
-a zero count omits its segment), tooltip lists the sessions by state, click runs
-`sessionFinder.live.focus` (Stage 1, before the view exists: runs the Quick Pick). Hidden when
-ACTIVE is empty.
+Left-aligned item, text `$(loading~spin) 1 · $(bell-dot) 3` (running count, and the sessions that
+ring — D13 — not every session that waits; a zero count omits its segment), tooltip lists the
+sessions, ringing ones first and bold, click runs `sessionFinder.live.focus` (Stage 1, before the
+view exists: runs the Quick Pick). Hidden when nothing runs and nothing rings (until 0.8.0: when
+ACTIVE was empty).
 
 ### 9.3 Quick Pick (`surfaces/quickpick.ts`) — Stage 1
 
@@ -521,10 +540,11 @@ IDE's spinner. Under reduced motion it becomes a static `codicon-circle-large-fi
 
 | State | Icon | Colour | Title weight | Row | Time label |
 |---|---|---|---|---|---|
-| running | `loading` (spin) | `--st-running` | 400 | — | "just now" / "quiet 1 m" |
-| attention · tool-or-permission | `bell-dot` | `--st-needs` | 600 | 2 px left accent in `--st-needs` | "quiet 3 m" |
-| attention · your-turn | `comment-discussion` | `--s-fg` | 400 | — | "3 m ago" |
-| attention · stalled | `warning` | `--st-stalled` | 400 | opacity .7 | "2.1 h" |
+| running | `loading` (spin) | `--st-running` | 400 | — | "just now" / "quiet 1m" |
+| attention · tool-or-permission | `bell-dot` | `--st-needs` | 400 | — | "quiet 3m" |
+| any state that **rings** (D13) | — | — | 600 | 2 px left accent in `--st-needs` | — |
+| attention · your-turn | `comment-discussion` | `--s-fg` | 400 | — | "done · 3m ago" |
+| attention · stalled | `warning` | `--st-stalled` | 400 | opacity .7 | "2h 6m" |
 | history (labelled Closed) | `history` | `--st-idle` | 400 | — | "Sep 15 · 31 msgs" |
 | folder missing | suffix `⚠ folder missing` in `--s-muted` (v0.1 wording) | | | | |
 
@@ -594,7 +614,7 @@ shows its own warning and opens in the activity-bar sidebar instead; nothing to 
 - `extract.test.ts` — `custom-title` beats `ai-title`; latest `custom-title` wins.
 - `window.test.ts` — `durationMs('4h')`; `since:2h` in a query.
 - `baton.test.ts` — `where` round-trips; a v0.1 baton without `where` still claims.
-- `webview-model.test.ts` — time labels ("just now", "quiet 3 m", "2.1 h", "Sep 15 · 31 msgs"),
+- `webview-model.test.ts` — time labels ("just now", "quiet 3m", "2h 6m", "Sep 15 · 31 msgs"),
   icon class and weight per state, section counts.
 
 **Extension host (`test-e2e`, existing `@vscode/test-electron` harness):** the harness runs

@@ -48,6 +48,10 @@ describe('classifyTail', () => {
     expect(classifyTail([ask, sidecars].join('\n'))).toBe('awaiting-answer');
     expect(classifyTail(line({ type: 'assistant', message: { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't', name: 'Bash', input: {} }] } }))).toBe('awaiting-tool');
   });
+  it('a plan waiting for approval (ExitPlanMode) is a question too: Claude cannot go on without you', () => {
+    const plan = line({ type: 'assistant', message: { stop_reason: 'tool_use', content: [{ type: 'text', text: 'Here is the plan.' }, { type: 'tool_use', id: 't', name: 'ExitPlanMode', input: { plan: '1. …' } }] } });
+    expect(classifyTail(plan)).toBe('awaiting-answer');
+  });
   it('a system record that is not a turn boundary is skipped, not a verdict', () => {
     expect(classifyTail([assistant('tool_use'), system('compact_boundary')].join('\n'))).toBe('awaiting-tool');
   });

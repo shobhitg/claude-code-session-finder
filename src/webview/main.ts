@@ -7,7 +7,7 @@
 // the hover state under the pointer — the list flickered. Rows are keyed by session id and updated
 // in place; only a row that is new fades in; a row that changes position slides (FLIP); and while
 // the pointer is over the list the order is held until it leaves.
-import { viewModel, resultsModel, stableOrder, timeLabel, ageTag, type ViewModel, type ViewOpts, type SectionVM, type RowVM, type LinkVM, type AgeTag } from './model.js';
+import { viewModel, resultsModel, stableOrder, noteArrivals, timeLabel, ageTag, type Arrivals, type ViewModel, type ViewOpts, type SectionVM, type RowVM, type LinkVM, type AgeTag } from './model.js';
 import type { Snapshot, SearchRow } from '../core/rows.js';
 
 declare function acquireVsCodeApi(): {
@@ -22,7 +22,7 @@ type Inbound =
   | { type: 'results'; q: string; deep: boolean; rows: SearchRow[]; now: number; indexing: boolean }
   | { type: 'active'; sessionId: string | null }
   | { type: 'focusFilter'; q?: string };
-interface UiState { collapsed: Record<string, boolean>; filter?: string; seen?: Record<string, number>; seenN?: number }
+interface UiState { collapsed: Record<string, boolean>; filter?: string; arrivals?: Arrivals }
 
 let snapshot: Snapshot | null = null;
 let results: { q: string; deep: boolean; rows: SearchRow[] } | null = null;
@@ -87,8 +87,9 @@ function setFilter(q: string, fromInput = false): void {
 filterInput.value = ui.filter ?? '';
 filterBar.dataset.active = String(filtering());
 filterInput.addEventListener('input', () => setFilter(filterInput.value, true));
+// No stopPropagation here: VS Code's webview host listens on the window and performs Cmd+V, Cmd+A, Cmd+Z…
+// for a webview, so a keydown that never reaches it does nothing. The list's handler skips the filter's keys.
 filterInput.addEventListener('keydown', e => {
-  e.stopPropagation();                                          // the list's roving-focus handler must not see these
   if (e.key === 'Escape') { e.preventDefault(); if (filterInput.value) setFilter(''); else firstRow()?.focus(); }
   else if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); firstRow()?.focus(); }
 });
@@ -109,6 +110,7 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   li.className = `row${r.snippet ? ' row--snippet' : ''}`;
   li.dataset.state = r.state;
   if (r.reason) li.dataset.reason = r.reason; else delete li.dataset.reason;
+  if (r.ringing) li.dataset.ringing = 'true'; else delete li.dataset.ringing;
   li.title = r.title;
   li.setAttribute('aria-selected', String(r.selected));
   li.querySelector<HTMLElement>('.action--close')!.hidden = r.state === 'history';   // nothing to close on a closed row
@@ -269,20 +271,11 @@ function reconcileSection(s: SectionVM, hold: boolean): { el: HTMLElement; defer
 const hostNow = (): number => Date.now() + clockOffset;
 const viewOpts = (): ViewOpts => ({ activeWindowLabel: activeWindow, activeWindowMs, searchKey, reducedMotion, activeId, contextBudget });
 
-/**
- * First-seen order of ACTIVE sessions, persisted with the webview: the host sorts each urgency group
- * by last write, which swaps running sessions around as they write. The list keeps them where they
- * first appeared instead; a session moves only when its state changes. New sessions enter at the top.
- */
-function noteSeen(s: Snapshot): Map<string, number> {
-  const seen = ui.seen ?? (ui.seen = {});
-  let n = ui.seenN ?? 0;
-  const fresh = s.active.filter(r => seen[r.sessionId] === undefined);
-  for (const r of [...fresh].reverse()) seen[r.sessionId] = ++n;       // host order top→bottom becomes high→low
-  const keep = new Set([...s.active, ...s.history].map(r => r.sessionId));
-  for (const id of Object.keys(seen)) if (!keep.has(id)) delete seen[id];
-  ui.seenN = n; api.setState(ui);
-  return new Map(Object.entries(seen));
+/** Arrival order of ACTIVE sessions (noteArrivals), persisted with the webview so a reload keeps the list as it was. */
+function stampArrivals(s: Snapshot): Arrivals {
+  ui.arrivals = noteArrivals(ui.arrivals, s.active);
+  api.setState(ui);
+  return ui.arrivals;
 }
 
 /** `force`: a user action (filter, collapse, mode switch) — never hold the order for those. */
@@ -295,8 +288,8 @@ function render(force = false): void {
     ? resultsModel(results && results.q === q ? results.rows : null, q, results?.deep ?? false, hostNow(), opts)
     : viewModel(snapshot, hostNow(), opts);
   if (!filtering()) {
-    const seen = noteSeen(snapshot);
-    for (const s of vm.sections) if (s.id === 'active') s.rows = stableOrder(s.rows, seen);
+    const arrivals = stampArrivals(snapshot);
+    for (const s of vm.sections) if (s.id === 'active') s.rows = stableOrder(s.rows, arrivals);
   }
   const hold = !force && sectionsEl.matches(':hover');
   let deferred = false;
@@ -333,6 +326,7 @@ function refreshTimes(): void {
 
 /** Roving focus: ↑/↓ move, Enter opens in a tab, Shift+Enter in the right panel, T transcript, V view, Delete closes, / filter. */
 root.addEventListener('keydown', e => {
+  if (e.target === filterInput || e.metaKey || e.ctrlKey || e.altKey) return;   // typing, or a chord for VS Code (Cmd+V is not V)
   const rows = Array.from(sectionsEl.querySelectorAll<HTMLElement>('.row'));   // not [...], which needs lib dom.iterable
   const current = document.activeElement as HTMLElement | null;
   const i = current ? rows.indexOf(current) : -1;

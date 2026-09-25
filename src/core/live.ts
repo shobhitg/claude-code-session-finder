@@ -141,17 +141,20 @@ export class LivenessTracker {
   /**
    * The ACTIVE set is judged twice: the sweep by file mtime (cheap, before any tail is read), and here
    * by when the conversation last moved — a resume appends sidecars and touches the file, and that is
-   * not activity. A pinned session (its tab is open) is ACTIVE whatever its age. Membership change is
-   * read off the emitted set, so a session aging out on a tick is one too.
+   * not activity. A pinned session (its tab is open) is ACTIVE whatever its age, and parked once past the
+   * window. Membership change is read off the emitted set, so a session aging out on a tick is one too;
+   * a pinned one crossing the window on a tick is a change, not a membership change.
    */
   private publish(): void {
     const now = this.deps.now();
     const next = new Map<string, Liveness>();
     for (const t of this.tracked.values()) {
       const lastWriteMs = activityMs(t);
-      if (now - lastWriteMs > this.opts.activeWindowMs && !this.pinned.has(t.sessionId)) continue;
+      const pastWindow = now - lastWriteMs > this.opts.activeWindowMs;
+      if (pastWindow && !this.pinned.has(t.sessionId)) continue;
       const state = resolveState(t.info.verdict, now - lastWriteMs, this.thresholds);
       const l: Liveness = { sessionId: t.sessionId, verdict: t.info.verdict, state, lastWriteMs };
+      if (pastWindow) l.parked = true;
       if (t.info.contextTokens !== undefined) l.contextTokens = t.info.contextTokens;
       if (t.info.model !== undefined) l.model = t.info.model;
       next.set(t.sessionId, l);
@@ -181,7 +184,7 @@ function sameLiveness(a: ReadonlyMap<string, Liveness>, b: ReadonlyMap<string, L
   if (a.size !== b.size) return false;
   for (const [k, x] of a) {
     const y = b.get(k);
-    if (!y || x.verdict !== y.verdict || x.lastWriteMs !== y.lastWriteMs || x.state.kind !== y.state.kind || x.contextTokens !== y.contextTokens) return false;
+    if (!y || x.verdict !== y.verdict || x.lastWriteMs !== y.lastWriteMs || x.state.kind !== y.state.kind || x.contextTokens !== y.contextTokens || x.parked !== y.parked) return false;
     if (x.state.kind === 'attention' && y.state.kind === 'attention' && x.state.reason !== y.state.reason) return false;
   }
   return true;

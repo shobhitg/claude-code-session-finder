@@ -170,6 +170,24 @@ describe('LivenessTracker pins (a session behind an open tab never ages out)', (
     expect([...h.tracker.liveness.keys()]).toEqual(['fresh']);
     expect(h.changes.at(-1)!.membershipChanged).toBe(true);
   });
+  it('a pinned session past the window is parked; crossing the window on a tick parks it as a change, a write un-parks it', async () => {
+    const t0 = 100 * H;
+    const h = harness([main('edge', t0 - MIN), main('old', t0 - 26 * H)],
+      { '/p/-w/edge.jsonl': { verdict: 'turn-ended', lastTs: t0 - 4 * H + MIN }, '/p/-w/old.jsonl': 'turn-ended' }, t0);
+    h.tracker.setPinned(new Set(['edge', 'old']));
+    await h.tracker.sweep();
+    expect(h.tracker.liveness.get('old')!.parked).toBe(true);
+    expect(h.tracker.liveness.get('edge')!.parked).toBeUndefined();
+    const before = h.changes.length;
+    h.advance(2 * MIN);
+    await h.tracker.tick();
+    expect(h.tracker.liveness.get('edge')!.parked).toBe(true);
+    expect(h.changes.length).toBe(before + 1);
+    expect(h.changes.at(-1)!.membershipChanged).toBe(false);
+    h.files[1]!.mtimeMs = h.now(); h.files[1]!.size = 20;
+    await h.tracker.tick();
+    expect(h.tracker.liveness.get('old')!.parked).toBeUndefined();
+  });
   it('a pin for a session with no transcript is harmless', async () => {
     const h = harness([main('fresh', 100 * H - MIN)], {}, 100 * H);
     h.tracker.setPinned(new Set(['ghost']));

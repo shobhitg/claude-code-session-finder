@@ -28,6 +28,8 @@ export interface Liveness {
   /** context the model was last given: input + cache-read + cache-creation tokens of the newest assistant record */
   contextTokens?: number;
   model?: string;
+  /** quiet for longer than the active window — ACTIVE only because its tab is open (D12); it sorts below everything live */
+  parked?: true;
 }
 
 /** Everything the tail of a transcript tells us in one read. `lastTs`: when the verdict record was written. */
@@ -48,8 +50,9 @@ function textOf(content: unknown): string {
   if (!Array.isArray(content)) return '';
   return content.filter((b): b is { type: 'text'; text: string } => isObj(b) && b.type === 'text' && typeof b.text === 'string').map(b => b.text).join('\n');
 }
+/** AskUserQuestion, or ExitPlanMode — a plan waiting for approval: either way Claude cannot go on without you. */
 const asksQuestion = (content: unknown): boolean =>
-  Array.isArray(content) && content.some(b => isObj(b) && b.type === 'tool_use' && b.name === 'AskUserQuestion');
+  Array.isArray(content) && content.some(b => isObj(b) && b.type === 'tool_use' && (b.name === 'AskUserQuestion' || b.name === 'ExitPlanMode'));
 
 function parse(line: string): Rec | null {
   try { return JSON.parse(line) as Rec; } catch { return null; }   // a write in progress is normal

@@ -62,6 +62,11 @@ export class SessionViewManager implements vscode.Disposable {
     return undefined;
   }
 
+  /** The sessions whose panel is on screen — reading one is looking at it (D13). */
+  visibleSessionIds(): string[] {
+    return [...this.panels].filter(([, p]) => p.visible).map(([id]) => id);
+  }
+
   dispose(): void { for (const p of [...this.panels.values()]) p.dispose(); }
 }
 
@@ -109,6 +114,7 @@ class SessionPanel {
 
   reveal(): void { this.panel.reveal(); }
   get active(): boolean { return this.panel.active; }
+  get visible(): boolean { return this.panel.visible; }
   dispose(): void { this.panel.dispose(); }
 
   private schedule(): void {

@@ -25,9 +25,9 @@ describe('statusIcon / iconClasses / fmtTokens / toolIcon', () => {
 
 describe('nodeMeta', () => {
   it('describes running, finished and failed nodes', () => {
-    expect(nodeMeta(node({ status: 'running', spawnTs: T0 - 90_000 }), T0)).toBe('running · 2 m');
-    expect(nodeMeta(node({ durationMs: 144_440, totalTokens: 64_607, toolUses: 22, model: 'claude-sonnet-5' }), T0)).toBe('2 m · 65k tokens · 22 tools · sonnet-5');
-    expect(nodeMeta(node({ spawnTs: T0, endTs: T0 + 30_000, background: true }), T0)).toBe('30 s · background');
+    expect(nodeMeta(node({ status: 'running', spawnTs: T0 - 90_000 }), T0)).toBe('running · 2m');
+    expect(nodeMeta(node({ durationMs: 144_440, totalTokens: 64_607, toolUses: 22, model: 'claude-sonnet-5' }), T0)).toBe('2m · 65k tokens · 22 tools · sonnet-5');
+    expect(nodeMeta(node({ spawnTs: T0, endTs: T0 + 30_000, background: true }), T0)).toBe('30s · background');
     expect(nodeMeta(node({ kind: 'failed-spawn', status: 'failed' }), T0)).toBe('spawn failed');
   });
 });
