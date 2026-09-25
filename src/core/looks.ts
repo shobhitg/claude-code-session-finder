@@ -90,19 +90,26 @@ export class LooksFile {
   constructor(private readonly path: string, private readonly io: LooksIo = fsIo) {}
 
   read(now: number): Looks {
-    let text: string | undefined;
-    try { text = this.io.read(this.path); } catch { /* missing: start now */ }
-    const looks = text === undefined ? null : parseLooks(text);
+    const looks = this.peek();
     if (looks) return looks;
     const fresh: Looks = { since: now, at: {} };
     void this.io.write(this.path, JSON.stringify(fresh)).catch(() => {});
     return fresh;
   }
 
-  async save(looks: Looks): Promise<Looks> {
+  /** What the file says now, or null when it is missing or unreadable — nothing is created. */
+  peek(): Looks | null {
     let text: string | undefined;
-    try { text = this.io.read(this.path); } catch { /* nothing to merge with */ }
-    const theirs = text === undefined ? null : parseLooks(text);
+    try { text = this.io.read(this.path); } catch { return null; }
+    return parseLooks(text);
+  }
+
+  /**
+   * Merge with the file and write. Two windows saving at the same instant can still overwrite each
+   * other's newest look; the loser keeps it in memory and writes it again with its next save.
+   */
+  async save(looks: Looks): Promise<Looks> {
+    const theirs = this.peek();
     const merged = theirs ? mergeLooks(looks, theirs) : looks;
     await this.io.write(this.path, JSON.stringify(merged));
     return merged;
@@ -111,9 +118,10 @@ export class LooksFile {
 
 /**
  * What the host asks before every snapshot (D13). It holds the looks and which sessions are on screen;
- * `update` records the looks this moment makes — before answering, so a reply that lands while you
- * watch never rings, not even for one snapshot — and returns the rule for this snapshot. A new look is
- * written to the shared file at once; `reload` takes in what other windows wrote (on window focus).
+ * `update` takes in what other windows wrote (the file is tiny, and only a focused window reads it),
+ * records the looks this moment makes — before answering, so a reply that lands while you watch never
+ * rings, not even for one snapshot — and returns the rule for this snapshot. A new look is written to
+ * the shared file at once.
  */
 export class Bell {
   private looks: Looks;
@@ -130,11 +138,11 @@ export class Bell {
     return true;
   }
 
-  reload(): void { this.looks = mergeLooks(this.looks, this.file.read(this.now())); }
-
   /** A window without focus records nothing: a tab left on screen behind another app is not being read. */
   update(live: ReadonlyMap<string, Liveness>, focused: boolean): (l: Liveness) => boolean {
     if (focused) {
+      const theirs = this.file.peek();
+      if (theirs) this.looks = mergeLooks(this.looks, theirs);
       const now = this.now();
       const next = stampLooks(this.looks, this.onScreen, live, now);
       if (next !== this.looks) {

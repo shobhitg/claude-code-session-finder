@@ -34,6 +34,7 @@ let activeWindowMs = 4 * 3_600_000;
 let contextBudget = 1_000_000;
 let orderPending = false;                  // a reorder arrived while the pointer was over the list
 const ui: UiState = (api.getState() as UiState | undefined) ?? { collapsed: {} };
+for (const k of ['seen', 'seenN']) delete (ui as unknown as Record<string, unknown>)[k];   // 0.7.x's first-seen order; 0.8.0 keeps arrivals
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const searchKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘⌥S' : 'Ctrl+Alt+S';
 const root = document.getElementById('app') as HTMLElement;

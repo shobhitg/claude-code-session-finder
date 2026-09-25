@@ -160,13 +160,30 @@ describe('Bell: what the host asks before every snapshot', () => {
     await Promise.resolve();
     expect(b.writes()).toBe(1);
   });
-  it('reload takes in another window\'s looks (the host calls it when the window gains focus)', () => {
+  it('a focused update takes in another window\'s looks — also one written just after this window gained focus', () => {
     const b = setup(looks({}, 0));
     const live = new Map([['a', lv('a', turn, T - 1_000)]]);
     expect(ids(live, b.bell.update(live, true))).toEqual(['a']);
     b.files.set('/g/looks.json', JSON.stringify(looks({ a: T }, 0)));      // window B saw it
-    b.bell.reload();
+    expect(ids(live, b.bell.update(live, false))).toEqual(['a']);          // an unfocused window does not read
     expect(ids(live, b.bell.update(live, true))).toEqual([]);
+  });
+  it('a look lost to another window\'s overwrite is written again with this window\'s next look', async () => {
+    const b = setup(looks({}, 0));
+    b.bell.setOnScreen(new Set(['a']));
+    b.bell.update(new Map([['a', lv('a', turn, T - 1_000)]]), true);
+    await Promise.resolve();
+    b.files.set('/g/looks.json', JSON.stringify(looks({ other: 5 }, 0)));  // window B wrote without seeing it
+    b.bell.setOnScreen(new Set(['c']));
+    b.bell.update(new Map([['a', lv('a', turn, T - 1_000)], ['c', lv('c', turn, T - 1_000)]]), true);
+    await Promise.resolve();
+    expect(b.file().at).toEqual({ a: T, c: T, other: 5 });
+  });
+  it('a missing file while running is no reason to move the start', () => {
+    const b = setup(looks({}, 0));
+    b.files.delete('/g/looks.json');
+    const live = new Map([['a', lv('a', turn, T - 1_000)]]);
+    expect(ids(live, b.bell.update(live, true))).toEqual(['a']);
   });
   it('a first run starts the looks now: what finished before it stays quiet, a question still rings', () => {
     const b = setup();

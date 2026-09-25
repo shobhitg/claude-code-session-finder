@@ -214,6 +214,26 @@ export function pinnedSessions(tabs: readonly TabRef[], learned: ReadonlyMap<str
   return out;
 }
 
+/** An editor group as the on-screen rule sees it: whether it is the active group, and the label of its visible tab if that is a Claude Code tab. */
+export interface GroupTab { isActive: boolean; claudeLabel: string | null }
+
+/**
+ * The sessions the visible Claude Code tabs show — one per editor group — for the bell's looks (D13).
+ * The active group's tab resolves as the highlight does when it is the highlighted tab (the highlight
+ * may know which of two same-titled sessions it is); any other by the pin rules.
+ */
+export function sessionsOnScreen(groups: readonly GroupTab[], highlight: { label: string; id: string | null } | null,
+                                 learned: ReadonlyMap<string, string>, known: readonly Titled[]): string[] {
+  const out: string[] = [];
+  groups.forEach((g, gi) => {
+    if (g.claudeLabel === null) return;
+    const id = (g.isActive && highlight?.label === g.claudeLabel ? highlight.id : null)
+      ?? pinnedSessions([{ key: String(gi), label: g.claudeLabel }], learned, known)[0];
+    if (id !== undefined && !out.includes(id)) out.push(id);
+  });
+  return out;
+}
+
 /**
  * Which Claude Code tabs to close for a session. Closing a tab stops the session in it, so a tab
  * is closed only when it can be nobody else's: its label is on no other open tab, and either a

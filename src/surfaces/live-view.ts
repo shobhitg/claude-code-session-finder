@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import type { LiveHost } from '../live-host.js';
-import { firstPrompts, resolveTabSession, rowsForHits, knownTitles, labelMatchesTitle, tabsToClose, trustedLearned, candidateSessions, pinnedSessions, closedForGood, type Snapshot, type TabRef, type Titled } from '../core/rows.js';
+import { firstPrompts, resolveTabSession, rowsForHits, knownTitles, labelMatchesTitle, tabsToClose, trustedLearned, candidateSessions, pinnedSessions, closedForGood, sessionsOnScreen, type Snapshot, type TabRef, type Titled } from '../core/rows.js';
 import { durationMs, parseQuery, search } from '../core/query.js';
 import type { SearchIndex } from '../core/types.js';
 import { VIEW_TYPE as SESSION_VIEW_TYPE } from './session-view.js';
@@ -117,20 +117,17 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * The sessions on screen (D13): the visible tab of every editor group that is a Claude Code tab, and
-   * every visible Session View. The active group's tab resolves as the highlight does, a tab in another
-   * group by the pin rules. The host records a look at the ones waiting on you.
+   * The sessions on screen (D13): the visible tab of every editor group that is a Claude Code tab
+   * (rows.ts sessionsOnScreen), and every visible Session View. The host records a look at the ones
+   * waiting on you.
    */
   private updateOnScreen(): void {
-    const ids = new Set<string>(this.ownVisibleSessions());
-    vscode.window.tabGroups.all.forEach((group, gi) => {
-      const tab = group.activeTab; const input = tab?.input;
-      if (!tab || !(input instanceof vscode.TabInputWebview) || !input.viewType.includes(CLAUDE_TAB)) return;
-      const id = group.isActive && this.activeTab?.kind === 'claude' && this.activeTab.label === tab.label
-        ? this.activeId() : pinnedSessions([{ key: String(gi), label: tab.label }], this.learned, this.known())[0];
-      if (id) ids.add(id);
+    const groups = vscode.window.tabGroups.all.map(g => {
+      const tab = g.activeTab; const input = tab?.input;
+      return { isActive: g.isActive, claudeLabel: tab && input instanceof vscode.TabInputWebview && input.viewType.includes(CLAUDE_TAB) ? tab.label : null };
     });
-    this.host.setOnScreen(ids);
+    const highlight = this.activeTab?.kind === 'claude' ? { label: this.activeTab.label, id: this.activeId() } : null;
+    this.host.setOnScreen(new Set([...this.ownVisibleSessions(), ...sessionsOnScreen(groups, highlight, this.learned, this.known())]));
   }
 
   private trackActiveTab(): void {
@@ -289,8 +286,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     const contextBudget = Math.max(1_000, cfg.get<number>('contextBudget', 1_000_000));
     this.updatePins();
     void this.view.webview.postMessage({ type: 'snapshot', snapshot, now: Date.now(), activeWindow, activeWindowMs: durationMs(activeWindow, 4 * 3_600_000), contextBudget, active: this.activeId() });
-    // After the post: titles the index just learned can resolve a tab, and a new look republishes — that
-    // snapshot must arrive after this one.
+    // Titles the index just learned can resolve a tab; a changed set republishes, after this snapshot.
     this.updateOnScreen();
   }
 

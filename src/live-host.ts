@@ -62,10 +62,9 @@ export class LiveHost implements vscode.Disposable {
         if (e.affectsConfiguration('sessionFinder')) this.rebuildTracker();
       }),
       // D6: nothing runs while the window is unfocused; the first focus event sweeps at once. Another
-      // window may have looked at a session meanwhile, so the looks are re-read and the bell recomputed.
+      // window may have looked at a session meanwhile: the snapshot published now re-reads the looks.
       vscode.window.onDidChangeWindowState(s => {
         if (!s.focused) { this.tracker?.stop(); return; }
-        this.bell.reload();
         this.publish();
         this.tracker?.start();
       }),
@@ -104,7 +103,8 @@ export class LiveHost implements vscode.Disposable {
   setOnScreen(ids: ReadonlySet<string>): void {
     if (!this.bell.setOnScreen(ids)) return;
     this.log.info(`on screen: ${ids.size ? [...ids].join(', ') : 'no session'}`);
-    this.publish();
+    // The sidebar also calls this while a snapshot is being delivered: publish after it, never inside it.
+    queueMicrotask(() => this.publish());
   }
 
   /**

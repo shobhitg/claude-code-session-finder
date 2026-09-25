@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSnapshot, projectLabel, stateIcon, statusText, ringingFirst, closedForGood, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions, pinnedSessions, knownTitles } from '../src/core/rows.js';
+import { buildSnapshot, projectLabel, stateIcon, statusText, ringingFirst, closedForGood, sessionsOnScreen, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions, pinnedSessions, knownTitles } from '../src/core/rows.js';
 import type { SessionHit } from '../src/core/query.js';
 import type { SearchIndex, SessionMeta } from '../src/core/types.js';
 import type { Liveness } from '../src/core/state.js';
@@ -287,5 +287,26 @@ describe('closedForGood: a Claude Code tab whose label is still open was moved, 
   });
   it('keeps what really closed', () => {
     expect(closedForGood([{ label: 'A', n: 1 }], [])).toEqual([{ label: 'A', n: 1 }]);
+  });
+});
+
+describe('sessionsOnScreen: which sessions the visible Claude Code tabs show (a look, D13)', () => {
+  const known = [{ sessionId: 'old', title: 'Fix the bug', lastTs: 10 }, { sessionId: 'new', title: 'Fix the bug', lastTs: 20 }, { sessionId: 'u', title: 'Unique title', lastTs: 5 }];
+  const none = new Map<string, string>();
+  it("the active group's tab resolves as the highlight does — it knows which of two same-titled sessions it is", () => {
+    expect(sessionsOnScreen([{ isActive: true, claudeLabel: 'Fix the bug' }], { label: 'Fix the bug', id: 'old' }, none, known)).toEqual(['old']);
+  });
+  it("a tab in another group resolves by the pin rules: a learned label, else the most recently written candidate", () => {
+    const groups = [{ isActive: true, claudeLabel: null }, { isActive: false, claudeLabel: 'Fix the bug' }];
+    expect(sessionsOnScreen(groups, { label: 'Fix the bug', id: 'old' }, none, known)).toEqual(['new']);
+    expect(sessionsOnScreen(groups, null, new Map([['Fix the bug', 'old']]), known)).toEqual(['old']);
+  });
+  it('the active group falls back to the pin rules when its tab is not the highlighted one, or the highlight found nothing', () => {
+    expect(sessionsOnScreen([{ isActive: true, claudeLabel: 'Unique title' }], { label: 'Fix the bug', id: 'old' }, none, known)).toEqual(['u']);
+    expect(sessionsOnScreen([{ isActive: true, claudeLabel: 'Unique title' }], { label: 'Unique title', id: null }, none, known)).toEqual(['u']);
+  });
+  it('a group showing no Claude Code tab, or a label no session fits, adds nothing; each session once', () => {
+    expect(sessionsOnScreen([{ isActive: false, claudeLabel: null }, { isActive: false, claudeLabel: 'Nobody' }], null, none, known)).toEqual([]);
+    expect(sessionsOnScreen([{ isActive: true, claudeLabel: 'Unique title' }, { isActive: false, claudeLabel: 'Unique title' }], null, none, known)).toEqual(['u']);
   });
 });
