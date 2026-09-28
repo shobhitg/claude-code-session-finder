@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+**Opening a session that is already running elsewhere asks first.** Nothing
+stops two Claude Code processes resuming one session: both append to its
+transcript, it forks, and the next resume follows only the branch written last,
+so the other one's work drops out of the conversation (it stays in the file).
+Opening from here was the easy way to get there. Now, before Claude Code is
+asked, the open checks Claude Code's process registry (`~/.claude/sessions/`),
+matching each pid against its start time so a reused pid is not mistaken for
+the session. If the session is live in a terminal, another VS Code window or a
+background process, a modal names it and offers the Session View, which starts
+nothing, or Open Anyway. What counts in this window depends on where the
+session opens. Opened in a tab, a Claude Code tab of this window that certainly
+belongs to the session is no conflict, since Claude Code focuses it. A session
+held by the side panel is a conflict: Claude Code checks only its tabs, and
+starts a second process beside the panel's. Opened in the side panel, nothing
+in this window is a conflict. The panel keeps every session it has shown alive
+and switches back to the same process, and a session with a tab is focused
+there. A hand-off to another window is
+checked in that window, because only it can tell its own tabs' processes apart.
+Without a readable registry the open goes ahead as before. Without `/proc`
+(anywhere but Linux), only processes that are certainly not a VS Code tab are
+counted.
+
 ## 0.8.0
 
 **The bell rings only while the ball is in your court.** The `🔔` count in the

@@ -192,6 +192,14 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * This window has a Claude Code tab that can be nobody else's but this session's (the same rule as
+   * closing: rows.ts tabsToClose). The open check trusts Claude Code to focus such a tab; an ambiguous
+   * label does not count, so a doubtful case warns rather than forks.
+   */
+  hasOwnTab(sessionId: string): boolean {
+    return tabsToClose(sessionId, this.claudeTabs().map(t => t.ref), this.learned, this.known()).close.length > 0;
+  }
   /** Every Claude Code session tab in this window, with the label-and-position reference the pure rules work on. */
   private claudeTabs(): Array<{ tab: vscode.Tab; ref: TabRef }> {
     const out: Array<{ tab: vscode.Tab; ref: TabRef }> = [];
