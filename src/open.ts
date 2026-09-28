@@ -46,8 +46,12 @@ export function folderUri(path: string, ctx: vscode.ExtensionContext): vscode.Ur
   return base.with({ path });
 }
 
-/** Set by activate(), like openHooks: the output channel the open check reports to. */
-export const openLog: { channel?: vscode.LogOutputChannel } = {};
+/**
+ * Set by activate(), like openHooks: the output channel the open check reports to, and whether this
+ * window certainly has a Claude Code tab of a session (the sidebar's tab tracking) — the one case
+ * where Claude Code focuses what is there instead of starting a process.
+ */
+export const openGuard: { channel?: vscode.LogOutputChannel; hasTabHere?: (sessionId: string) => boolean } = {};
 
 const VIEW_ACTION = 'Open Session View';
 const ANYWAY_ACTION = 'Open Anyway';
@@ -61,14 +65,14 @@ const ANYWAY_ACTION = 'Open Anyway';
  * only that window can tell its own tabs' processes from everyone else's.
  */
 export async function confirmNotRunningElsewhere(sessionId: string): Promise<boolean> {
-  const log = openLog.channel;
-  const conflict = openConflict(await readLiveProcesses(), sessionId, process.pid);
+  const log = openGuard.channel;
+  const conflict = openConflict(await readLiveProcesses(), sessionId, process.pid, openGuard.hasTabHere?.(sessionId) ?? false);
   if (conflict.kind === 'unknown') {
     log?.info(`open ${sessionId}: Claude Code process registry unreadable — opening without the check`);
     return true;
   }
   if (conflict.kind === 'none') return true;
-  const where = conflict.processes.map(describeProcess).join('; ');
+  const where = conflict.processes.map(p => describeProcess(p, process.pid)).join('; ');
   log?.warn(`open ${sessionId}: already running in ${where}`);
   const choice = await vscode.window.showWarningMessage(
     'This session is already running in another Claude Code process.',
@@ -76,7 +80,7 @@ export async function confirmNotRunningElsewhere(sessionId: string): Promise<boo
       `It is open in ${where}.\n\n` +
       'Opening it here starts a second process on the same transcript. The two fork it, and the next ' +
       'resume keeps only one branch: the other one\'s work disappears from the conversation.\n\n' +
-      'Switch to that window or terminal instead, or read it in the Session View, which starts nothing.' },
+      'Switch to where it runs instead, or read it in the Session View, which starts nothing.' },
     VIEW_ACTION, ANYWAY_ACTION);
   if (choice === VIEW_ACTION) await vscode.commands.executeCommand('sessionFinder.openSessionView', sessionId);
   if (choice === ANYWAY_ACTION) log?.warn(`open ${sessionId}: opened anyway`);

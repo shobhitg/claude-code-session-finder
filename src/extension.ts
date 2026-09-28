@@ -4,7 +4,7 @@ import { showSearchQuickPick } from './surfaces/quickpick.js';
 import { LiveHost } from './live-host.js';
 import { createStatusBar, SHOW_SESSIONS } from './surfaces/statusbar.js';
 import { claimPendingOpen } from './baton.js';
-import { BATON_FILE, batonPath, runOpen, executePlan, openHooks, openLog, confirmNotRunningElsewhere } from './open.js';
+import { BATON_FILE, batonPath, runOpen, executePlan, openHooks, openGuard, confirmNotRunningElsewhere } from './open.js';
 import { LiveViewProvider, VIEW_ID } from './surfaces/live-view.js';
 import { SessionViewManager } from './surfaces/session-view.js';
 import { stateIcon } from './core/rows.js';
@@ -39,7 +39,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // Stage 1 (spec §9.2): the status bar is the glanceable answer to "which sessions are running?".
   const log = vscode.window.createOutputChannel('Claude Code Sessions', { log: true });
   log.info(`activated ${ctx.extension.packageJSON.version}`);     // which build this window runs
-  openLog.channel = log;
+  openGuard.channel = log;
   log.info(`extension host pid ${process.pid}: Claude Code processes with this parent are this window's tabs`);
   const host = new LiveHost(ctx, log);
   const status = createStatusBar(ctx);
@@ -48,6 +48,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // read from disk without resuming it. Created first: the sidebar asks it which panel is the active tab.
   const sessions = new SessionViewManager(ctx, host, log);
   const live = new LiveViewProvider(ctx, host, () => sessions.activeSessionId(), log, () => sessions.visibleSessionIds());
+  openGuard.hasTabHere = id => live.hasOwnTab(id);
   ctx.subscriptions.push(
     sessions,
     vscode.window.registerWebviewViewProvider(VIEW_ID, live),

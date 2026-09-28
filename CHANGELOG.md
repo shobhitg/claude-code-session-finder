@@ -11,11 +11,14 @@ asked, the open checks Claude Code's process registry (`~/.claude/sessions/`),
 matching each pid against its start time so a reused pid is not mistaken for
 the session. If the session is live in a terminal, another VS Code window or a
 background process, a modal names it and offers the Session View, which starts
-nothing, or Open Anyway. A tab of this window is no conflict, since Claude Code
-focuses it. A hand-off to another window is checked in that window, because
-only it can tell its own tabs' processes apart. Without a readable registry the
-open goes ahead as before. Without `/proc` (anywhere but Linux), only processes
-that are certainly not a VS Code tab are counted.
+nothing, or Open Anyway. A Claude Code tab of this window that
+certainly belongs to the session is no conflict, since Claude Code focuses it.
+This window's side panel is a conflict: Claude Code checks only its tabs and
+starts a second process beside the panel. A hand-off to another window is
+checked in that window, because only it can tell its own tabs' processes apart.
+Without a readable registry the open goes ahead as before. Without `/proc`
+(anywhere but Linux), only processes that are certainly not a VS Code tab are
+counted.
 
 ## 0.8.0
 

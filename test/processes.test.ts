@@ -82,17 +82,23 @@ describe('openConflict', () => {
     expect(openConflict([vsc({ sessionId: 'other', ppid: 99 })], 's1', SELF)).toEqual({ kind: 'none' });
   });
   it("is none for this window's own tab — Claude Code focuses it", () => {
-    expect(openConflict([vsc({})], 's1', SELF)).toEqual({ kind: 'none' });
+    expect(openConflict([vsc({})], 's1', SELF, true)).toEqual({ kind: 'none' });
+  });
+  it("is a conflict for this window's side panel: editor.open focuses tabs only, and starts a second process", () => {
+    const r = openConflict([vsc({})], 's1', SELF, false);
+    expect(r.kind === 'elsewhere' && r.processes.map(p => p.pid)).toEqual([100]);
+    expect(openConflict([vsc({})], 's1', SELF).kind).toBe('elsewhere');       // hasTabHere defaults to "no"
   });
   it('is a conflict for another window, and for a terminal', () => {
     const other = { ...vsc({}), ppid: 99 };
     const term = { ...parseRegistryEntry(entry({ pid: 101, entrypoint: 'cli' }))!, ppid: 55 };
-    const r = openConflict([vsc({}), other, term], 's1', SELF);
+    const r = openConflict([vsc({}), other, term], 's1', SELF, true);
     expect(r.kind === 'elsewhere' && r.processes.map(p => p.pid)).toEqual([100, 101]);
   });
   it('with no parent known, only what is certainly not a VS Code tab counts', () => {
     const noParent = (o: object) => parseRegistryEntry(entry(o))!;
     expect(openConflict([noParent({})], 's1', SELF)).toEqual({ kind: 'none' });
+    expect(openConflict([noParent({})], 's1', SELF, true)).toEqual({ kind: 'none' });
     expect(openConflict([noParent({ entrypoint: 'cli' })], 's1', SELF).kind).toBe('elsewhere');
     expect(openConflict([noParent({ entrypoint: undefined })], 's1', SELF).kind).toBe('elsewhere');
   });
@@ -103,5 +109,8 @@ describe('describeProcess', () => {
     expect(describeProcess({ pid: 5, sessionId: 's', entrypoint: 'cli', status: 'busy' })).toBe('a terminal (busy, pid 5)');
     expect(describeProcess({ pid: 6, sessionId: 's', entrypoint: 'claude-vscode' })).toBe('another VS Code window (pid 6)');
     expect(describeProcess({ pid: 7, sessionId: 's' })).toBe('another Claude Code process (pid 7)');
+    expect(describeProcess({ pid: 8, sessionId: 's', entrypoint: 'claude-vscode', status: 'idle', ppid: 3 }, 3))
+      .toBe("this window's Claude Code side panel (idle, pid 8)");
+    expect(describeProcess({ pid: 9, sessionId: 's', entrypoint: 'claude-vscode', ppid: 4 }, 3)).toBe('another VS Code window (pid 9)');
   });
 });

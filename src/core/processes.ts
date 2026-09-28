@@ -90,30 +90,37 @@ export type OpenConflict =
   | { kind: 'none' }
   /** the registry could not be read: behave as before, without a warning */
   | { kind: 'unknown' }
-  /** live elsewhere: a terminal, another VS Code window, a background session */
+  /** live elsewhere: a terminal, another VS Code window, this window's side panel, a background session */
   | { kind: 'elsewhere'; processes: ClaudeProcess[] };
 
 /**
  * Would opening `sessionId` in this window start a second process on it?
  *
- * Claude Code's own editor.open already focuses a tab of THIS window that has the session, so a
- * process whose parent is this extension host (`selfPid` — Claude Code spawns one child per tab
- * from the host both extensions share) is no conflict. Any other live process is. Where the
- * parent is unknown (no /proc), a VS Code process may well be this window's, so only the ones
- * that certainly are not — a terminal, a background session — count.
+ * Claude Code's editor.open focuses a TAB of this window that already has the session
+ * (`createPanel` looks it up among its tab panels) — but not the side panel: a session running
+ * there gets a second process in a new tab. So a process of this window (its parent is this
+ * extension host, `selfPid`: Claude Code spawns one child per tab or panel from the host both
+ * extensions share) is no conflict only when `hasTabHere` — this window certainly has a Claude
+ * Code tab of the session, which is what editor.open will focus. Any other live process is a
+ * conflict. Where the parent is unknown (no /proc), a VS Code process may be this window's tab,
+ * so only the ones that certainly are not — a terminal, a background session — count.
  */
 export function openConflict(
-  live: Array<ClaudeProcess & { ppid?: number }> | null, sessionId: string, selfPid: number,
+  live: Array<ClaudeProcess & { ppid?: number }> | null, sessionId: string, selfPid: number, hasTabHere = false,
 ): OpenConflict {
   if (live === null) return { kind: 'unknown' };
-  const others = live.filter(p => p.sessionId === sessionId && (
-    p.ppid !== undefined ? p.ppid !== selfPid : p.entrypoint !== 'claude-vscode'));
+  const counts = (p: ClaudeProcess & { ppid?: number }): boolean => {
+    if (p.ppid === undefined) return p.entrypoint !== 'claude-vscode';
+    return p.ppid !== selfPid || !hasTabHere;
+  };
+  const others = live.filter(p => p.sessionId === sessionId && counts(p));
   return others.length ? { kind: 'elsewhere', processes: others } : { kind: 'none' };
 }
 
-/** "a terminal (idle)", "another VS Code window (busy)" — for the warning. */
-export function describeProcess(p: ClaudeProcess): string {
-  const where = p.entrypoint === 'claude-vscode' ? 'another VS Code window'
+/** "a terminal (idle)", "another VS Code window (busy)", "this window's side panel" — for the warning. */
+export function describeProcess(p: ClaudeProcess & { ppid?: number }, selfPid?: number): string {
+  const where = p.ppid !== undefined && p.ppid === selfPid ? "this window's Claude Code side panel"
+    : p.entrypoint === 'claude-vscode' ? 'another VS Code window'
     : p.entrypoint === 'cli' ? 'a terminal'
     : p.entrypoint ? `a Claude Code process (${p.entrypoint})` : 'another Claude Code process';
   const bits = [p.status, `pid ${p.pid}`].filter(Boolean).join(', ');
