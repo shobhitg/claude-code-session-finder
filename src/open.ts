@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { OpenPlan } from './core/resolve.js';
 import { openCommands, type OpenWhere } from './core/open-args.js';
+import { readLiveProcesses, openConflict, describeProcess } from './core/processes.js';
 
 export const BATON_TTL_MS = 60_000;
 export const BATON_FILE = 'pending-open.json';
@@ -45,6 +46,43 @@ export function folderUri(path: string, ctx: vscode.ExtensionContext): vscode.Ur
   return base.with({ path });
 }
 
+/** Set by activate(), like openHooks: the output channel the open check reports to. */
+export const openLog: { channel?: vscode.LogOutputChannel } = {};
+
+const VIEW_ACTION = 'Open Session View';
+const ANYWAY_ACTION = 'Open Anyway';
+
+/**
+ * Before Claude Code is asked to resume a session: is it already running in another process?
+ * A second process on one session forks its transcript, and the next resume keeps only the
+ * branch written last — hours of work can drop out of the conversation. So ask first, and
+ * offer the Session View, which reads the transcript and starts nothing.
+ * Returns true when the open should go ahead. Runs in the window that will open the session:
+ * only that window can tell its own tabs' processes from everyone else's.
+ */
+export async function confirmNotRunningElsewhere(sessionId: string): Promise<boolean> {
+  const log = openLog.channel;
+  const conflict = openConflict(await readLiveProcesses(), sessionId, process.pid);
+  if (conflict.kind === 'unknown') {
+    log?.info(`open ${sessionId}: Claude Code process registry unreadable — opening without the check`);
+    return true;
+  }
+  if (conflict.kind === 'none') return true;
+  const where = conflict.processes.map(describeProcess).join('; ');
+  log?.warn(`open ${sessionId}: already running in ${where}`);
+  const choice = await vscode.window.showWarningMessage(
+    'This session is already running in another Claude Code process.',
+    { modal: true, detail:
+      `It is open in ${where}.\n\n` +
+      'Opening it here starts a second process on the same transcript. The two fork it, and the next ' +
+      'resume keeps only one branch: the other one\'s work disappears from the conversation.\n\n' +
+      'Switch to that window or terminal instead, or read it in the Session View, which starts nothing.' },
+    VIEW_ACTION, ANYWAY_ACTION);
+  if (choice === VIEW_ACTION) await vscode.commands.executeCommand('sessionFinder.openSessionView', sessionId);
+  if (choice === ANYWAY_ACTION) log?.warn(`open ${sessionId}: opened anyway`);
+  return choice === ANYWAY_ACTION;
+}
+
 const RIGHT_PANEL_NOTICE = 'sessionFinder.rightPanelNoticeShown';
 
 /** Spec §11: opening in the right panel also changes Claude Code's default location. Say so once. */
@@ -68,6 +106,7 @@ export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext, 
     // F3: reveal-if-open / new-tab-otherwise is Claude Code's own behaviour.
     // L10: openCommands() passes the programmatic flag; without it every open here silently
     // reset the user's Claude Code preferred location to "panel".
+    if (!await confirmNotRunningElsewhere(plan.sessionId)) return;
     try {
       if (where === 'right') await noticeRightPanelOnce(ctx);
       await runOpen(plan.sessionId, where);
@@ -80,7 +119,8 @@ export async function executePlan(plan: OpenPlan, ctx: vscode.ExtensionContext, 
     return;
   }
 
-  // handoff
+  // handoff — the target window checks before it opens (tryClaimPendingOpen): only it can tell
+  // which live process is its own tab's.
   try {
     // I3: derive the target BEFORE writing the baton — a failure here used to leave a
     // stale baton on disk for its full 60 s TTL.
