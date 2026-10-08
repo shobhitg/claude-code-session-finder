@@ -38,6 +38,27 @@ changing moves:
 High-contrast themes stay solid and plain, and with reduced motion turned on
 nothing moves.
 
+**The Session View, rebuilt around what the agents are doing.**
+
+- **A threaded timeline.** Each agent is a thread off the lane that started
+  it, and idle stretches fold into a marked gap ("3h 36m idle"), so a long
+  session's bursts of work get the width.
+- **The agent list** groups a workflow's agents with a strip of how they
+  ended, shows each model as a chip, and says what a running agent is doing
+  right now.
+- **An Overview for every agent**: its task, what it is doing now, its steps
+  with timings, and its result. The **Transcript** next to it is laid out as
+  Markdown — tables, code, tagged sections, the ★ Insight callout.
+- **Thoughts are shown** whenever Claude Code kept their text; the rest are
+  counted instead of each saying "redacted".
+- **JSON is readable**: Formatted for a review's verdict and findings, Pretty
+  otherwise, the raw dump a click away — and your choice sticks per tool.
+- **File names are live** everywhere: hover for size, lines, when it changed
+  and a preview (images included), click to open. Relative names are found in
+  the agent's worktree, and files from a removed worktree in the main checkout.
+- **Copy buttons** on every block; inline code copies on a click.
+- A workflow's journal file no longer shows up as an agent called "journal".
+
 ## 0.10.0
 
 **Headless runs wear a ghost.** A session started without a UI — `claude -p`,

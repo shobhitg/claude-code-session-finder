@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRecords, buildTranscript, toolSummary, resultText, parseNotification, firstPrompt, RESULT_CAP } from '../src/core/transcript.js';
+import { parseRecords, buildTranscript, toolSummary, resultText, parseNotification, firstPrompt, RESULT_CAP, currentStep, overview } from '../src/core/transcript.js';
 
 const T0 = Date.parse('2026-09-17T00:00:00Z');
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
@@ -156,5 +156,33 @@ describe('injected context (isMeta user records)', () => {
   it('a meta record before any prompt still gets an implicit turn', () => {
     const t = buildTranscript(parseRecords([user(1, 'context first', { isMeta: true }), user(2, 'now a prompt')].join('\n')));
     expect(t.turns.map(x => [x.promptKind, x.items.length])).toEqual([['meta', 1], ['user', 0]]);
+  });
+});
+
+describe('thoughts, folders, the step in flight and the overview (D20)', () => {
+  const recs = (lines: string[]) => parseRecords(lines.join('\n'));
+  it('keeps a thought\'s text when the transcript kept it, and marks one saved as a signature only', () => {
+    const t = buildTranscript(recs([user(0, 'go', { cwd: '/w/repo/.worktrees/x' }), asst(1, [{ type: 'thinking', thinking: '  Three round-trips.  ' }, { type: 'thinking', thinking: '', signature: 'sig' }])]));
+    expect(t.turns[0]!.items).toEqual([{ kind: 'thinking', ts: Date.parse(at(1)), text: 'Three round-trips.' }, { kind: 'thinking', ts: Date.parse(at(1)) }]);
+    expect(t.turns[0]!.cwd).toBe('/w/repo/.worktrees/x');
+  });
+  it('currentStep is the call still waiting for its result — none once the turn ended', () => {
+    const live = recs([user(0, 'go'), asst(1, [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/a/b.ts' } }]),
+      user(2, [{ type: 'tool_result', tool_use_id: 't1', content: 'x' }]), asst(3, [{ type: 'tool_use', id: 't2', name: 'Bash', input: { command: 'npm run bench' } }])]);
+    expect(currentStep(live)).toEqual({ tool: 'Bash', summary: 'npm run bench', since: Date.parse(at(3)) });
+    expect(currentStep(recs([user(0, 'go'), asst(1, [{ type: 'text', text: 'done' }], { stop_reason: 'end_turn' })]))).toBeUndefined();
+    expect(currentStep(recs([user(0, 'go'), asst(1, [{ type: 'thinking', thinking: '' }])]))).toEqual({ tool: 'Think', summary: 'thinking', since: Date.parse(at(1)) });
+  });
+  it('overview: the task, the latest steps with their outcome, the last thing said, and a step in flight', () => {
+    const t = buildTranscript(recs([user(0, 'Review the change for performance.'),
+      asst(1, [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/a/rate-limit.ts' } }]), user(3, [{ type: 'tool_result', tool_use_id: 't1', content: 'x' }]),
+      asst(4, [{ type: 'tool_use', id: 't2', name: 'Bash', input: { command: 'k6 run' } }]), user(5, [{ type: 'tool_result', tool_use_id: 't2', content: 'k6: not found', is_error: true }]),
+      asst(6, [{ type: 'text', text: 'Benchmarking now.' }, { type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'npm run bench' } }])]));
+    const o = overview(t, 2);
+    expect(o.task).toBe('Review the change for performance.');
+    expect(o.totalSteps).toBe(3);
+    expect(o.steps.map(s => [s.tool, s.status, s.ms])).toEqual([['Bash', 'error', 1000], ['Bash', 'running', undefined]]);
+    expect(o.lastText).toBe('Benchmarking now.');
+    expect(o.running).toMatchObject({ tool: 'Bash', summary: 'npm run bench' });
   });
 });

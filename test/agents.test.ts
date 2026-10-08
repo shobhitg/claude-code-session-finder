@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGraph, bars, type AgentFile } from '../src/core/agents.js';
+import { buildGraph, bars, activeSpans, IDLE_MS, type AgentFile } from '../src/core/agents.js';
 import { parseRecords } from '../src/core/transcript.js';
 
 const T0 = Date.parse('2026-09-17T00:00:00Z');
@@ -141,6 +141,11 @@ describe('buildGraph — decay of file-less launched nodes', () => {
       mainMtimeMs: T0 + 1_999_000, agents: [], journals: {}, now: T0 + 2_000_000 });
     expect(old.nodes['spawn:toolu_w']!.status).toBe('stopped');              // 33 min silent, no file
   });
+  it('a launched workflow whose agents have files takes its outcome from them, even after its session ended', () => {
+    const g = base([user(1, 'go'), ...launchedWorkflow(2), asst(60, [{ type: 'text', text: 'moving on' }], 'end_turn')],
+      [agentFile('w1', [user(4, 'review'), asst(30, [{ type: 'text', text: 'ok' }], 'end_turn')], 30, 'wf_dead')], { wf_dead: [{ type: 'result', agentId: 'w1' }] });
+    expect(g.nodes['spawn:toolu_w']).toMatchObject({ status: 'completed', endTs: T0 + 30_000 });
+  });
   it('a background agent WITH a fresh file keeps running after its session ended its turn', () => {
     const g = base([user(1, 'go'), spawn(2, 'toolu_bg', 'Long review', { run_in_background: true }),
                     result(3, 'toolu_bg', { agentId: 'bg1', status: 'async_launched' }),
@@ -160,5 +165,23 @@ describe('buildGraph — labels', () => {
   it('a unique label is left alone', () => {
     const g = base([user(1, 'go')], [agentFile('aaaa1111', [user(2, 'Only child')], 2)]);
     expect(g.nodes['orphan:aaaa1111']!.label).toBe('Only child');
+  });
+});
+
+describe('buildGraph — what a live node is doing, where nodes ran, when the session was busy (D20)', () => {
+  it('a running agent carries its call in flight and its folder; the session its busy spans', () => {
+    const main = [user(0, 'go', { cwd: '/w/repo' }), spawn(1, 'tu1', 'Bench it', { run_in_background: true }), result(2, 'tu1', { agentId: 'a1', status: 'async_launched' }, 'Async agent launched')];
+    const a1 = agentFile('a1', [user(2, 'Bench it', { cwd: '/w/repo/.worktrees/bench' }), asst(3, [{ type: 'tool_use', id: 'x1', name: 'Bash', input: { command: 'npm run bench' } }])], 590);
+    const g = base(main, [a1]);
+    const n = Object.values(g.nodes).find(x => x.agentId === 'a1')!;
+    expect(n.status).toBe('running');
+    expect(n.now).toEqual({ tool: 'Bash', summary: 'npm run bench', since: T0 + 3000 });
+    expect(n.cwd).toBe('/w/repo/.worktrees/bench');
+    expect(g.nodes.session!.cwd).toBe('/w/repo');
+    expect(g.nodes.session!.spans).toEqual([[T0, T0 + 2000]]);
+  });
+  it('activeSpans splits a transcript wherever it sat idle longer than IDLE_MS', () => {
+    const r = parseRecords([user(0, 'a'), asst(60, []), user(60 + IDLE_MS / 1000 + 1, 'b'), asst(60 + IDLE_MS / 1000 + 30, [])].join('\n'));
+    expect(activeSpans(r)).toEqual([[T0, T0 + 60_000], [T0 + 60_000 + IDLE_MS + 1000, T0 + 60_000 + IDLE_MS + 30_000]]);
   });
 });

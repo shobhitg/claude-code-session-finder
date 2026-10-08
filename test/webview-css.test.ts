@@ -116,6 +116,6 @@ describe('webview stylesheets (spec §10, D7)', () => {
   it('styles every state the models can emit', () => {
     const style = sheets[1]![1], session = sheets[2]![1];
     for (const sel of ['[data-state="running"]', '[data-reason="tool-or-permission"]', '[data-reason="your-turn"]', '[data-reason="stalled"]', '[data-reason="question"]', '[data-reason="interrupted"]', '[data-state="history"]', '[aria-current="true"]', '[data-ringing="true"]', '[data-heat="high"]', '[data-heat="full"]', '.spark__svg', '.burst', '[data-tone="running"]', '.tip', '[data-state="open"]', '[data-state="merged"]', '[data-state="closed"]', '[data-state="draft"]', '.where__branch--quiet', '.where__worktree--gone', '.where__item--icon', '.links__sep[hidden]', '.link--more', '.links-list']) expect(style, sel).toContain(sel);
-    for (const sel of ['.bar--running', '.bar--completed', '.bar--failed', '.bar--stopped', '.bar--launched', '.tool--error', '.turn--notification', '.turn--command', '.tree__tag']) expect(session, sel).toContain(sel);
+    for (const sel of ['.st-running', '.st-launched', '.st-completed', '.st-failed', '.st-stopped', '.tool--error', '.tool--pending', '.turn--notification', '.turn--command', '.fp--gone', '.fp--missing', '.finding--major', '.finding--minor', '.grp--closed', '.cp--done', '.json__note', '.nokept', '.think']) expect(session, sel).toContain(sel);
   });
 });

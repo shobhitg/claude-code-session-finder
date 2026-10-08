@@ -1,26 +1,45 @@
 import * as vscode from 'vscode';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
+import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { discover, defaultRoot } from '../core/discover.js';
-import { parseRecords, buildTranscript, firstPrompt, type Rec } from '../core/transcript.js';
+import { parseRecords, buildTranscript, firstPrompt, overview, type Rec } from '../core/transcript.js';
+import { candidates, fileKind, type Via } from '../core/fileref.js';
 import { buildGraph, type AgentFile, type JournalRec, type SessionGraph } from '../core/agents.js';
 import { planOpen } from '../core/resolve.js';
 import type { OpenWhere } from '../core/open-args.js';
 import type { SessionMeta } from '../core/types.js';
 import { LiveHost, readThresholds } from '../live-host.js';
-import { executePlan, openTranscript } from '../open.js';
+import { executePlan, folderUri, openTranscript } from '../open.js';
 
 export const VIEW_TYPE = 'sessionFinder.sessionView';
 const PAGE = 40;
 const TICK_MS = 2_000;
+/** The JSON view chosen per tool, remembered across sessions and windows (D20). */
+const JSON_VIEWS = 'sessionView.jsonViews';
+const JSON_VIEW_NAMES = new Set(['formatted', 'pretty', 'raw']);
 
 type Inbound =
   | { type: 'ready' } | { type: 'refresh' }
   | { type: 'select'; nodeId: string }
   | { type: 'more'; nodeId: string; from: number }
   | { type: 'open'; where: OpenWhere }
-  | { type: 'raw'; nodeId: string };
+  | { type: 'raw'; nodeId: string }
+  | { type: 'fileInfo'; key: string; path: string; line?: number; cwd?: string }
+  | { type: 'openFile'; path: string; line?: number; cwd?: string }
+  | { type: 'copy'; text: string }
+  | { type: 'openUrl'; href: string }
+  | { type: 'jsonView'; tool: string; view: string };
+
+/** What a file name's hover card shows (D20). */
+export interface FileInfo {
+  found: boolean; path: string; name: string; why: string; via?: Via;
+  abs?: string; dir?: string; isDir?: boolean; entries?: number; size?: number; mtimeMs?: number; kind?: string;
+  lines?: number; preview?: { start: number; lines: string[]; hl?: number }; image?: string;
+}
+const IMAGE_PREVIEW_MAX = 2 * 1024 * 1024;
+const TEXT_PREVIEW_MAX = 512 * 1024;
 
 function isInbound(m: unknown): m is Inbound {
   if (typeof m !== 'object' || m === null) return false;
@@ -30,6 +49,11 @@ function isInbound(m: unknown): m is Inbound {
     case 'select': case 'raw': return typeof o.nodeId === 'string';
     case 'more': return typeof o.nodeId === 'string' && typeof o.from === 'number';
     case 'open': return o.where === 'tab' || o.where === 'right';
+    case 'fileInfo': return typeof o.key === 'string' && typeof o.path === 'string' && (o.line === undefined || typeof o.line === 'number') && (o.cwd === undefined || typeof o.cwd === 'string');
+    case 'openFile': return typeof o.path === 'string' && (o.line === undefined || typeof o.line === 'number') && (o.cwd === undefined || typeof o.cwd === 'string');
+    case 'copy': return typeof o.text === 'string';
+    case 'openUrl': return typeof o.href === 'string';
+    case 'jsonView': return typeof o.tool === 'string' && typeof o.view === 'string' && JSON_VIEW_NAMES.has(o.view);
     default: return false;
   }
 }
@@ -148,7 +172,8 @@ class SessionPanel {
       // a worktree move the agents can sit under a different copy of the session than the newest main file.
       const agents: AgentFile[] = [];
       const journalPaths = new Map<string, string>();
-      for (const f of (await discover(defaultRoot())).filter(f => f.kind === 'subagent' && f.sessionId === this.meta.sessionId)) {
+      // a workflow's journal.jsonl sits beside its agents' files but is bookkeeping, not an agent (it was listed as one, "journal")
+      for (const f of (await discover(defaultRoot())).filter(f => f.kind === 'subagent' && f.sessionId === this.meta.sessionId && basename(f.path) !== 'journal.jsonl')) {
         const c = await read(f.path); if (!c) continue;
         const runId = runIdOf(f.path);
         agents.push({ path: f.path, agentId: agentIdOf(f.path), recs: c.recs, mtimeMs: c.mtimeMs, ...(runId ? { runId } : {}) });
@@ -166,7 +191,7 @@ class SessionPanel {
       if (!this.graph.nodes[this.selected]) this.selected = this.graph.root;
       this.panel.title = this.graph.nodes[this.graph.root]!.label;
       this.post({ type: force ? 'init' : 'update', sessionId: this.meta.sessionId, title: this.panel.title, graph: this.graph, now,
-                  live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected) });
+                  live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected), jsonViews: this.jsonViews() });
     } catch (err) {
       this.log.warn(`session view: ${String(err)}`);
     } finally {
@@ -174,13 +199,55 @@ class SessionPanel {
     }
   }
 
-  /** The transcript of a node's file, windowed: turns [from, total). */
-  private page(nodeId: string, from?: number): { nodeId: string; turns: ReturnType<typeof buildTranscript>['turns']; total: number; from: number } {
+  /** The transcript of a node's file, windowed — turns [from, total) — with its overview, read from all of it (D20). */
+  private page(nodeId: string, from?: number): { nodeId: string; turns: ReturnType<typeof buildTranscript>['turns']; total: number; from: number; overview: ReturnType<typeof overview> } {
     const file = this.graph?.nodes[nodeId]?.file;
     const recs = file ? this.cache.get(file)?.recs ?? [] : [];
-    const { turns } = buildTranscript(recs);
-    const start = Math.max(0, Math.min(from ?? turns.length - PAGE, turns.length));
-    return { nodeId, turns: turns.slice(start), total: turns.length, from: start };
+    const t = buildTranscript(recs);
+    const start = Math.max(0, Math.min(from ?? t.turns.length - PAGE, t.turns.length));
+    return { nodeId, turns: t.turns.slice(start), total: t.turns.length, from: start, overview: overview(t) };
+  }
+
+  private jsonViews(): Record<string, string> { return this.ctx.globalState.get<Record<string, string>>(JSON_VIEWS) ?? {}; }
+
+  /**
+   * A file name from the transcript, found on disk (D20): the first of its candidates that exists — absolute, the
+   * folder the agent was in, its parents, a gone worktree's main checkout, the session's folder — with what its
+   * card shows. Reads at most 512 KB of text and 2 MB of image, and only when hovered.
+   */
+  private async fileInfo(path: string, line: number | undefined, cwd: string | undefined): Promise<FileInfo> {
+    const name = basename(path);
+    const sessionCwd = this.graph?.nodes[this.graph.root]?.cwd ?? this.meta.cwd ?? undefined;
+    const tried = candidates(path, { ...(cwd ? { cwd } : {}), ...(sessionCwd ? { sessionCwd } : {}), home: homedir() });
+    for (const c of tried) {
+      const s = await stat(c.path).catch(() => null);
+      if (!s) continue;
+      const info: FileInfo = { found: true, path, name, why: c.why, via: c.via, abs: c.path, dir: dirname(c.path), size: s.size, mtimeMs: s.mtimeMs };
+      if (s.isDirectory()) { info.isDir = true; info.kind = 'Folder'; info.entries = (await readdir(c.path).catch(() => [])).length; return info; }
+      const kind = fileKind(c.path); info.kind = kind.label;
+      if (kind.image) { if (s.size <= IMAGE_PREVIEW_MAX) info.image = `data:${kind.image};base64,${(await readFile(c.path)).toString('base64')}`; return info; }
+      if (s.size <= TEXT_PREVIEW_MAX) {
+        const text = await readFile(c.path, 'utf8').catch(() => '');
+        if (text && !text.slice(0, 8000).includes('\u0000')) {
+          const all = text.split('\n'); info.lines = all.length;
+          const start = line ? Math.max(1, line - 4) : 1;
+          info.preview = { start, lines: all.slice(start - 1, start + 9).map(l => l.length > 200 ? `${l.slice(0, 200)}…` : l), ...(line ? { hl: line } : {}) };
+        }
+      }
+      return info;
+    }
+    const where = [...new Set(tried.map(c => dirname(c.path)))].slice(0, 3).join(', ');
+    return { found: false, path, name, why: `Not on disk any more${where ? ` — looked in ${where}` : ''}.` };
+  }
+
+  private async openFile(path: string, line: number | undefined, cwd: string | undefined): Promise<void> {
+    const info = await this.fileInfo(path, line, cwd);
+    if (!info.found || !info.abs) { void vscode.window.showWarningMessage(`${info.name} is not on disk any more.`); return; }
+    const uri = folderUri(info.abs, this.ctx);                                      // F8: never Uri.file()
+    if (info.isDir) { await vscode.commands.executeCommand('revealInExplorer', uri).then(undefined, () => vscode.commands.executeCommand('revealFileInOS', uri)); return; }
+    if (info.image || !info.preview) { await vscode.commands.executeCommand('vscode.open', uri, vscode.ViewColumn.Beside); return; }
+    const at = line ? new vscode.Range(line - 1, 0, line - 1, 0) : undefined;
+    await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.Beside, preview: true, ...(at ? { selection: at } : {}) });
   }
 
   private post(m: unknown): void { void this.panel.webview.postMessage(m); }
@@ -190,11 +257,16 @@ class SessionPanel {
     try {
       switch (raw.type) {
         case 'ready': if (this.graph) this.post({ type: 'init', sessionId: this.meta.sessionId, title: this.panel.title, graph: this.graph, now: Date.now(),
-                                                   live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected) }); return;
+                                                   live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected), jsonViews: this.jsonViews() }); return;
         case 'refresh': this.cache.clear(); await this.load(true); return;
         case 'select': this.selected = raw.nodeId; this.post({ type: 'page', page: this.page(raw.nodeId), now: Date.now() }); return;
         case 'more': this.post({ type: 'page', page: this.page(raw.nodeId, raw.from), now: Date.now() }); return;
         case 'raw': { const file = this.graph?.nodes[raw.nodeId]?.file ?? this.meta.file; await openTranscript(file); return; }
+        case 'fileInfo': this.post({ type: 'fileInfo', key: raw.key, info: await this.fileInfo(raw.path, raw.line, raw.cwd) }); return;
+        case 'openFile': await this.openFile(raw.path, raw.line, raw.cwd); return;
+        case 'copy': await vscode.env.clipboard.writeText(raw.text); vscode.window.setStatusBarMessage('Copied', 1500); return;
+        case 'openUrl': if (/^https?:\/\//i.test(raw.href)) await vscode.env.openExternal(vscode.Uri.parse(raw.href, true)); return;
+        case 'jsonView': await this.ctx.globalState.update(JSON_VIEWS, { ...this.jsonViews(), [raw.tool]: raw.view }); return;
         case 'open': {
           const folders = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.path);
           await executePlan(planOpen(this.meta, folders), this.ctx, raw.where);

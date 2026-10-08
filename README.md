@@ -180,16 +180,32 @@ The **Session View** opens a session in an editor tab straight from its
 transcript — running, finished, or from a worktree that no longer exists — and
 keeps up with the files while the session is active.
 
-- **Agents** — the tree of everything the session spawned: agents, workflow
-  runs grouped with their journals, agents spawned by agents, and denied
-  spawns as dead ends. Select a node to read it.
-- **Timeline** — one bar per agent from spawn to finish, packed into lanes so
-  you can see what overlapped; an open bar is still running. Click a bar to
-  read that agent.
-- **Transcript** — turns: your prompt, Claude's reply, each tool call as a
-  compact row that expands to its input and output, images from prompts
-  inline, background-agent completions, and slash commands you ran. Thinking
-  is marked, not shown; Claude Code stores it redacted.
+- **Timeline** — every agent is a thread that branches off the lane of
+  whoever started it, at the moment it did; a running one glows at its open
+  end. Stretches nobody was working (over 20 minutes) fold into a marked gap —
+  "3h 36m idle" — so a two-day session's bursts are not slivers. Click a lane.
+- **Agents** — the session, then everything it started: a workflow is a group
+  with a strip of its agents' outcomes; each agent shows its model (a cyan
+  chip, deeper for bigger models), when in the session it ran, and — while it
+  runs — the call it is in right now ("Bash · npm run bench · 42s").
+- **Overview** of the selected agent — where it sits (session › workflow ›
+  agent), the task it was given, what it is doing now and the last thing it
+  said, every step it took with timings, and its result.
+- **Transcript** — prompts and replies laid out as Markdown (headings, lists,
+  tables, code; a `<context>` section as a labelled box; the ★ Insight block
+  as a callout), each tool call a row that expands to its input and output.
+  Every thought whose text Claude Code kept is shown — about a quarter of
+  Opus's, none of Sonnet's — and the rest are counted ("2 thoughts not kept").
+  JSON opens **Formatted** when it is a shape we know (a review's verdict and
+  findings, as cards), else **Pretty**; the **Dump** is a click away, and
+  your choice sticks for that tool. Every block has a copy button in its
+  corner, and inline code copies on a click.
+- **File names** anywhere — absolute, relative, `path:line` — are live: hover
+  for a card with the file's size, lines, when it changed and a preview (the
+  image itself, or the lines around the one named), click to open it beside
+  the view. A relative name is found where the agent was working (its
+  worktree), then up the tree; a file in a worktree that has since been
+  removed is found at the same path in the main checkout, and the card says so.
 
 "Raw transcript" in the header opens the underlying `.jsonl` for anything the
 reader summarises. For a session you already have open, Claude Code's own

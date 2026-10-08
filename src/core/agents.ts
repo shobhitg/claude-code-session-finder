@@ -14,8 +14,8 @@
  *    started / result / failed per agentId.
  */
 import { DEFAULT_THRESHOLDS, type Thresholds } from './state.js';
-import { firstPrompt, isNotification, isRecord, parseNotification, resultText, ts,
-         type Rec, type ToolResultBlock, type ToolUseBlock } from './transcript.js';
+import { currentStep, firstPrompt, isNotification, isRecord, parseNotification, resultText, ts,
+         type NowStep, type Rec, type ToolResultBlock, type ToolUseBlock } from './transcript.js';
 
 export interface AgentFile { path: string; agentId: string; recs: Rec[]; mtimeMs: number; runId?: string }
 export interface JournalRec { type?: string; agentId?: string; key?: string }
@@ -32,7 +32,27 @@ export interface GraphNode {
   totalTokens?: number; toolUses?: number; durationMs?: number;
   file?: string; agentId?: string; toolUseId?: string; runId?: string; error?: string;
   children: string[];
+  /** a live node's call in flight (D20) */
+  now?: NowStep;
+  /** the folder its transcript last recorded — where a relative file name it mentions resolves first */
+  cwd?: string;
+  /** the session only: when it was busy — its records, split wherever it sat idle IDLE_MS; the timeline folds the rest */
+  spans?: Array<[number, number]>;
 }
+
+/** A pause this long is idle time: the threaded timeline folds it into a marked gap (D20). */
+export const IDLE_MS = 20 * 60_000;
+/** When a transcript's own records were written, as busy spans split at pauses longer than `gap`. */
+export function activeSpans(recs: Rec[], gap = IDLE_MS): Array<[number, number]> {
+  const times = recs.filter(r => r.type === 'user' || r.type === 'assistant').map(ts).filter(Boolean).sort((a, b) => a - b);
+  const out: Array<[number, number]> = [];
+  for (const t of times) {
+    const last = out[out.length - 1];
+    if (last && t - last[1] <= gap) last[1] = t; else out.push([t, t]);
+  }
+  return out;
+}
+const lastCwd = (recs: Rec[]): string | undefined => { for (let i = recs.length - 1; i >= 0; i--) { const c = recs[i]!.cwd; if (c) return c; } return undefined; };
 export interface SessionGraph { root: string; nodes: Record<string, GraphNode>; order: string[] }
 
 export interface GraphInput {
@@ -154,8 +174,10 @@ export function buildGraph(input: GraphInput): SessionGraph {
   // its session has stopped running, or it has been silent past the stall threshold, it is not
   // "launched" any more. Nodes WITH a file were already judged by their own tail in pass 2 — a
   // background agent legitimately outlives its parent's turn, and its fresh file says so.
+  const runsWithAgents = new Set(input.agents.map(a => a.runId).filter((r): r is string => !!r));
   for (const n of Object.values(nodes)) {
     if (n === root || n.file || (n.status !== 'running' && n.status !== 'launched')) continue;
+    if (n.kind === 'workflow' && n.runId && runsWithAgents.has(n.runId)) continue;   // its agents' files decide its outcome (pass 3)
     const since = n.launchedTs ?? n.spawnTs ?? 0;
     const sessionOver = root.status !== 'running';
     if (!sessionOver && !(since && input.now - since > th.stalledMs)) continue;
@@ -204,6 +226,16 @@ export function buildGraph(input: GraphInput): SessionGraph {
       const ends = kids.map(k => k.endTs ?? 0); n.endTs = Math.max(...ends) || undefined;
     } else if (kids.some(k => k.status === 'running')) n.status = 'running';
   }
+
+  // D20: where each node ran, what a live one is doing now, and when the session was busy
+  const recsOf = new Map(input.agents.map(a => [a.agentId, a.recs]));
+  for (const n of Object.values(nodes)) {
+    const recs = n === root ? input.mainRecs : n.agentId ? recsOf.get(n.agentId) : undefined;
+    if (!recs) continue;
+    const cwd = lastCwd(recs); if (cwd) n.cwd = cwd;
+    if (n.status === 'running' || n.status === 'launched') { const step = currentStep(recs); if (step) n.now = step; }
+  }
+  root.spans = activeSpans(input.mainRecs);
 
   const order: string[] = [];
   const walk = (id: string): void => { order.push(id); for (const c of nodes[id]!.children) walk(c); };

@@ -59,6 +59,13 @@
   --s-tip-fg:    var(--vscode-editorHoverWidget-foreground);
   --s-tip-border: var(--vscode-editorHoverWidget-border);
   --s-shadow:    var(--vscode-widget-shadow, transparent);
+  --s-btn-bg:    var(--vscode-button-background);
+  --s-btn-fg:    var(--vscode-button-foreground);
+  /* JSON in the Session View, in the theme's own colours for debug values (D20) */
+  --s-j-key:     var(--vscode-debugTokenExpression-name, var(--vscode-symbolIcon-propertyForeground));
+  --s-j-str:     var(--vscode-debugTokenExpression-string, var(--vscode-debugTokenExpression-value));
+  --s-j-num:     var(--vscode-debugTokenExpression-number, var(--vscode-debugTokenExpression-value));
+  --s-j-lit:     var(--vscode-debugTokenExpression-boolean, var(--vscode-debugTokenExpression-value));
 
   /* The state colours as small text (D18): each hue mixed toward the text colour — darker on a light theme, lighter
      on a dark one — so "asks you" in the theme's yellow still reads on white. Still the theme's colours, mixed. */

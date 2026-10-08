@@ -9,7 +9,9 @@
  *    `message.id`, so tokens are counted per message, never per record.
  *  - `system`: turn_duration / away_summary / local_command / … — boundaries, never shown.
  *  - everything else (attachment, last-prompt, cost-state, …) is housekeeping and counted as hidden.
- *  - thinking blocks are redacted on disk (`thinking: ''`, signature only) — shown as a marker.
+ *  - a thinking block keeps its text on disk only sometimes: Claude Code ≤ 2.1.274 kept none; later versions keep
+ *    it for about a quarter of Opus and Fable thoughts and for no Sonnet or Haiku ones (author's corpus,
+ *    2026-10-08). The rest are `thinking: ''` with a signature only — nothing can show those (D20).
  */
 
 export interface TextBlock { type: 'text'; text: string }
@@ -26,7 +28,7 @@ export type Block = TextBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock |
 export interface Usage { output_tokens?: number; output_tokens_details?: { thinking_tokens?: number } }
 export interface Rec {
   type?: string; subtype?: string; timestamp?: string; uuid?: string;
-  isSidechain?: boolean; isMeta?: boolean; agentId?: string; durationMs?: number;
+  isSidechain?: boolean; isMeta?: boolean; agentId?: string; durationMs?: number; cwd?: string;
   message?: { id?: string; role?: string; model?: string; stop_reason?: string | null; content?: string | Block[]; usage?: Usage };
   toolUseResult?: unknown;
   attachment?: { type?: string };
@@ -140,7 +142,8 @@ export interface ToolCall {
 }
 export type Item =
   | { kind: 'text'; ts: number; text: string }
-  | { kind: 'thinking'; ts: number }
+  /** text: when the transcript kept it (D20); otherwise a thought saved as a signature only */
+  | { kind: 'thinking'; ts: number; text?: string }
   | { kind: 'tool'; call: ToolCall }
   | { kind: 'image'; ts: number; mediaType: string; dataUrl: string }
   /** an isMeta user record — a skill body, a system reminder — injected mid-turn; the turn goes on */
@@ -151,6 +154,8 @@ export interface Turn {
   promptKind: PromptKind; prompt: string; promptImages: number;
   items: Item[];
   model?: string; outputTokens: number; thinkingTokens: number; durationMs?: number;
+  /** the folder the session was in during this turn — where a relative file name in it resolves first (D20) */
+  cwd?: string;
 }
 export interface Transcript { turns: Turn[]; records: number; hidden: number; firstTs: number; lastTs: number; model?: string }
 
@@ -195,38 +200,41 @@ export function buildTranscript(recs: Rec[]): Transcript {
     const t = ts(r);
     if (t) { firstTs = firstTs ? Math.min(firstTs, t) : t; lastTs = Math.max(lastTs, t); }
     const m = r.message; const c = m?.content;
-
+    const before = cur;
+    try { step(r, t, m, c); } finally { if (r.cwd && cur && (cur !== before || !cur.cwd)) cur.cwd = r.cwd; }
+  }
+  function step(r: Rec, t: number, m: Rec['message'], c: string | Block[] | undefined): void {
     if (r.type === 'user') {
       if (typeof c === 'string') {
         if (isLocalCommand(c)) localCommand(c, t);
         else if (isNotification(c)) open(t, 'notification', parseNotification(c).summary, 0);
         else if (r.isMeta) { const turn = ensure(t); turn.items.push({ kind: 'context', ts: t, text: c }); turn.endTs = Math.max(turn.endTs, t); }
         else open(t, 'user', c, 0);
-        continue;
+        return;
       }
-      if (!Array.isArray(c)) { hidden++; continue; }
+      if (!Array.isArray(c)) { hidden++; return; }
       const results = c.filter((b): b is ToolResultBlock => b.type === 'tool_result');
       if (results.length) {
         const turn = ensure(t);
         for (const b of results) {
           const call = pending.get(b.tool_use_id);
-          if (!call) continue;
+          if (!call) return;
           const { text, images, truncated } = resultText(b);
           call.result = { text, isError: b.is_error === true, ts: t, images, truncated };
           attachSpawn(call, r.toolUseResult);
           pending.delete(b.tool_use_id);
         }
         turn.endTs = Math.max(turn.endTs, t);
-        continue;
+        return;
       }
       const text = c.filter((b): b is TextBlock => b.type === 'text').map(b => b.text).join('\n');
       const images = c.filter((b): b is ImageBlock => b.type === 'image');
-      if (isLocalCommand(text)) { localCommand(text, t); continue; }
+      if (isLocalCommand(text)) { localCommand(text, t); return; }
       if (r.isMeta && !isNotification(text)) {                  // injected context, not a new prompt
         const turn = ensure(t);
         if (text) turn.items.push({ kind: 'context', ts: t, text });
         turn.endTs = Math.max(turn.endTs, t);
-        continue;
+        return;
       }
       const turn = isNotification(text)
         ? open(t, 'notification', parseNotification(text).summary, images.length)
@@ -235,7 +243,7 @@ export function buildTranscript(recs: Rec[]): Transcript {
         const dataUrl = imageDataUrl(im);
         if (dataUrl) turn.items.push({ kind: 'image', ts: t, mediaType: im.source?.media_type ?? 'image/png', dataUrl });
       }
-      continue;
+      return;
     }
 
     if (r.type === 'assistant') {
@@ -247,7 +255,7 @@ export function buildTranscript(recs: Rec[]): Transcript {
       if (Array.isArray(c)) {
         for (const b of c) {
           if (b.type === 'text') { const tb = b as TextBlock; if (tb.text) turn.items.push({ kind: 'text', ts: t, text: tb.text }); }
-          else if (b.type === 'thinking') turn.items.push({ kind: 'thinking', ts: t });
+          else if (b.type === 'thinking') { const text = ((b as ThinkingBlock).thinking ?? '').trim(); turn.items.push(text ? { kind: 'thinking', ts: t, text } : { kind: 'thinking', ts: t }); }
           else if (b.type === 'tool_use') {
             const tu = b as ToolUseBlock;
             const call: ToolCall = { id: tu.id, name: tu.name, summary: toolSummary(tu.name, tu.input), input: tu.input ?? {}, ts: t };
@@ -257,13 +265,13 @@ export function buildTranscript(recs: Rec[]): Transcript {
         }
       }
       turn.endTs = Math.max(turn.endTs, t);
-      continue;
+      return;
     }
 
     if (r.type === 'system') {
       if (r.subtype === 'turn_duration' && cur) { cur.durationMs = r.durationMs; cur.endTs = Math.max(cur.endTs, t); }
       hidden++;
-      continue;
+      return;
     }
     hidden++;
   }
@@ -286,4 +294,64 @@ export function firstPrompt(recs: Rec[]): string | undefined {
     if (line) return line.slice(0, 120);
   }
   return undefined;
+}
+
+// ---------------------------------------------------------------- what an agent is doing, and has done (D20)
+
+export interface NowStep { tool: string; summary: string; since: number }
+
+/**
+ * The call a live transcript is in the middle of: the last tool_use with no result yet, read from the end and
+ * stopping at a finished turn. A transcript records a tool's output only when it ends, so this names the call
+ * and how long it has run — never its output so far.
+ */
+export function currentStep(recs: Rec[]): NowStep | undefined {
+  const answered = new Set<string>();
+  for (let i = recs.length - 1, seen = 0; i >= 0 && seen < 400; i--, seen++) {
+    const r = recs[i]!; const c = r.message?.content;
+    if (r.type === 'user' && Array.isArray(c)) { for (const b of c) if (b.type === 'tool_result') answered.add((b as ToolResultBlock).tool_use_id); continue; }
+    if (r.type !== 'assistant') continue;
+    if (r.message?.stop_reason === 'end_turn') return undefined;
+    if (!Array.isArray(c)) continue;
+    for (let j = c.length - 1; j >= 0; j--) {
+      const b = c[j]!;
+      if (b.type === 'tool_use') { const tu = b as ToolUseBlock; if (!answered.has(tu.id)) return { tool: tu.name, summary: toolSummary(tu.name, tu.input), since: ts(r) }; return undefined; }
+      if (b.type === 'thinking') return { tool: 'Think', summary: 'thinking', since: ts(r) };
+      if (b.type === 'text') return { tool: 'Text', summary: 'writing', since: ts(r) };
+    }
+  }
+  return undefined;
+}
+
+export interface Step { ts: number; tool: string; summary: string; ms?: number; status: 'ok' | 'error' | 'running' }
+export interface Overview {
+  /** what the agent was asked: its first prompt */
+  task?: string;
+  /** the latest steps, oldest first; `steps` holds at most `max`, `totalSteps` counts them all */
+  steps: Step[]; totalSteps: number;
+  /** the last thing it wrote, and — once it has stopped — its answer */
+  lastText?: string;
+  /** a call still in flight */
+  running?: Step;
+}
+
+/** The Overview tab of an agent's pane (D20): its task, its steps (tool calls), and the last thing it said. */
+export function overview(t: Transcript, max = 14): Overview {
+  const firstUser = t.turns.find(x => x.promptKind === 'user' && x.prompt.trim());
+  const steps: Step[] = []; let lastText: string | undefined; let running: Step | undefined;
+  for (const turn of t.turns) for (const it of turn.items) {
+    if (it.kind === 'text' && it.text.trim()) lastText = it.text;
+    if (it.kind !== 'tool') continue;
+    const c = it.call;
+    const st: Step = { ts: c.ts, tool: c.name, summary: c.summary, status: c.result ? (c.result.isError ? 'error' : 'ok') : 'running' };
+    if (c.result) st.ms = Math.max(0, c.result.ts - c.ts);
+    steps.push(st);
+  }
+  const last = steps[steps.length - 1];
+  if (last?.status === 'running') running = last;
+  const out: Overview = { steps: steps.slice(-max), totalSteps: steps.length };
+  if (firstUser) out.task = firstUser.prompt;
+  if (lastText) out.lastText = lastText;
+  if (running) out.running = running;
+  return out;
 }
