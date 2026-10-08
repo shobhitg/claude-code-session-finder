@@ -80,7 +80,7 @@ type TimedRow = Pick<LiveRow, 'state' | 'reason' | 'lastWriteMs' | 'headless'>;
 
 /**
  * Spec §10 table, "Time label" column: what the session is doing, in the words you would use, then how long
- * since it last wrote. "quiet 5m" (until 0.10.1) answered neither "is it working?" nor "does it need me?".
+ * since it last wrote. "quiet 5m" (before 0.10.0) answered neither "is it working?" nor "does it need me?".
  * A tool call quiet past toolQuietSeconds is a permission prompt or a long command, which nothing on disk
  * tells apart (L4) — so it *may* need you; a headless run cannot stop for a prompt, so it is working (D15).
  */
@@ -235,7 +235,7 @@ export function heatOf(tokens: number, budget = DEFAULT_CONTEXT_BUDGET): Heat {
 /**
  * How tall ACTIVE stands, in px (D14): the most it has held since the view opened, plus a row of room. A session
  * that starts fills the room, one that closes leaves its space, so CLOSED stays where it is as they come and go —
- * without the ten empty rows ACTIVE kept from the start until 0.10.1, a gap that read as a list still loading.
+ * without the ten empty rows ACTIVE kept from the start before 0.10.0, a gap that read as a list still loading.
  */
 export function activeReserve(heldPx: number, contentPx: number, rowPx: number): number {
   return Math.max(heldPx, Math.ceil(contentPx + rowPx));

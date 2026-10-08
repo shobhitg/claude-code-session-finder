@@ -62,7 +62,7 @@ describe('webview stylesheets (spec §10, D7)', () => {
   it('a headless run (D15) wears its own colour, purple, which nothing else uses — and a dot for every status the model emits', () => {
     const style = sheets[1]![1];
     expect(tokens).toMatch(/--st-headless:\s*var\(--vscode-charts-purple\)/);
-    // purple means "a machine started this" and nothing else — not a state, and not a merged PR (GitHub's purple, until 0.10.1)
+    // purple means "a machine started this" and nothing else — not a state, and not a merged PR (GitHub's purple, in the 0.10.0 previews)
     expect(tokens.match(/--(?:s|st)-(?!headless)[a-z-]+:\s*var\(--vscode-charts-purple\)/)).toBeNull();
     for (const [name, css] of sheets) expect(css.replace(/--st-headless:[^;]*;/, ''), name).not.toMatch(/charts-purple/);
     for (const g of ['running', 'done', 'failed', 'waiting', 'stalled', 'closed']) expect(style, g).toContain(`.ghost__dot[data-ghost="${g}"]`);

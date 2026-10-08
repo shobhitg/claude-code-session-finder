@@ -246,7 +246,7 @@ body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__t
 .row:hover .row__actions, .row:focus-within .row__actions { visibility: visible; }
 /* A narrow sidebar cannot spare that slot beside the title. Below 380px the actions sit over line 2's right
    end instead — over the age tag and the meter, painted in the row's own colour — so the state words on
-   line 1 stay in sight while you point at the row (until 0.10.1 the actions hid them), and still nothing moves. */
+   line 1 stay in sight while you point at the row (before 0.10.0 the actions hid them), and still nothing moves. */
 main { container-type: inline-size; }
 .row { --row-paint: transparent; }
 @container (max-width: 380px) {
