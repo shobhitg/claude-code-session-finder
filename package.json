@@ -2,7 +2,7 @@
   "name": "claude-code-session-finder",
   "displayName": "Claude Code Sessions & Agents",
   "description": "See which Claude Code sessions are running or waiting on you, browse and search every session's content, and open any of them in a tab or the right panel.",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {
@@ -99,7 +99,10 @@
         },
         "sessionFinder.sidebarScope": {
           "type": "string",
-          "enum": ["workspace", "all"],
+          "enum": [
+            "workspace",
+            "all"
+          ],
           "default": "workspace",
           "enumDescriptions": [
             "Only sessions from this workspace's folders, their git repository and all of its worktrees.",
@@ -129,6 +132,11 @@
           "default": 60,
           "minimum": 5,
           "description": "A session that has been waiting on a tool call for longer than this is shown as \"waiting on a tool or a permission prompt\". Raise it if your tests or builds run long."
+        },
+        "sessionFinder.prStates": {
+          "type": "boolean",
+          "default": true,
+          "description": "Colour each PR on a session's row by its state on GitHub (open, merged, closed or draft) and show its title when you hover it. Asks GitHub about those PRs, by repository and number, through the GitHub CLI (gh) when it is installed and signed in; a merged or closed PR is asked about once. Off: no network request at all."
         },
         "sessionFinder.stalledMinutes": {
           "type": "number",

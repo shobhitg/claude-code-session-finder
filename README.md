@@ -95,7 +95,7 @@ you as you switch between Claude Code tabs and Session Views.
   only by its tab, past the window, wears an orange `> 19h` or `> 2d 1h` tag
   instead (red after a day): close it when you mean to, and not before.
 - **Closed** — the 50 sessions you touched most recently that are not active,
-  with the day you last touched each, its project, branch and PR, and
+  with the day you last touched each, its branch, PRs and Slack threads, and
   **Search all…** for everything older. Clicking one resumes it, which makes it
   active.
 
@@ -126,6 +126,19 @@ plus a copyable deep link.
 Opening in the right panel uses Claude Code's own "Open in Side Bar", which also
 makes that the default for new sessions until you run **Claude Code: Open in New
 Tab**; the first time, a notice says so.
+
+**Under each title: where the work is, and what it links to.** The branch the
+session last worked on comes first: not the `main` or detached `HEAD` it went
+back to after opening a PR (hover it to see where it is now). Then its worktree,
+when the worktree's folder name says something the branch does not, struck
+through once the folder is gone. A session from another project names its
+project. Then every PR the session linked, newest first, and every Slack thread
+you pasted into it — buttons: hover for the details, click to open. A PR's icon
+is its state on GitHub (open, merged, closed or draft) and its tooltip carries
+its title; see [Privacy](#privacy). The links sit beside the branch while there
+is room and take a line of their own when there is not. There the oldest PRs
+drop their numbers first, then fold into `+N`, which lists them all; Slack
+threads never fold.
 
 ## Search inside sessions
 
@@ -195,14 +208,22 @@ agents pill shows the same tree live; this view is for the ones you don't.
 | `sessionFinder.activeWindow` | `4h` | sessions written within this are Active and carry a state |
 | `sessionFinder.toolQuietSeconds` | `60` | waiting on a tool longer than this shows 🔔 |
 | `sessionFinder.stalledMinutes` | `15` | silence longer than this mid-turn shows ⚠ |
+| `sessionFinder.prStates` | `true` | colour each linked PR by its state on GitHub, asked through `gh`; `false` makes no network request |
 
 ## Privacy
 
 This extension reads your Claude Code transcripts from `~/.claude/projects`,
 extracts the conversational text, and stores an index in VS Code's local
-extension storage on your machine. **Nothing is uploaded, transmitted, or shared
-with anyone, including the author.** There is no telemetry, no network access,
-and no analytics of any kind.
+extension storage on your machine. **Nothing is uploaded or shared with anyone,
+including the author.** There is no telemetry and no analytics of any kind.
+
+One network request is made, and you can turn it off: to colour each PR on a
+row by its state and show its title, the extension asks GitHub about those PRs —
+their repository and number, nothing else — through your own GitHub CLI (`gh`),
+signed in as you, when it is installed. A merged or closed PR is asked about
+once; an open one again after ten minutes, while it is on screen. Set
+`sessionFinder.prStates` to `false` and the extension makes no network request
+at all.
 
 ## Requirements
 

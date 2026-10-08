@@ -130,6 +130,19 @@ describe('refreshIndex', () => {
     expect(texts).toContain('newer half of the conversation');
   });
 
+  it('a duplicate keeps every PR and Slack thread either copy linked, each once, at its earliest', async () => {
+    const pr = (n: number, ts: string) => JSON.stringify({ type: 'pr-link', prNumber: n, prRepository: 'acme/app', prUrl: `https://github.com/acme/app/pull/${n}`, timestamp: ts });
+    const said = (ts: string, text: string) => JSON.stringify({ type: 'user', cwd: '/w/a', timestamp: ts, message: { content: text } });
+    const thread = 'https://acme.slack.com/archives/C1/p1759941712345678';
+    mkdirSync(join(root, 'projects', '-w-old'), { recursive: true });
+    mkdirSync(join(root, 'projects', '-w-new'), { recursive: true });
+    writeFileSync(join(root, 'projects', '-w-old', 'dup.jsonl'), [said('2026-08-01T00:00:00Z', `see ${thread}`), pr(1, '2026-08-01T00:00:01Z')].join('\n') + '\n');
+    writeFileSync(join(root, 'projects', '-w-new', 'dup.jsonl'), [said('2026-08-05T00:00:00Z', `again ${thread}`), pr(1, '2026-08-05T00:00:01Z'), pr(2, '2026-08-05T00:00:02Z')].join('\n') + '\n');
+    const dup = (await refreshIndex(opts())).index.sessions.find(s => s.sessionId === 'dup')!;
+    expect(dup.prs.map(p => [p.n, p.ts])).toEqual([[1, Date.parse('2026-08-01T00:00:01Z')], [2, Date.parse('2026-08-05T00:00:02Z')]]);
+    expect(dup.slack.map(s => [s.thread, s.said])).toEqual([['C1/1759941712.345678', 'see']]);
+  });
+
   it('picks the same duplicate winner regardless of which copy is seen first', async () => {
     const line = (cwd: string, ts: string) =>
       JSON.stringify({ type: 'user', cwd, timestamp: ts, message: { content: 'x' } });

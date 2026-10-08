@@ -1,10 +1,37 @@
-import type { SearchIndex, SessionMeta } from './types.js';
+import type { SearchIndex, SessionMeta, PrLink, Worktree } from './types.js';
 import type { Liveness, AttentionReason } from './state.js';
 import { isLocalCommand } from './transcript.js';
 import { snippet, type SessionHit } from './query.js';
+import { projectName } from './links.js';
 
-export interface LiveRow {
-  sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
+export type PrState = 'open' | 'merged' | 'closed' | 'draft';
+/** What GitHub says about a PR (pr-states.ts), once it has been asked. */
+export interface PrInfo { state: PrState; title?: string; head?: string }
+export interface RowPr {
+  n: number; repo: string | null; url: string; ts: number;
+  /** GitHub's head branch when known, else the branch the session was on when it linked the PR */
+  branch: string | null;
+  state?: PrState; title?: string;
+}
+export interface RowSlack { url: string; ts: number; said: string }
+
+/** Line 2 and the links of a row: where the session's work is, and what it links to. */
+export interface RowWhere {
+  /** its project (links.ts projectName) — pickers and the status bar always show it, the sidebar only for a session from `elsewhere` */
+  project: string;
+  /** not this window's workspace's session */
+  elsewhere?: true;
+  /** the branch it last worked on (types.ts SessionMeta.branch), and the one it is on now */
+  branch: string | null; branchNow: string | null;
+  worktree?: Worktree;
+  /** newest first */
+  prs: RowPr[];
+  /** newest first */
+  slack: RowSlack[];
+}
+
+export interface LiveRow extends RowWhere {
+  sessionId: string; title: string;
   cwdExists: boolean;
   state: 'running' | 'attention'; reason?: AttentionReason;
   /** surfaces render "quiet 2 m" from this and their own clock */
@@ -16,8 +43,8 @@ export interface LiveRow {
   /** started without a UI — `claude -p` and kin (D15) */
   headless?: true;
 }
-export interface HistoryRow {
-  sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
+export interface HistoryRow extends RowWhere {
+  sessionId: string; title: string;
   cwdExists: boolean; lastTs: number; msgCount: number;
   /** when you last touched it (touchedMs) — what CLOSED is ordered by, so the date it shows */
   touchedTs: number;
@@ -35,9 +62,42 @@ export interface SearchRow extends HistoryRow {
   live?: { state: 'running' | 'attention'; reason?: AttentionReason; lastWriteMs: number; contextTokens?: number; model?: string; ringing?: true };
 }
 
-/** The derivation quickpick.ts has used since v0.1: last `--` segment of the sanitized dir name. */
+/** A project's name when its session recorded no cwd: the last `--` segment of the sanitized dir name (what every surface showed until 0.10.0). */
 export function projectLabel(projectDir: string): string {
   return projectDir.replace(/^-/, '').split('--').pop() ?? '';
+}
+
+/** A PR's page: the link Claude Code recorded, else one made from its repo; null when there is neither. */
+export function prUrl(p: Pick<PrLink, 'n' | 'repo' | 'url'>): string | null {
+  return p.url ?? (p.repo ? `https://github.com/${p.repo}/pull/${p.n}` : null);
+}
+
+export interface WhereOpts {
+  /** this window's workspace holds the session; not given, nothing is from elsewhere */
+  isHere?: (m: SessionMeta) => boolean;
+  /** GitHub's answer for a PR, when there is one */
+  prInfo?: (p: PrLink) => PrInfo | undefined;
+}
+
+/** What a row says about where the work is and what it links to. A session the index has not seen yet says nothing. */
+export function whereOf(m: SessionMeta | undefined, opts: WhereOpts = {}): RowWhere {
+  if (!m) return { project: '', branch: null, branchNow: null, prs: [], slack: [] };
+  const prs: RowPr[] = [];
+  for (const p of m.prs) {
+    const url = prUrl(p);
+    if (!url) continue;
+    const info = opts.prInfo?.(p);
+    prs.push({ n: p.n, repo: p.repo, url, ts: p.ts, branch: info?.head ?? p.branch,
+               ...(info ? { state: info.state } : {}), ...(info?.title ? { title: info.title } : {}) });
+  }
+  return {
+    project: projectName(m.launchCwd) ?? projectLabel(m.projectDir),
+    ...(opts.isHere && !opts.isHere(m) ? { elsewhere: true as const } : {}),
+    branch: m.branch, branchNow: m.branchNow,
+    ...(m.worktree ? { worktree: m.worktree } : {}),
+    prs: prs.sort((a, b) => b.ts - a.ts),
+    slack: [...m.slack].sort((a, b) => b.ts - a.ts).map(({ url, ts, said }) => ({ url, ts, said })),
+  };
 }
 
 /** Codicon NAME per state (spec §10 table). Surfaces wrap it: `$(name)` or `codicon-name`. */
@@ -123,12 +183,12 @@ export function firstPrompts(index: SearchIndex): Map<string, string> {
 
 /** Search hits as sidebar rows: same titles as the list, the best-matching line as a snippet, live state (and the bell) kept. */
 export function rowsForHits(hits: SessionHit[], liveness: ReadonlyMap<string, Liveness>, firstPrompt: Map<string, string>,
-                            opts: { limit?: number; rings?: (l: Liveness) => boolean } = {}): SearchRow[] {
+                            opts: { limit?: number; rings?: (l: Liveness) => boolean } & WhereOpts = {}): SearchRow[] {
   return hits.slice(0, opts.limit ?? 50).map(h => {
     const m = h.session; const l = liveness.get(m.sessionId);
     const row: SearchRow = {
-      sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt), project: projectLabel(m.projectDir),
-      branch: m.branches.at(-1) ?? null, pr: m.prLinks.at(-1) ?? null, cwdExists: m.cwdExists, lastTs: m.lastTs, msgCount: m.msgCount,
+      sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt), ...whereOf(m, opts),
+      cwdExists: m.cwdExists, lastTs: m.lastTs, msgCount: m.msgCount,
       touchedTs: touchedMs(m, l), snippet: h.best ? snippet(h.best.text, h.best.index) : null, matches: h.matchCount,
     };
     if (m.headless) row.headless = true;
@@ -263,7 +323,7 @@ export function buildSnapshot(
   index: SearchIndex | null,
   liveness: ReadonlyMap<string, Liveness>,
   opts: { historyLimit?: number; indexing?: boolean; scope?: SidebarScope; inScope?: (m: SessionMeta) => boolean; rings?: (l: Liveness) => boolean;
-          hideHeadless?: boolean } = {},
+          hideHeadless?: boolean } & WhereOpts = {},
 ): Snapshot {
   const limit = opts.historyLimit ?? 50;
   const byId = new Map<string, SessionMeta>();
@@ -284,9 +344,7 @@ export function buildSnapshot(
     .map(l => {
       const m = byId.get(l.sessionId);
       const row: LiveRow = {
-        sessionId: l.sessionId, title: titleOf(m, l.sessionId, firstPrompt),
-        project: m ? projectLabel(m.projectDir) : '',
-        branch: m?.branches.at(-1) ?? null, pr: m?.prLinks.at(-1) ?? null, cwdExists: m?.cwdExists ?? true,
+        sessionId: l.sessionId, title: titleOf(m, l.sessionId, firstPrompt), ...whereOf(m, opts), cwdExists: m?.cwdExists ?? true,
         state: l.state.kind, lastWriteMs: l.lastWriteMs,
       };
       if (l.state.kind === 'attention') row.reason = l.state.reason;
@@ -303,8 +361,7 @@ export function buildSnapshot(
     .sort((a, b) => b.touchedTs - a.touchedTs)
     .slice(0, limit)
     .map(({ m, touchedTs }) => ({
-      sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt), project: projectLabel(m.projectDir),
-      branch: m.branches.at(-1) ?? null, pr: m.prLinks.at(-1) ?? null, cwdExists: m.cwdExists,
+      sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt), ...whereOf(m, opts), cwdExists: m.cwdExists,
       lastTs: m.lastTs, msgCount: m.msgCount, touchedTs, ...(m.headless ? { headless: true as const } : {}),
     }));
 

@@ -1,15 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, heatOf, fmtWindow, ageTag } from '../src/webview/model.js';
-import type { Snapshot, LiveRow, HistoryRow, SearchRow } from '../src/core/rows.js';
+import { fmtDuration, timeLabel, historyLabel, whereVM, linksVM, iconClass, viewModel, resultsModel, heatOf, fmtWindow, ageTag } from '../src/webview/model.js';
+import type { Snapshot, LiveRow, HistoryRow, SearchRow, RowPr } from '../src/core/rows.js';
 
 const S = 1_000, M = 60 * S, H = 60 * M;
 const now = 1_000 * H;
 const live = (o: Partial<LiveRow>): LiveRow => ({
-  sessionId: 'a', title: 'Ledger GUI', project: 'aida', branch: 'shobhit/ledger', pr: 20231, cwdExists: true,
+  sessionId: 'a', title: 'Ledger GUI', project: 'aida', branch: 'shobhit/ledger', branchNow: 'shobhit/ledger', cwdExists: true,
+  prs: [{ n: 20231, repo: 'acme/app', url: 'https://github.com/acme/app/pull/20231', ts: 0, branch: 'shobhit/ledger' }], slack: [],
   state: 'running', lastWriteMs: now - 10 * S, ...o,
 });
 const hist = (o: Partial<HistoryRow>): HistoryRow => ({
-  sessionId: 'h', title: 'Old', project: 'aida', branch: null, pr: null, cwdExists: true,
+  sessionId: 'h', title: 'Old', project: 'aida', branch: null, branchNow: null, prs: [], slack: [], cwdExists: true,
   lastTs: new Date(2026, 8, 15, 12).getTime(), msgCount: 31, touchedTs: new Date(2026, 8, 15, 11).getTime(), ...o,
 });
 
@@ -41,20 +42,80 @@ describe('timeLabel (spec §10 table)', () => {
   });
 });
 
-describe('historyLabel / metaLabel / iconClass', () => {
+describe('historyLabel / iconClass', () => {
   it('history shows the local date and message count', () => {
     expect(historyLabel(hist({}))).toBe('Sep 15 · 31 msgs');
   });
   it('the date is the day you last touched the session — CLOSED\'s order — not Claude\'s last write', () => {
     expect(historyLabel(hist({ touchedTs: new Date(2026, 8, 14, 23, 50).getTime(), lastTs: new Date(2026, 8, 15, 0, 30).getTime() }))).toBe('Sep 14 · 31 msgs');
   });
-  it('meta joins project, branch and PR with middots, skipping blanks', () => {
-    expect(metaLabel(live({}))).toBe('aida · shobhit/ledger · PR #20231');
-    expect(metaLabel(hist({ project: '', branch: null, pr: null }))).toBe('');
-  });
   it('iconClass expands the ~spin modifier', () => {
     expect(iconClass('loading~spin')).toBe('codicon codicon-loading codicon-modifier-spin');
     expect(iconClass('bell-dot')).toBe('codicon codicon-bell-dot');
+  });
+});
+
+describe('line 2: where the work is', () => {
+  it('leads with the branch; main and a detached HEAD are quiet, and the tooltip says where the session is now', () => {
+    expect(whereVM(live({ branch: 'shobhit/x', branchNow: 'main' })).branch).toEqual({ label: 'shobhit/x', tip: 'Branch shobhit/x\nNow on main' });
+    expect(whereVM(live({ branch: 'shobhit/x', branchNow: 'shobhit/x' })).branch).toEqual({ label: 'shobhit/x', tip: 'Branch shobhit/x' });
+    expect(whereVM(live({ branch: 'main', branchNow: 'main' })).branch).toEqual({ label: 'main', tip: 'On main the whole session', quiet: true });
+    expect(whereVM(live({ branch: 'HEAD', branchNow: 'HEAD' })).branch).toEqual({ label: 'detached HEAD', tip: 'On a detached HEAD the whole session', quiet: true });
+    expect(whereVM(hist({})).branch).toBeUndefined();
+  });
+
+  it('shows a worktree only when its name says something the branch does not — or when its folder is gone', () => {
+    const worktree = { name: 'board-stats', path: '/w/.claude/worktrees/board-stats' };
+    expect(whereVM(live({ branch: 'shobhit/aid-9432-stale', worktree })).worktree).toEqual({ label: 'board-stats', tip: 'Worktree /w/.claude/worktrees/board-stats' });
+    expect(whereVM(live({ branch: 'shobhit/board-stats', worktree })).worktree).toBeUndefined();
+    const gone = whereVM(live({ branch: 'shobhit/board-stats', worktree, cwdExists: false }));
+    expect(gone.worktree).toMatchObject({ label: 'board-stats', gone: true });
+    expect(gone.worktree!.tip).toContain('folder is gone');
+  });
+
+  it('names the project only for a session from elsewhere', () => {
+    expect(whereVM(live({ elsewhere: true, project: 'claude-code-session-finder' })).project).toMatchObject({ label: 'claude-code-session-finder' });
+    expect(whereVM(live({ project: 'aida' }))).not.toHaveProperty('project');
+  });
+
+  it('a missing folder is said once: by the worktree when it was one, else by the row', () => {
+    const worktree = { name: 'x', path: '/w/x' };
+    expect(viewModel({ active: [live({ cwdExists: false, worktree }), live({ sessionId: 'b', cwdExists: false })], history: [], totalSessions: 2, indexing: false, scope: 'all', hiddenHeadless: 0 },
+                     now, { activeWindowLabel: '4h', searchKey: 'k' }).sections[0]!.rows.map(r => r.kind === 'session' && r.missing)).toEqual([false, true]);
+  });
+});
+
+describe('the links: PRs newest first, then Slack threads', () => {
+  const at = new Date(2026, 9, 8, 1, 0).getTime();
+  const pr = (o: Partial<RowPr>): RowPr => ({ n: 21264, repo: 'acme/app', url: 'https://github.com/acme/app/pull/21264', ts: at, branch: 'shobhit/nudge', ...o });
+
+  it('a PR is its number, coloured by its state once GitHub has said it, with its title and branch on hover', () => {
+    const [open, merged, unknown] = linksVM(live({ prs: [pr({ state: 'open', title: 'Nudge on all websites' }), pr({ n: 21172, state: 'merged' }), pr({ n: 21000 })] }));
+    expect(open).toEqual({ kind: 'pr', url: 'https://github.com/acme/app/pull/21264', label: '#21264', icon: 'git-pull-request', state: 'open',
+                           tip: 'PR #21264 · open\nNudge on all websites\nacme/app · from shobhit/nudge\nLinked Oct 8, 01:00 — click to open on GitHub',
+                           aria: 'PR #21264, open: Nudge on all websites', detail: 'Nudge on all websites' });
+    expect(unknown!.detail).toBe('from shobhit/nudge');                      // the list behind +N: the title, else the branch
+    expect(merged).toMatchObject({ icon: 'git-merge', state: 'merged' });
+    expect(unknown).toMatchObject({ icon: 'git-pull-request' });
+    expect(unknown).not.toHaveProperty('state');
+    expect(linksVM(live({ prs: [pr({ state: 'closed' }), pr({ state: 'draft' })] })).map(c => c.icon)).toEqual(['git-pull-request-closed', 'git-pull-request-draft']);
+  });
+
+  it('a Slack thread is an icon that says when you pasted it and what you wrote with it', () => {
+    const links = linksVM(live({ prs: [pr({})], slack: [{ url: 'https://acme.slack.com/archives/C1/p1', ts: at, said: 'why is this failing?' }, { url: 'u2', ts: at, said: '' }] }));
+    expect(links.map(c => c.kind)).toEqual(['pr', 'slack', 'slack']);
+    expect(links[1]).toEqual({ kind: 'slack', url: 'https://acme.slack.com/archives/C1/p1', label: '', icon: 'slack',
+                               tip: 'Slack thread you pasted Oct 8, 01:00\n“why is this failing?”\nClick to open in Slack', aria: 'Slack thread you pasted Oct 8, 01:00',
+                               detail: '“why is this failing?”' });
+    expect(links[2]!.tip).toBe('Slack thread you pasted Oct 8, 01:00\nClick to open in Slack');
+    expect(links[2]!.detail).toBe('pasted Oct 8, 01:00');
+  });
+
+  it('ride on every row the list and the filter show', () => {
+    const vm = viewModel({ active: [live({})], history: [hist({ prs: [pr({})] })], totalSessions: 2, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, { activeWindowLabel: '4h', searchKey: 'k' });
+    expect(vm.sections.map(s => s.rows[0]!.kind === 'session' ? s.rows[0]!.links.map(c => c.label) : [])).toEqual([['#20231'], ['#21264']]);
+    expect(resultsModel([{ ...hist({ prs: [pr({})] }), snippet: null, matches: 1 }], 'x', false, now, { activeWindowLabel: '4h', searchKey: 'k' })
+      .sections[0]!.rows[0]).toMatchObject({ links: [{ label: '#21264' }], where: {} });
   });
 });
 

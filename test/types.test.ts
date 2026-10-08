@@ -11,7 +11,7 @@ describe('types', () => {
   it('a SearchIndex is structurally assignable', () => {
     const meta: SessionMeta = {
       sessionId: 'a', file: '/a.jsonl', extraFiles: [], projectDir: '-a',
-      cwd: '/a', cwdExists: true, title: null, branches: [], prLinks: [],
+      cwd: '/a', cwdExists: true, title: null, launchCwd: null, branch: null, branchNow: null, worktree: null, prs: [], slack: [],
       firstTs: 1, lastTs: 2, lastActTs: 1, headless: false, msgCount: 0, mtimeMs: 1, size: 1,
     };
     const prose: ProseMsg = { s: 0, r: 'u', t: 1, x: 'hello' };

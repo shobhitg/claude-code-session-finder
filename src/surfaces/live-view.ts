@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import type { LiveHost } from '../live-host.js';
-import { firstPrompts, resolveTabSession, rowsForHits, knownTitles, labelMatchesTitle, tabsToClose, trustedLearned, candidateSessions, pinnedSessions, closedForGood, sessionsOnScreen, type Snapshot, type TabRef, type Titled } from '../core/rows.js';
+import { firstPrompts, resolveTabSession, rowsForHits, prUrl, knownTitles, labelMatchesTitle, tabsToClose, trustedLearned, candidateSessions, pinnedSessions, closedForGood, sessionsOnScreen, type Snapshot, type TabRef, type Titled } from '../core/rows.js';
 import { durationMs, parseQuery, search } from '../core/query.js';
 import type { SearchIndex } from '../core/types.js';
 import { VIEW_TYPE as SESSION_VIEW_TYPE } from './session-view.js';
@@ -28,7 +28,8 @@ type Inbound =
   | { type: 'transcript'; sessionId: string }
   | { type: 'copyLink'; sessionId: string }
   | { type: 'reveal'; sessionId: string }
-  | { type: 'close'; sessionId: string };
+  | { type: 'close'; sessionId: string }
+  | { type: 'openLink'; sessionId: string; url: string };
 
 /** Spec §12: every field read from a webview message is checked first; unknown shapes are ignored. */
 function isInbound(m: unknown): m is Inbound {
@@ -39,6 +40,7 @@ function isInbound(m: unknown): m is Inbound {
     case 'filter': return typeof o.q === 'string';
     case 'open': return typeof o.sessionId === 'string' && (o.where === 'tab' || o.where === 'right');
     case 'view': case 'transcript': case 'copyLink': case 'reveal': case 'close': return typeof o.sessionId === 'string';
+    case 'openLink': return typeof o.sessionId === 'string' && typeof o.url === 'string';
     default: return false;
   }
 }
@@ -301,7 +303,9 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     const parsed = { ...typed, headless: typed.headless ?? (this.host.hideHeadless ? false : null) };
     const titles = this.firstPromptsCached();
     const rows = index && !parsed.deep && q.trim()
-      ? rowsForHits(search(index, parsed, Date.now()).filter(h => this.host.inScope(h.session)), this.host.liveness, titles, { rings: this.host.rings }) : [];
+      ? rowsForHits(search(index, parsed, Date.now()).filter(h => this.host.inScope(h.session)), this.host.liveness, titles,
+                    { rings: this.host.rings, isHere: this.host.isHere, prInfo: this.host.prStates.info }) : [];
+    this.host.prStates.want(rows.flatMap(r => r.prs));
     void this.view.webview.postMessage({ type: 'results', q, deep: parsed.deep, rows, now: Date.now(), indexing: !index });
   }
 
@@ -326,6 +330,12 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
       const m = this.host.session(raw.sessionId);
       if (!m) { vscode.window.showWarningMessage('That session is not in the index yet — try again in a moment.'); return; }
       if (raw.type === 'transcript') { await openTranscript(m.file); return; }
+      if (raw.type === 'openLink') {
+        // Only a link the session itself recorded opens: the webview names it, the index vouches for it.
+        if (m.prs.some(p => prUrl(p) === raw.url) || m.slack.some(s => s.url === raw.url)) await vscode.env.openExternal(vscode.Uri.parse(raw.url, true));
+        else this.log?.warn(`openLink: ${raw.url} is not a link of session ${raw.sessionId} — ignored`);
+        return;
+      }
       if (raw.type === 'reveal') {
         if (m.cwd) await vscode.commands.executeCommand('revealInExplorer', folderUri(m.cwd, this.ctx));   // F8
         return;

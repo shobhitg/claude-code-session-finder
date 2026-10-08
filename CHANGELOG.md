@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
 **Headless runs wear a ghost.** A session started without a UI — `claude -p`,
 the Agent SDK, a daemon — shows a purple ghost where the state glyph goes, and
@@ -13,8 +13,29 @@ Session View; the right-panel button still resumes it in Claude Code. The new
 ghost button in the view's title bar hides them per workspace
 (`sessionFinder.hideHeadlessRuns` sets the default), a "N headless runs hidden ·
 show" link brings them back, and `is:headless` / `-is:headless` in the filter
-finds them or leaves them out. The search index is rebuilt once to learn which
-sessions are headless.
+finds them or leaves them out.
+
+**Each row says where the work is, and links to what it made.** Under the
+title, the branch now comes first — the one the session last worked on, not
+the `main` or detached `HEAD` it went back to after opening a PR (hover for
+where it is now). Before, the branch shown was whichever one the session had
+first visited last, which after a round trip was often stale. The worktree
+follows when its folder name says something the branch does not, and is struck
+through once the folder is gone. The project, the same on every row, is gone
+from the list: a session from another project still names it, as `aida` rather
+than the old `workspaces-aida`.
+
+Every PR the session linked is listed, newest first, and every Slack thread
+you pasted into it — buttons that open them; a reply and its thread are one.
+Each PR's icon is its state on GitHub (open, merged, closed or draft) and its
+tooltip carries its title and branch, asked through your GitHub CLI (`gh`) when
+it is signed in; `sessionFinder.prStates: false` turns that off, and with it
+the extension's only network request. The links sit beside the branch while
+there is room and take a line of their own when there is not; there the oldest
+PRs drop their numbers first, then fold into `+N`, which lists them all.
+
+The search index is rebuilt once, to learn which sessions are headless and
+to record worktrees, every PR and the Slack threads you pasted.
 
 ## 0.9.0
 

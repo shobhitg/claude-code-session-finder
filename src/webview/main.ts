@@ -7,7 +7,7 @@
 // the hover state under the pointer — the list flickered. Rows are keyed by session id and updated
 // in place; only a row that is new fades in; a row that changes position slides (FLIP); and while
 // the pointer is over the list the order is held until it leaves.
-import { viewModel, resultsModel, timeLabel, ageTag, type ViewModel, type ViewOpts, type SectionVM, type RowVM, type LinkVM, type AgeTag } from './model.js';
+import { viewModel, resultsModel, timeLabel, ageTag, type ViewModel, type ViewOpts, type SectionVM, type RowVM, type LinkVM, type AgeTag, type ChipVM, type WhereVM } from './model.js';
 import type { Snapshot, SearchRow } from '../core/rows.js';
 
 declare function acquireVsCodeApi(): {
@@ -152,12 +152,11 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   icon.className = `row__icon tip tip--left${r.ghost ? '' : ` ${r.iconClass}`}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
   setGhost(icon, r.ghost);
   text('.row__title', r.title); text('.row__time', r.age ? '' : r.time);   // the age tag stands in for the time
-  const meta = li.querySelector<HTMLElement>('.row__meta')!;
-  const metaText = r.meta + (r.missing ? '⚠ folder missing' : '');
-  if (meta.textContent !== metaText) {
-    meta.replaceChildren(r.meta);
-    if (r.missing) meta.append(h('span', { class: 'row__missing' }, '⚠ folder missing'));
-  }
+  const where = JSON.stringify([r.where, r.links, r.missing]);
+  if (drawn.get(li) !== where) { drawn.set(li, where); drawWhere(li, r); fitted.delete(li); fitSoon(); }
+  // the age tag and the meter share line 2 with the links: a change of their width is a refit
+  const beside = `${r.age?.label ?? ''}|${r.heat?.label ?? ''}`;
+  if (besideLinks.get(li) !== beside) { besideLinks.set(li, beside); fitted.delete(li); fitSoon(); }
   const heat = li.querySelector<HTMLElement>('.row__heat')!;
   if (r.heat) {
     li.dataset.heat = r.heat.tier;
@@ -173,6 +172,156 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   else if (r.snippet && snippet) { if (snippet.textContent !== r.snippet) snippet.textContent = r.snippet; }
   else snippet?.remove();
 }
+
+// ---------------------------------------------------------------- line 2 and the links
+
+/** What each row's line 2 and links were last drawn from — redrawn only when that changes, not every snapshot. */
+const drawn = new WeakMap<HTMLElement, string>();
+const besideLinks = new WeakMap<HTMLElement, string>();
+
+function whereItem(cls: string, icon: string, part: { label: string; tip: string }): HTMLElement {
+  return h('span', { class: `where__item ${cls} tip tip--left`, 'data-tip': part.tip },
+    h('i', { class: `codicon codicon-${icon}`, 'aria-hidden': 'true' }), h('span', { class: 'where__txt' }, part.label));
+}
+
+const SVG = 'http://www.w3.org/2000/svg';
+/**
+ * Slack's own mark, in its own colours: a link is recognised by its logo, and the theme's muted grey made it
+ * hard to see. A logo is an image, not a colour of this view, so its fills live here and not in the stylesheet
+ * (which has no colour of its own); high-contrast themes draw it in the text colour (style.css).
+ */
+const SLACK_MARK: Array<[string, string]> = [
+  ['#E01E5A', 'M27.2 80c0 7.3-5.9 13.2-13.2 13.2C6.7 93.2.8 87.3.8 80c0-7.3 5.9-13.2 13.2-13.2h13.2V80zm6.6 0c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V80z'],
+  ['#36C5F0', 'M47 27c-7.3 0-13.2-5.9-13.2-13.2C33.8 6.5 39.7.6 47 .6c7.3 0 13.2 5.9 13.2 13.2V27H47zm0 6.7c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H13.9C6.6 60.1.7 54.2.7 46.9c0-7.3 5.9-13.2 13.2-13.2H47z'],
+  ['#2EB67D', 'M99.9 46.9c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H99.9V46.9zm-6.6 0c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V13.8C66.9 6.5 72.8.6 80.1.6c7.3 0 13.2 5.9 13.2 13.2v33.1z'],
+  ['#ECB22E', 'M80.1 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8h13.2zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33.1c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H80.1z'],
+];
+function slackMark(): SVGSVGElement {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('class', 'slack-mark'); svg.setAttribute('viewBox', '0 0 127 127'); svg.setAttribute('aria-hidden', 'true');
+  for (const [fill, d] of SLACK_MARK) {
+    const path = document.createElementNS(SVG, 'path');
+    path.setAttribute('fill', fill); path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+const chipIcon = (c: ChipVM): Element => c.icon === 'slack' ? slackMark() : h('i', { class: `codicon codicon-${c.icon}`, 'aria-hidden': 'true' });
+
+function openLink(sessionId: string, url: string): void { post({ type: 'openLink', sessionId, url }); }
+
+function chipEl(sessionId: string, c: ChipVM): HTMLButtonElement {
+  const b = h('button', { class: `link link--${c.kind} tip tip--left`, 'data-tip': c.tip, 'aria-label': c.aria, ...(c.state ? { 'data-state': c.state } : {}) },
+    chipIcon(c), ...(c.label ? [h('span', { class: 'link__num' }, c.label)] : []));
+  b.addEventListener('click', e => { e.stopPropagation(); openLink(sessionId, c.url); });
+  return b;
+}
+
+/** Line 2 (project, branch, worktree) and the links, drawn from the model; fit() then decides which line the links take. */
+function drawWhere(li: HTMLElement, r: RowVM): void {
+  const w: WhereVM = r.where;
+  li.querySelector('.where')!.replaceChildren(
+    ...(w.project ? [whereItem('where__project', 'repo', w.project)] : []),
+    ...(w.branch ? [whereItem(`where__branch${w.branch.quiet ? ' where__branch--quiet' : ''}`, 'git-branch', w.branch)] : []),
+    ...(w.worktree ? [whereItem(`where__worktree${w.worktree.gone ? ' where__worktree--gone' : ''}`, 'worktree', w.worktree)] : []),
+    ...(r.missing ? [h('span', { class: 'row__missing' }, '⚠ folder missing')] : []));
+  const links = li.querySelector<HTMLElement>('.links')!;
+  const prs = r.links.filter(c => c.kind === 'pr'), slack = r.links.filter(c => c.kind === 'slack');
+  const more = h('button', { class: 'link link--more tip tip--left', 'data-tip': 'Every PR and Slack thread of this session', hidden: '' }, '');
+  more.addEventListener('click', e => { e.stopPropagation(); openList(more, r.sessionId, r.links); });
+  links.replaceChildren(...prs.map(c => chipEl(r.sessionId, c)), more,
+    ...(prs.length && slack.length ? [h('span', { class: 'links__sep', 'aria-hidden': 'true' })] : []),
+    ...slack.map(c => chipEl(r.sessionId, c)));
+  links.hidden = r.links.length === 0;
+}
+
+/**
+ * Where the links go, and how much of each PR shows (the 0.10.0 row): beside the branch on line 2 while the
+ * branch and worktree still show whole; else on a line of their own. There, when the numbers do not fit, the
+ * oldest PRs drop their numbers first; when the icons do not fit either — or there are more than MAX_PRS —
+ * the oldest fold into +N, which lists them all. The newest PR keeps its number longest; Slack threads never fold.
+ */
+const MAX_PRS = 8;
+const fitsIn = (el: HTMLElement, box: HTMLElement): boolean => el.offsetWidth <= box.clientWidth + 0.5;
+const cut = (t: HTMLElement): boolean => t.scrollWidth > t.clientWidth + 1;
+function fit(li: HTMLElement): void {
+  const line2 = li.querySelector<HTMLElement>('.row__line--where')!, line3 = li.querySelector<HTMLElement>('.row__line--links')!;
+  const links = li.querySelector<HTMLElement>('.links')!, more = links.querySelector<HTMLElement>('.link--more');
+  for (const it of Array.from(line2.querySelectorAll('.where__item--icon'))) it.classList.remove('where__item--icon');
+  if (!links.hidden && more) {
+    for (const c of Array.from(links.querySelectorAll<HTMLElement>('.link'))) { c.hidden = false; c.classList.remove('link--bare'); }
+    more.hidden = true;
+    line2.querySelector('.row__fill')!.before(links); line3.hidden = true;
+    if (Array.from(line2.querySelectorAll<HTMLElement>('.where__txt')).some(cut)) {
+      line3.hidden = false; line3.append(links);
+      const prs = Array.from(links.querySelectorAll<HTMLElement>('.link--pr'));
+      let folded = 0;
+      const fold = (i: number): void => { prs[i]!.hidden = true; folded++; more.hidden = false; more.textContent = `+${folded}`; };
+      for (let i = prs.length - 1; i >= 1 && !fitsIn(links, line3); i--) prs[i]!.classList.add('link--bare');
+      for (let i = prs.length - 1; i >= MAX_PRS; i--) fold(i);
+      for (let i = Math.min(prs.length, MAX_PRS) - 1; i >= 1 && !fitsIn(links, line3); i--) fold(i);
+      if (prs[0] && !fitsIn(links, line3)) prs[0].classList.add('link--bare');
+    }
+  } else line3.hidden = true;
+  // A worktree or project squeezed past a readable name keeps only its icon; hovering still names it.
+  for (const it of Array.from(line2.querySelectorAll<HTMLElement>('.where__worktree, .where__project'))) {
+    const t = it.querySelector<HTMLElement>('.where__txt')!;
+    if (cut(t) && t.clientWidth < 56) it.classList.add('where__item--icon');
+  }
+}
+
+/** The list width each row was last fitted at; a row is refitted when the width changes or its links do. */
+const fitted = new WeakMap<HTMLElement, number>();
+let fitQueued = false;
+function fitSoon(): void {
+  if (fitQueued) return;
+  fitQueued = true;
+  requestAnimationFrame(() => {
+    fitQueued = false;
+    const width = sectionsEl.clientWidth;
+    for (const li of Array.from(sectionsEl.querySelectorAll<HTMLElement>('.row[data-id]'))) {
+      if (fitted.get(li) === width || !li.offsetParent) continue;   // done, or in a collapsed section
+      fit(li); fitted.set(li, width);
+    }
+  });
+}
+new ResizeObserver(fitSoon).observe(sectionsEl);
+void document.fonts?.ready.then(() => { for (const li of Array.from(sectionsEl.querySelectorAll<HTMLElement>('.row[data-id]'))) fitted.delete(li); fitSoon(); });
+
+// ---------------------------------------------------------------- the list behind +N
+
+const list = h('div', { class: 'links-list', role: 'menu', hidden: '' });
+document.body.append(list);
+let listAnchor: HTMLElement | null = null;
+function closeList(): void { if (!list.hidden) { list.hidden = true; list.replaceChildren(); } }
+function openList(anchor: HTMLElement, sessionId: string, chips: ChipVM[]): void {
+  listAnchor = anchor;
+  list.replaceChildren(...chips.map(c => {
+    const item = h('button', { class: 'links-list__item', role: 'menuitem', title: c.tip, ...(c.state ? { 'data-state': c.state } : {}) },
+      chipIcon(c), h('span', { class: 'links-list__main' }, c.kind === 'pr' ? c.label : 'Slack thread'),
+      h('span', { class: 'links-list__sub' }, c.detail));
+    item.addEventListener('click', e => { e.stopPropagation(); closeList(); openLink(sessionId, c.url); });
+    return item;
+  }));
+  list.hidden = false;
+  const a = anchor.getBoundingClientRect();
+  list.style.left = `${Math.max(4, Math.min(a.left, window.innerWidth - list.offsetWidth - 4))}px`;
+  const below = a.bottom + 2;
+  list.style.top = `${below + list.offsetHeight > window.innerHeight - 4 ? Math.max(4, a.top - list.offsetHeight - 2) : below}px`;
+  list.querySelector<HTMLElement>('button')?.focus();
+}
+document.addEventListener('click', e => { if (!list.contains(e.target as Node)) closeList(); });
+// The list sits outside the rows, so its keys never reach the list shortcuts: Escape goes back to +N, the arrows walk it.
+list.addEventListener('keydown', e => {
+  const items = Array.from(list.querySelectorAll<HTMLElement>('button'));
+  const i = items.indexOf(document.activeElement as HTMLElement);
+  if (e.key === 'Escape') { closeList(); listAnchor?.focus(); }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus(); }
+});
+window.addEventListener('blur', closeList);
+sectionsEl.addEventListener('scroll', closeList, { passive: true });
+window.addEventListener('scroll', closeList, { passive: true });
 
 /** The age tag: text when the session is past the window, empty (and hidden by CSS) otherwise. */
 function setAge(el: HTMLElement, age: AgeTag | undefined): void {
@@ -205,9 +354,10 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
     actionButton('file-code', 'Open the raw transcript file (T)', () => post({ type: 'transcript', sessionId: id })),
     close,
   );
-  // Two lines that size on their own. Line 1: title, then the time, then the actions in a spot that is
-  // theirs whether or not they show — the × in the top-right corner. Line 2: project · branch, then the
-  // age tag (which stands in for the time on an old row), then the cost meter. Nothing moves on hover.
+  // Lines that size on their own. Line 1: title, then the time, then the actions in a spot that is
+  // theirs whether or not they show — the × in the top-right corner. Line 2: where the work is (branch,
+  // worktree), the links while they fit beside it (fit()), then the age tag (which stands in for the time
+  // on an old row) and the cost meter. Line 3, when needed: the links. Nothing moves on hover.
   li.append(
     h('i', { class: 'row__icon', role: 'img' }),
     h('span', { class: 'row__lines' },
@@ -215,10 +365,13 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
         h('span', { class: 'row__title' }),
         h('span', { class: 'row__end' }, h('span', { class: 'row__time' })),
         actions),
-      h('span', { class: 'row__line' },
-        h('span', { class: 'row__meta' }),
+      h('span', { class: 'row__line row__line--where' },
+        h('span', { class: 'where' }),
+        h('span', { class: 'links', hidden: '' }),
+        h('span', { class: 'row__fill' }),
         h('span', { class: 'row__age tip' }),
-        h('span', { class: 'row__heat tip', role: 'img' }))),
+        h('span', { class: 'row__heat tip', role: 'img' })),
+      h('span', { class: 'row__line row__line--links', hidden: '' })),
   );
   li.addEventListener('click', () => post({ type: 'open', sessionId: id, where: 'tab' }));
   updateRow(li, r);
@@ -346,13 +499,14 @@ function refreshTimes(): void {
     const label = age ? '' : timeLabel(r, now);
     if (el && el.textContent !== label) el.textContent = label;
     const ageEl = li.querySelector<HTMLElement>('.row__age');
-    if (ageEl) setAge(ageEl, age);
+    if (ageEl) { const was = ageEl.textContent; setAge(ageEl, age); if (ageEl.textContent !== was) { fitted.delete(li); fitSoon(); } }
   }
 }
 
 /** Roving focus: ↑/↓ move, Enter opens in a tab, Shift+Enter in the right panel, T transcript, V view, Delete closes, / filter. */
 root.addEventListener('keydown', e => {
   if (e.target === filterInput || e.metaKey || e.ctrlKey || e.altKey) return;   // typing, or a chord for VS Code (Cmd+V is not V)
+  if (e.target instanceof HTMLButtonElement && (e.key === 'Enter' || e.key === ' ')) return;   // a focused link or action does its own
   const rows = Array.from(sectionsEl.querySelectorAll<HTMLElement>('.row'));   // not [...], which needs lib dom.iterable
   const current = document.activeElement as HTMLElement | null;
   const i = current ? rows.indexOf(current) : -1;

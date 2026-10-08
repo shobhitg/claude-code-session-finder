@@ -1,8 +1,15 @@
-import { stateIcon, stateLabel, type Snapshot, type LiveRow, type HistoryRow, type SearchRow } from '../core/rows.js';
+import { stateIcon, stateLabel, type Snapshot, type LiveRow, type HistoryRow, type SearchRow, type RowWhere, type PrState } from '../core/rows.js';
+import { isDefaultBranch, sameAsBranch } from '../core/links.js';
 
 export interface RowVM {
-  kind: 'session'; sessionId: string; title: string; meta: string; time: string; iconClass: string;
-  state: 'running' | 'attention' | 'history'; reason?: string; missing: boolean;
+  kind: 'session'; sessionId: string; title: string; time: string; iconClass: string;
+  state: 'running' | 'attention' | 'history'; reason?: string;
+  /** its folder is gone, and no worktree says so */
+  missing: boolean;
+  /** line 2: where the work is */
+  where: WhereVM;
+  /** PRs newest first, then Slack threads — buttons that open them */
+  links: ChipVM[];
   /** the best-matching line, on a filter result */
   snippet?: string;
   /** the session behind the active editor tab */
@@ -20,6 +27,25 @@ export interface RowVM {
 }
 export type GhostStatus = 'running' | 'done' | 'failed' | 'waiting' | 'stalled' | 'closed';
 export interface AgeTag { label: string; title: string; tier: 'old' | 'stale' }
+export interface WhereVM {
+  /** only a session from another project names it */
+  project?: { label: string; tip: string };
+  /** quiet: main or a detached HEAD, where no work was done */
+  branch?: { label: string; tip: string; quiet?: true };
+  /** only when its name says something the branch doesn't, or its folder is gone */
+  worktree?: { label: string; tip: string; gone?: true };
+}
+export interface ChipVM {
+  kind: 'pr' | 'slack'; url: string;
+  /** `#21264`; empty for Slack, which is an icon only */
+  label: string;
+  /** a codicon name, or `slack` for the Slack mark main.ts draws */
+  icon: string;
+  state?: PrState;
+  tip: string; aria: string;
+  /** its line in the list behind +N: a PR's title (else its branch), what you wrote with a Slack link (else when) */
+  detail: string;
+}
 export type HeatTier = 'low' | 'mid' | 'warm' | 'high' | 'full';
 export interface Heat { tokens: number; budget: number; pct: number; tier: HeatTier; label: string; title: string }
 export interface LinkVM { kind: 'link'; title: string; meta: string; iconClass: string; action: 'search' | 'scope' | 'headless'; ghost?: true }
@@ -91,8 +117,55 @@ export function historyLabel(row: HistoryRow): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()} · ${row.msgCount} msgs`;
 }
 
-export function metaLabel(r: { project: string; branch: string | null; pr: number | null }): string {
-  return [r.project, r.branch ?? '', r.pr ? `PR #${r.pr}` : ''].filter(Boolean).join(' · ');
+/** "Oct 8, 01:00": when a link was made, in local time. */
+export function fmtWhen(ts: number): string {
+  const d = new Date(ts);
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+const onBranch = (b: string): string => b === 'HEAD' ? 'a detached HEAD' : b;
+
+/** Line 2: the branch first — it says most — then the worktree when it adds something, and the project only when it is not this window's. */
+export function whereVM(r: RowWhere & { cwdExists: boolean }): WhereVM {
+  const vm: WhereVM = {};
+  if (r.elsewhere && r.project) vm.project = { label: r.project, tip: `From ${r.project}, not this window's workspace` };
+  const b = r.branch;
+  if (b) {
+    vm.branch = isDefaultBranch(b)
+      ? { label: b === 'HEAD' ? 'detached HEAD' : b, tip: `On ${onBranch(b)} the whole session`, quiet: true }
+      : { label: b, tip: `Branch ${b}${r.branchNow && r.branchNow !== b ? `\nNow on ${onBranch(r.branchNow)}` : ''}` };
+  }
+  const w = r.worktree;
+  if (w && !r.cwdExists) vm.worktree = { label: w.name, tip: `Worktree ${w.path} — its folder is gone, so a click opens the transcript instead`, gone: true };
+  else if (w && !sameAsBranch(w.name, b)) vm.worktree = { label: w.name, tip: `Worktree ${w.path}` };
+  return vm;
+}
+
+const PR_ICON: Record<PrState, string> = { open: 'git-pull-request', merged: 'git-merge', closed: 'git-pull-request-closed', draft: 'git-pull-request-draft' };
+
+/** The links: each PR (newest first), then each Slack thread you pasted. */
+export function linksVM(r: Pick<RowWhere, 'prs' | 'slack'>): ChipVM[] {
+  const prs = r.prs.map((p): ChipVM => {
+    const tip = [`PR #${p.n}${p.state ? ` · ${p.state}` : ''}`, p.title ?? '',
+                 [p.repo ?? '', p.branch ? `from ${p.branch}` : ''].filter(Boolean).join(' · '),
+                 `Linked ${fmtWhen(p.ts)} — click to open on GitHub`].filter(Boolean).join('\n');
+    return { kind: 'pr', url: p.url, label: `#${p.n}`, icon: p.state ? PR_ICON[p.state] : 'git-pull-request', ...(p.state ? { state: p.state } : {}),
+             tip, aria: `PR #${p.n}${p.state ? `, ${p.state}` : ''}${p.title ? `: ${p.title}` : ''}`,
+             detail: p.title ?? (p.branch ? `from ${p.branch}` : p.repo ?? '') };
+  });
+  const slack = r.slack.map((s): ChipVM => ({
+    kind: 'slack', url: s.url, label: '', icon: 'slack',
+    tip: [`Slack thread you pasted ${fmtWhen(s.ts)}`, s.said ? `“${s.said}”` : '', 'Click to open in Slack'].filter(Boolean).join('\n'),
+    aria: `Slack thread you pasted ${fmtWhen(s.ts)}`,
+    detail: s.said ? `“${s.said}”` : `pasted ${fmtWhen(s.ts)}`,
+  }));
+  return [...prs, ...slack];
+}
+
+/** Line 2, the links, and whether the folder is gone with nothing else to say so. */
+function whereAndLinks(r: RowWhere & { cwdExists: boolean }): Pick<RowVM, 'where' | 'links' | 'missing'> {
+  const where = whereVM(r);
+  return { where, links: linksVM(r), missing: !r.cwdExists && !where.worktree?.gone };
 }
 
 export const fmtTokens = (n: number): string => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
@@ -144,9 +217,9 @@ const ghostLabel = (g: GhostStatus): string => `Headless run (claude -p) — ${G
 
 function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
   const vm: RowVM = {
-    kind: 'session', sessionId: r.sessionId, title: r.title, meta: metaLabel(r), time: timeLabel(r, now),
+    kind: 'session', sessionId: r.sessionId, title: r.title, time: timeLabel(r, now), ...whereAndLinks(r),
     iconClass: iconClass(r.state === 'running' ? runningIcon(opts.reducedMotion) : stateIcon(r)), state: r.state,
-    missing: !r.cwdExists, selected: r.sessionId === opts.activeId, stateLabel: stateLabel(r),
+    selected: r.sessionId === opts.activeId, stateLabel: stateLabel(r),
   };
   if (r.reason) vm.reason = r.reason;
   if (r.contextTokens) vm.heat = heatOf(r.contextTokens, opts.contextBudget);
@@ -159,8 +232,8 @@ function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
 
 function historyRow(r: HistoryRow, opts: ViewOpts): RowVM {
   const vm: RowVM = {
-    kind: 'session', sessionId: r.sessionId, title: r.title, meta: metaLabel(r), time: historyLabel(r),
-    iconClass: iconClass('history'), state: 'history', missing: !r.cwdExists, selected: r.sessionId === opts.activeId,
+    kind: 'session', sessionId: r.sessionId, title: r.title, time: historyLabel(r), ...whereAndLinks(r),
+    iconClass: iconClass('history'), state: 'history', selected: r.sessionId === opts.activeId,
     stateLabel: 'Closed · click to resume',
   };
   if (r.headless) { vm.ghost = 'closed'; vm.stateLabel = ghostLabel('closed'); }

@@ -38,6 +38,9 @@ describe('webview stylesheets (spec §10, D7)', () => {
     expect(style).not.toMatch(/\.row\[data-reason="[a-z-]+"\]::before/);
     expect(style).not.toMatch(/\.row\[data-reason="[a-z-]+"\] \.row__title/);
   });
+  it('the Slack mark falls back to the text colour in high-contrast themes', () => {
+    expect(sheets[1]![1]).toMatch(/body\.vscode-high-contrast \.slack-mark path, body\.vscode-high-contrast-light \.slack-mark path \{ fill: currentColor; \}/);
+  });
   it('ACTIVE keeps room for ten rows whether or not they are there; collapsed, it takes none', () => {
     const style = sheets[1]![1];
     expect(style).toMatch(/\.section\[data-id="active"\] \.section__body \{ min-height: calc\(10 \* var\(--row\)\); \}/);
@@ -46,7 +49,8 @@ describe('webview stylesheets (spec §10, D7)', () => {
   it('a headless run (D15) wears its own colour, purple, which no state uses — and a dot for every status the model emits', () => {
     const style = sheets[1]![1];
     expect(tokens).toMatch(/--st-headless:\s*var\(--vscode-charts-purple\)/);
-    expect(tokens.match(/--st-(?!headless)[a-z-]+:\s*var\(--vscode-charts-purple\)/)).toBeNull();
+    // no session STATE is purple; a merged PR is (--st-pr-merged), as on GitHub — on a link's icon, never in the icon slot
+    expect(tokens.match(/--st-(?!headless|pr-)[a-z-]+:\s*var\(--vscode-charts-purple\)/)).toBeNull();
     for (const g of ['running', 'done', 'failed', 'waiting', 'stalled', 'closed']) expect(style, g).toContain(`.ghost__dot[data-ghost="${g}"]`);
     expect(style).toMatch(/\.ghost__dot\[data-ghost="running"\] \{[^}]*animation: ghost-pulse/);
   });
@@ -58,7 +62,7 @@ describe('webview stylesheets (spec §10, D7)', () => {
   });
   it('styles every state the models can emit', () => {
     const style = sheets[1]![1], session = sheets[2]![1];
-    for (const sel of ['[data-state="running"]', '[data-reason="tool-or-permission"]', '[data-reason="your-turn"]', '[data-reason="stalled"]', '[data-reason="question"]', '[data-reason="interrupted"]', '[data-state="history"]', '[aria-selected="true"]', '[data-ringing="true"]', '[data-heat="low"]', '[data-heat="mid"]', '[data-heat="warm"]', '[data-heat="high"]', '[data-heat="full"]', '.tip']) expect(style, sel).toContain(sel);
+    for (const sel of ['[data-state="running"]', '[data-reason="tool-or-permission"]', '[data-reason="your-turn"]', '[data-reason="stalled"]', '[data-reason="question"]', '[data-reason="interrupted"]', '[data-state="history"]', '[aria-selected="true"]', '[data-ringing="true"]', '[data-heat="low"]', '[data-heat="mid"]', '[data-heat="warm"]', '[data-heat="high"]', '[data-heat="full"]', '.tip', '[data-state="open"]', '[data-state="merged"]', '[data-state="closed"]', '[data-state="draft"]', '.where__branch--quiet', '.where__worktree--gone', '.where__item--icon', '.link--bare', '.link--more', '.links-list']) expect(style, sel).toContain(sel);
     for (const sel of ['.bar--running', '.bar--completed', '.bar--failed', '.bar--stopped', '.bar--launched', '.tool--error', '.turn--notification', '.turn--command', '.tree__tag']) expect(session, sel).toContain(sel);
   });
 });

@@ -52,9 +52,17 @@ function mergeDuplicate(cur: SessionMeta, other: PersistedMeta): SessionMeta {
     lastTs: Math.max(cur.lastTs, other.lastTs),
     lastActTs: Math.max(cur.lastActTs, other.lastActTs),
     msgCount: cur.msgCount + other.msgCount,
-    branches: [...new Set([...base.branches, ...lost.branches])],
-    prLinks: [...new Set([...base.prLinks, ...lost.prLinks])],
+    launchCwd: base.firstTs <= lost.firstTs ? base.launchCwd ?? lost.launchCwd : lost.launchCwd ?? base.launchCwd,
+    prs: earliestEach([...base.prs, ...lost.prs], p => `${p.repo ?? ''}#${p.n}`),
+    slack: earliestEach([...base.slack, ...lost.slack], s => s.thread),
   };
+}
+
+/** One of each key — the one linked first — in the order they were first linked. */
+function earliestEach<T extends { ts: number }>(items: T[], key: (t: T) => string): T[] {
+  const first = new Map<string, T>();
+  for (const t of items) { const k = key(t); const had = first.get(k); if (!had || t.ts < had.ts) first.set(k, t); }
+  return [...first.values()].sort((a, b) => a.ts - b.ts);
 }
 
 /**

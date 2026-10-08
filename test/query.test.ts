@@ -7,7 +7,7 @@ const DAY = 86_400_000;
 
 const meta = (id: string, over: Partial<SessionMeta> = {}): SessionMeta => ({
   sessionId: id, file: `/${id}.jsonl`, extraFiles: [], projectDir: '-w-a', cwd: '/w/a', cwdExists: true,
-  title: null, branches: [], prLinks: [], firstTs: NOW - DAY, lastTs: NOW - DAY, lastActTs: NOW - DAY, headless: false,
+  title: null, launchCwd: null, branch: null, branchNow: null, worktree: null, prs: [], slack: [], firstTs: NOW - DAY, lastTs: NOW - DAY, lastActTs: NOW - DAY, headless: false,
   msgCount: 1, mtimeMs: 1, size: 1, ...over,
 });
 
@@ -146,7 +146,7 @@ describe('withWindow', () => {
 describe('search', () => {
   const index: SearchIndex = {
     v: INDEX_VERSION, builtAt: NOW,
-    sessions: [meta('s1'), meta('s2'), meta('s3', { prLinks: [1234] }),
+    sessions: [meta('s1'), meta('s2'), meta('s3', { prs: [{ n: 1234, repo: 'acme/app', url: null, ts: 0, branch: null }] }),
                meta('s4', { title: 'Paste image handling' })],
     prose: [
       { s: 0, r: 'u', t: NOW - DAY, x: 'the paste image bug is annoying' },
@@ -171,7 +171,7 @@ describe('search', () => {
     const DAY2 = 86_400_000;
     const old: SearchIndex = {
       v: INDEX_VERSION, builtAt: NOW,
-      sessions: [meta('old', { prLinks: [18942], lastTs: NOW - 90 * DAY2, firstTs: NOW - 90 * DAY2 })],
+      sessions: [meta('old', { prs: [{ n: 18942, repo: 'acme/app', url: null, ts: 0, branch: null }], lastTs: NOW - 90 * DAY2, firstTs: NOW - 90 * DAY2 })],
       prose: [],
     };
     // 90 days old, default window 7d: a term search must not find it, but pr: must.

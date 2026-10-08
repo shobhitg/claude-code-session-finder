@@ -76,7 +76,7 @@ async function fallbackMeta(sessionId: string): Promise<SessionMeta | undefined>
   const main = files.filter(f => f.kind === 'session' && f.sessionId === sessionId).sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
   if (!main) return undefined;
   return { sessionId, file: main.path, extraFiles: [], projectDir: main.projectDir, cwd: null, cwdExists: false, title: null,
-           branches: [], prLinks: [], firstTs: 0, lastTs: 0, lastActTs: 0, headless: false, msgCount: 0, mtimeMs: main.mtimeMs, size: main.size };
+           launchCwd: null, branch: null, branchNow: null, worktree: null, prs: [], slack: [], firstTs: 0, lastTs: 0, lastActTs: 0, headless: false, msgCount: 0, mtimeMs: main.mtimeMs, size: main.size };
 }
 
 const agentIdOf = (p: string): string => basename(p, '.jsonl').replace(/^agent-/, '');

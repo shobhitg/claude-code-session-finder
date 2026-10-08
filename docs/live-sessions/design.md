@@ -203,6 +203,7 @@ saving. Not doing it.
 | D11 | **HISTORY is labelled "Closed", and an ACTIVE row can be closed** (§9.1): a marker keeps the session out of liveness until its transcript is written again after the close, and its Claude Code tab is closed with it. | Resuming writes the transcript, so one click under HISTORY promoted a finished session to ACTIVE with no way back. Closing the tab is what "done with this" means, and Claude Code's own vocabulary is "closed session"; "Archive" would imply deliberate filing for rows that merely aged out. |
 | D14 | **Both lists are ordered by when you last touched a session, newest first** (`core/acts.ts`, `touchedMs`): a prompt (typed, or queued while Claude works), a slash command, `Esc`, an answer to `AskUserQuestion` or `ExitPlanMode`. Claude's replies and tool calls, task notifications, other sessions' messages, compaction and a shutdown are not you; a record that says who wrote it (`origin.kind`, else `turnOrigin`) is taken at its word, so a scripted (`sdk`) prompt is not you either. A session never acted on sorts by when it began. CLOSED shows the day of that same moment. ACTIVE keeps room for ten rows. | Until 0.9.0 ACTIVE was ordered by urgency (questions … running … stalled, then tab-parked), and the webview held rows still within a group (`stableOrder`). A session you had just started was *running*, so it was listed under every finished one — and it jumped when Claude finished, a move nobody asked for. Since the bell (D13) marks what needs you, position no longer has to; ordering by your own acts is the one rule under which a row moves only when you move it. Approving a permission prompt leaves no record of its own and does not count. The reserved height keeps CLOSED from sliding as sessions start and close. |
 | D15 | **A headless session wears a ghost, opens in the Session View, and can be hidden** (`SessionMeta.headless`, `core/extract.ts`). Headless is Claude Code's own test for the sessions it keeps out of its history: the transcript's first `entrypoint` is `sdk-cli`/`sdk-ts`/`sdk-py` (`claude -p`, the Agent SDK), or its first `sessionKind` is `daemon`/`daemon-worker`; a `bg` session is not. The ghost — drawn for this view, purple (`--st-headless`, which no state uses) — takes the row's icon slot, and a 7 px dot on its corner carries the state: running (blue, pulsing; a quiet tool call counts, since `-p` cannot stop for a permission prompt), done (green), failed (red: interrupted), waiting (yellow: a question), stalled (amber); a closed run shows a faded ghost and no dot. A plain open — row click, Enter, the picker — reads it in the Session View (`readsInView`); the right-panel button and the palette commands still resume it in Claude Code. The view's ghost toggle (per workspace, over `sessionFinder.hideHeadlessRuns`) drops headless rows from both lists, the status bar count and the inline filter, and a "N headless runs hidden · show" link says so; `is:headless` / `-is:headless` in the filter names them either way. A headless run's quiet tool call never rings (D13). | aida's `claude -p` promo-video runs, several a day, opened blank in Claude Code's tab: Claude Code drops SDK sessions from its own list, and handing it one by id shows next to nothing — while the Session View, reading the transcript from disk, shows all of it. A word tag ("headless") cost a row's worth of title; a glyph in the slot the state already uses costs nothing, so the state moved onto the dot. |
+| D16 | **Line 2 says where the work is; the links are buttons** (0.10.0, `core/links.ts`, `whereVM`/`linksVM`, `fit()` in `webview/main.ts`). The branch first — the last one recorded that is not `main`, `master` or a detached `HEAD` (`SessionMeta.branch`; `branchNow` is where it is now, in the tooltip) — then the worktree (`worktree-state` records, else the cwd under `.claude/worktrees/` or `.worktrees/`) only when its folder name differs from the branch or the folder is gone (struck through), and the project only for a session from outside this window's workspace (`elsewhere`). Then every PR linked (`pr-link`), newest first, and every Slack thread you pasted (your own prompts only, one per thread), as buttons that open them through the host, which opens only a link the session recorded. The links ride on line 2 while the branch and worktree still show whole, else take line 3; there the oldest PRs drop their numbers, then fold into `+N` (also past eight), the newest keeping its number longest; Slack threads never fold. A PR's icon is its state on GitHub, asked through `gh` (`src/pr-states.ts`, cached machine-wide; merged and closed are final, open re-asked after ten minutes; `sessionFinder.prStates` off makes no request). Slack is its own four-colour mark — monochrome in high contrast. | The project was the same on every row of a workspace's list, and the branch shown was whichever was *first seen* last (a `Set`), so a session that opened a PR and returned to `main` showed the PR branch by accident, and one that went back and forth showed a stale one. What a row is about is its branch, its worktree, the PRs it made or started from and the Slack threads behind it — on the author's machine 41% of sessions link a PR and 30% a Slack thread, and one opened 22 PRs. About 7% of lines recorded inside a worktree carry the main checkout's branch, hence "last *work* branch". Slack links in tool output are mostly incidental (Linear issues, shell output), hence your prompts only. The muted Slack glyph was hard to see; a link is recognised by its logo. |
 
 ## 5. Architecture
 
@@ -216,7 +217,9 @@ src/
     state.ts        NEW     classifyTail · resolveState · pickMainFile · effectiveMtime  (pure, node-free)
     tail-io.ts      NEW     readTail · readVerdict (node:fs) — split out so state.ts can be bundled into the webviews
     live.ts         NEW     LivenessTracker: sweep/tick over injected discover/stat/readVerdict/clock; emits diffs
-    rows.ts         NEW     buildSnapshot(index, liveness, opts) → Snapshot; stateIcon(); projectLabel()  (pure)
+    rows.ts         NEW     buildSnapshot(index, liveness, opts) → Snapshot; stateIcon(); whereOf()  (pure)
+    links.ts        0.10.0  branch, worktree, project and pasted Slack threads from a transcript  (D16, pure)
+    pr-states.ts    0.10.0  which PRs to ask GitHub about, the GraphQL query, reading its answer   (D16, pure)
     open-args.ts    NEW     openCommands(sessionId, where) → the exact command calls (L10)  (pure planner, like resolve.ts)
   surfaces/
     quickpick.ts    (v0.1)  + state icon prefix on rows                                     Stage 1
@@ -227,6 +230,7 @@ src/
     main.ts         NEW     DOM glue: render view-model, keyboard nav, post actions (`/// <reference lib="dom" />`)  Stage 2
     style.css       NEW     tokens + components (§10)                                        Stage 2
   live-host.ts      NEW     vscode glue: settings → tracker; focus pause; index cadence; emits Snapshot   Stage 1
+  pr-states.ts      0.10.0  asks GitHub through `gh` (core/pr-states.ts), caches in globalState      (D16)
   open.ts           (v0.1)  executePlan(plan, ctx, where) runs openCommands(); baton carries `where` (L10)
   baton.ts          (v0.1)  Baton gains optional `where`                                      Stage 2
   extension.ts      (v0.1)  wires LiveHost, status bar, view, commands
@@ -290,15 +294,23 @@ export interface Liveness {
 
 ```ts
 // core/rows.ts — what surfaces render; plain data, serialisable to the webview
-export interface LiveRow {
-  sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
+/** line 2 and the links (D16) — what every row carries about where the work is */
+export interface RowWhere {
+  project: string; elsewhere?: true;           // named in the list only for a session from another project
+  branch: string | null; branchNow: string | null;   // last branch worked on · where it is now
+  worktree?: Worktree;
+  prs: RowPr[];                                 // newest first; state/title/head from GitHub when known
+  slack: RowSlack[];                            // newest first; the threads you pasted
+}
+export interface LiveRow extends RowWhere {
+  sessionId: string; title: string;
   cwdExists: boolean;
   state: 'running' | 'attention'; reason?: AttentionReason;
   lastWriteMs: number;              // the view renders "quiet 2m" from this and its own clock
   ringing?: true;                   // the bell (D13): the ball is in your court and you have not seen it
 }
-export interface HistoryRow {
-  sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
+export interface HistoryRow extends RowWhere {
+  sessionId: string; title: string;
   cwdExists: boolean; lastTs: number; msgCount: number;
   touchedTs: number;                // when you last touched it (D14): CLOSED's order, and the date it shows
 }
@@ -403,11 +415,12 @@ Layout:
 ┌ SESSIONS ─────────────────────────────────────── ↻  🔍 ┐   view/title: refresh, search (→ Quick Pick)
 │ ACTIVE                                            4      │   section header · count badge · chevron
 │ ▸ ◔ Ledger GUI for LLM usage                   quiet 3 m │   tool-or-permission: accent bar, semibold
-│     aida · shobhit/ledger · PR #20231                    │
+│     ⎇ shobhit/ledger  ⇄#20231  ◆               ▬ 420k   │   line 2: branch, then the links while they fit (D16)
 │ ▸ ↩ Deal forecast feature                      3 m ago   │   your-turn: normal weight
-│     aida · main                                          │
+│     ⎇ shobhit/forecast  ⧉ board-stats          ▬ 168k   │   a worktree named unlike its branch
 │ ▸ ⟳ Slack thread discussion                    just now  │   running: spinner (codicon-loading spin)
-│     aida · shobhit/slack-thread                          │
+│     ⎇ shobhit/all-websites-nudge               ▬ 612k   │
+│     ⇄#21264 ⇄#21262 ⇄ ⇄ ⇄ +2 │ ◆                        │   line 3 when they do not: oldest bare, then +N; ◆ Slack
 │ ▸ ⚠ Ant and Ian reporting                      2.1 h     │   stalled: dimmed
 │ CLOSED                                            163    │   HISTORY in the data model (D11)
 │   ◷ Sequencing triage briefs        Sep 15 · 31 msgs     │
@@ -553,8 +566,9 @@ IDE's spinner. Under reduced motion it becomes a static `codicon-circle-large-fi
 `--s-header-fg`, a chevron codicon, and a count in a `--s-badge-*` pill.
 
 **Row anatomy:** icon column 16 px + `--sp-2`; line 1 = title (ellipsis) + right-aligned time in
-`--mono` with `font-variant-numeric: tabular-nums` (empty on an old row); line 2 = `project · branch ·
-PR #n` in `--s-muted` at `--size-meta`, then the age tag, then the cost meter. Line 1 ends with the action cluster's own spot,
+`--mono` with `font-variant-numeric: tabular-nums` (empty on an old row); line 2 = where the work is (D16: branch, worktree, a foreign project) at
+`--size-meta`, the branch in `--s-fg` and the rest in `--s-muted`, then the links while they fit, then the age tag,
+then the cost meter; line 3 = the links when they do not fit beside the branch. The state icon stays beside lines 1–2. Line 1 ends with the action cluster's own spot,
 the × in the row's top-right corner; the actions are laid out always and only made visible on hover
 and on focus (keyboard users must not need a mouse), so nothing moves under the pointer (0.7.2). Below
 a 380 px sidebar (a container query) the slot cannot be spared beside the title and the actions take

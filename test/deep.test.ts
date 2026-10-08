@@ -6,7 +6,7 @@ import { INDEX_VERSION, type SearchIndex, type SessionMeta } from '../src/core/t
 const NOW = Date.parse('2026-08-24T00:00:00Z');
 const meta = (id: string): SessionMeta => ({
   sessionId: id, file: `/${id}.jsonl`, extraFiles: [], projectDir: '-w-a', cwd: '/w/a', cwdExists: true,
-  title: null, branches: [], prLinks: [], firstTs: NOW, lastTs: NOW, lastActTs: NOW, headless: false, msgCount: 0, mtimeMs: 1, size: 1,
+  title: null, launchCwd: null, branch: null, branchNow: null, worktree: null, prs: [], slack: [], firstTs: NOW, lastTs: NOW, lastActTs: NOW, headless: false, msgCount: 0, mtimeMs: 1, size: 1,
 });
 
 describe('deepSearch', () => {

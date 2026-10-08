@@ -56,7 +56,7 @@ main:focus-visible { outline: none; }
 .list { list-style: none; margin: 0; padding: 0; }
 .row {
   position: relative;
-  display: flex; align-items: center; gap: var(--sp-2);
+  display: flex; align-items: flex-start; gap: var(--sp-2);
   min-height: var(--row); padding: 0 var(--sp-2) 0 var(--sp-3);
   cursor: pointer;
   transition: background var(--dur) var(--ease);
@@ -69,11 +69,14 @@ main:focus-visible { outline: none; }
 /* The session behind the active editor tab: selection colour, a 3px focus-colour bar, bold title. */
 .row[aria-selected="true"] { background: var(--s-sel); color: var(--s-sel-fg); box-shadow: inset 3px 0 0 var(--s-focus); }
 .row[aria-selected="true"] .row__title { font-weight: 600; }
-.row[aria-selected="true"] .row__meta,
+.row[aria-selected="true"] .where,
+.row[aria-selected="true"] .where__branch,
+.row[aria-selected="true"] .link,
 .row[aria-selected="true"] .row__time { color: inherit; opacity: .85; }
 
+/* The state icon sits beside lines 1–2 however many lines the row grows. */
 .row__icon {
-  flex: none; width: 16px; font-size: 16px; line-height: 1;
+  flex: none; width: 16px; height: var(--row); font-size: 16px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
   transition: color var(--dur) var(--ease);
 }
@@ -94,12 +97,69 @@ main:focus-visible { outline: none; }
   font-family: var(--mono); font-size: var(--size-meta); font-variant-numeric: tabular-nums;
   color: var(--s-muted); white-space: nowrap;
 }
-.row__meta {
-  flex: 1; min-width: 0;
-  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-  font-size: var(--size-meta); color: var(--s-muted);
+/* ─── line 2: where the work is. The branch reads first and gives way last; the worktree gives way first ── */
+.where { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); font-size: var(--size-meta); color: var(--s-muted); }
+.where__item { min-width: 0; display: inline-flex; align-items: center; gap: 3px; }
+.where__item > .codicon { flex: none; font-size: 12px; }
+.where__txt { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.where__branch { flex: 0 1 auto; color: var(--s-fg); }
+.where__branch--quiet { color: var(--s-muted); }
+.where__worktree, .where__project { flex: 0 1000 auto; min-width: 4.5em; }
+.where__worktree--gone .where__txt { text-decoration: line-through; }
+.where__worktree--gone > .codicon { color: var(--st-stalled); }
+/* squeezed past a readable name (fit() in main.ts): the icon alone, the name on hover */
+.where__item--icon { flex: none; min-width: 0; }
+.where__item--icon .where__txt { display: none; }
+.row__fill { flex: 1 1 0; min-width: 0; }
+.row__missing { flex: none; white-space: nowrap; }
+
+/* ─── the links: PRs newest first, then the Slack threads you pasted — each a button that opens it ── */
+.row__line--links[hidden], .links[hidden] { display: none; }
+.links { flex: none; display: flex; align-items: center; gap: 2px; }
+.link {
+  flex: none; height: 20px; min-width: 20px; padding: 0 4px 0 2px; border-radius: var(--radius);
+  display: inline-flex; align-items: center; justify-content: center; gap: 2px;
+  color: var(--s-muted); font-size: var(--size-meta);
 }
-.row__missing { margin-left: var(--sp-1); }
+.link:hover { background: var(--s-toolbar); color: var(--s-fg); }
+.link:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+.link[hidden] { display: none; }
+.link > .codicon { font-size: 14px; }
+.link__num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* a PR squeezed to its icon (fit()), and the Slack mark, which is only ever an icon */
+.link--bare, .link--slack { padding: 0; }
+.link--bare .link__num { display: none; }
+.link--more { padding: 0 4px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.links__sep { flex: none; width: 1px; height: 12px; margin: 0 3px; background: var(--s-muted); opacity: .4; }
+/* Line 2's and the links' tooltips open under the row's text and no wider than it, so one near the right edge cannot widen the view. */
+.row__lines { position: relative; }
+.where__item.tip, .link.tip { position: static; }
+.where__item.tip::after, .link.tip::after { left: 0; right: auto; max-width: min(260px, 100%); white-space: pre-line; }
+/* A PR's icon is its state on GitHub: open, merged, closed or draft; unknown stays in the text colour. */
+[data-state="open"] > .codicon-git-pull-request { color: var(--st-pr-open); }
+[data-state="merged"] > .codicon-git-merge { color: var(--st-pr-merged); }
+[data-state="closed"] > .codicon-git-pull-request-closed { color: var(--st-pr-closed); }
+[data-state="draft"] > .codicon-git-pull-request-draft { color: var(--st-pr-draft); }
+.slack-mark { width: 14px; height: 14px; display: block; }
+/* high contrast: the Slack mark in the text colour, like every other icon */
+body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .slack-mark path { fill: currentColor; }
+
+/* the list behind +N */
+.links-list {
+  position: fixed; z-index: 20; min-width: 220px; max-width: calc(100vw - 8px); max-height: 60vh; overflow: auto;
+  padding: var(--sp-1); border-radius: var(--radius);
+  background: var(--s-tip-bg); color: var(--s-tip-fg); border: 1px solid var(--s-tip-border);
+  font-size: var(--size-meta);
+}
+.links-list[hidden] { display: none; }
+.links-list__item {
+  width: 100%; display: grid; grid-template-columns: 16px auto 1fr; align-items: center; gap: 6px;
+  padding: 3px 6px; border-radius: var(--radius); text-align: left;
+}
+.links-list__item:hover, .links-list__item:focus-visible { background: var(--s-toolbar); outline: none; }
+.links-list__item > .codicon { font-size: 14px; }
+.links-list__main { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.links-list__sub { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--s-muted); }
 
 /* ─── cost meter: context size against the model's window — line 2, right end ── */
 .row__heat {
@@ -122,7 +182,8 @@ main:focus-visible { outline: none; }
 .tip { position: relative; }
 .tip::after {
   content: attr(data-tip); position: absolute; top: calc(100% + 4px); right: 0; z-index: 10;
-  max-width: 260px; padding: 3px 7px; border-radius: var(--radius);
+  box-sizing: border-box;   /* `*` does not reach ::after: without this, padding and border overshoot the max-width */
+  max-width: min(260px, calc(100vw - 32px)); padding: 3px 7px; border-radius: var(--radius);   /* never wider than the view: a tooltip must not make it scroll sideways */
   background: var(--s-tip-bg); color: var(--s-tip-fg); border: 1px solid var(--s-tip-border);
   font-family: var(--font); font-size: var(--size-meta); font-weight: 400; font-style: normal; line-height: 1.35; white-space: normal; width: max-content;
   opacity: 0; pointer-events: none; transition: opacity var(--dur) var(--ease) 300ms;
@@ -157,7 +218,8 @@ main:focus-visible { outline: none; }
 .row[data-ghost="closed"] .row__icon { opacity: .65; }
 .ghost__svg { width: 16px; height: 16px; display: block; overflow: visible; }
 .ghost__dot {
-  position: absolute; right: -3px; bottom: -3px; width: 7px; height: 7px; border-radius: 50%;
+  /* on the ghost's corner: the slot is as tall as two lines and the 16px ghost is centred in it */
+  position: absolute; right: -3px; bottom: calc(50% - 11px); width: 7px; height: 7px; border-radius: 50%;
   box-shadow: 0 0 0 1.5px var(--s-bg);
 }
 .row:hover .ghost__dot { box-shadow: 0 0 0 1.5px var(--s-hover); }
@@ -198,7 +260,8 @@ main { container-type: inline-size; }
 .action[hidden] { display: none; }
 
 /* ─── the "search all…" row ────────────────────────────────────────────────── */
-.row--link { min-height: 22px; }
+.row--link { min-height: 22px; align-items: center; }
+.row--link .row__icon { height: auto; }
 .row--link .row__title { color: var(--s-link); }
 .row--link .row__time { font-family: var(--mono); }
 

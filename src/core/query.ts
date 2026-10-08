@@ -146,7 +146,7 @@ export function search(index: SearchIndex, q: ParsedQuery, now: number): Session
     // user types pr:18942 there is exactly one right answer and its age is irrelevant.
     // Applying the recency window here hid 55% of the author's PRs behind the 7-day default.
     return index.sessions
-      .filter(m => m.prLinks.includes(q.pr!))
+      .filter(m => m.prs.some(p => p.n === q.pr))
       .map(session => ({ session, score: 1000, matchCount: 1, best: null }));
   }
   const kind = (m: SessionMeta) => q.headless === null || m.headless === q.headless;

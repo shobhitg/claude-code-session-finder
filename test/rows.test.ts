@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { buildSnapshot, projectLabel, stateIcon, statusText, ringingFirst, closedForGood, sessionsOnScreen, rowsForHits, resolveTabSession, firstPrompts, labelMatchesTitle, tabMatches, trustedLearned, tabsToClose, candidateSessions, pinnedSessions, knownTitles } from '../src/core/rows.js';
 import type { SessionHit } from '../src/core/query.js';
-import type { SearchIndex, SessionMeta } from '../src/core/types.js';
+import type { SearchIndex, SessionMeta, PrLink } from '../src/core/types.js';
 import type { Liveness } from '../src/core/state.js';
 
 const meta = (o: Partial<SessionMeta>): SessionMeta => ({
   sessionId: 'x', file: '/p/x.jsonl', extraFiles: [], projectDir: '-workspaces-aida', cwd: '/w', cwdExists: true,
-  title: null, branches: [], prLinks: [], firstTs: 1, lastTs: 1, lastActTs: 0, headless: false, msgCount: 0, mtimeMs: 1, size: 1, ...o,
+  title: null, launchCwd: null, branch: null, branchNow: null, worktree: null, prs: [], slack: [], firstTs: 1, lastTs: 1, lastActTs: 0, headless: false, msgCount: 0, mtimeMs: 1, size: 1, ...o,
 });
 const live = (sessionId: string, state: Liveness['state'], lastWriteMs: number, lastActMs?: number): [string, Liveness] =>
   [sessionId, { sessionId, verdict: 'awaiting-tool', state, lastWriteMs, ...(lastActMs !== undefined ? { lastActMs } : {}) }];
@@ -14,7 +14,8 @@ const live = (sessionId: string, state: Liveness['state'], lastWriteMs: number, 
 const index: SearchIndex = {
   v: 1, builtAt: 0,
   sessions: [
-    meta({ sessionId: 'a', title: 'Ledger GUI', branches: ['main', 'shobhit/ledger'], prLinks: [20231], lastTs: 900, lastActTs: 850 }),
+    meta({ sessionId: 'a', title: 'Ledger GUI', launchCwd: '/workspaces/aida', branch: 'shobhit/ledger', branchNow: 'main', lastTs: 900, lastActTs: 850,
+           prs: [{ n: 20231, repo: 'acme/app', url: 'https://github.com/acme/app/pull/20231', ts: 10, branch: 'shobhit/ledger' }] }),
     meta({ sessionId: 'b', title: 'Deal forecast', lastTs: 800, lastActTs: 600 }),
     meta({ sessionId: 'c', title: null, lastTs: 700, lastActTs: 650, projectDir: '-workspaces-aida--claude-worktrees-figma' }),
     meta({ sessionId: 'd', title: 'Old one', lastTs: 100, lastActTs: 50, cwdExists: false }),
@@ -89,9 +90,10 @@ describe('buildSnapshot', () => {
   it('joins index metadata onto live rows', () => {
     const s = buildSnapshot(index, new Map([live('a', { kind: 'running' }, 5)]));
     expect(s.active[0]).toMatchObject({
-      sessionId: 'a', title: 'Ledger GUI', project: 'workspaces-aida', branch: 'shobhit/ledger', pr: 20231,
+      sessionId: 'a', title: 'Ledger GUI', project: 'aida', branch: 'shobhit/ledger', branchNow: 'main',
       cwdExists: true, state: 'running', lastWriteMs: 5,
     });
+    expect(s.active[0]!.prs.map(p => p.n)).toEqual([20231]);
     expect(s.active[0]!.reason).toBeUndefined();
     const t = buildSnapshot(index, new Map([live('d', { kind: 'attention', reason: 'stalled' }, 5)]));
     expect(t.active[0]).toMatchObject({ reason: 'stalled', cwdExists: false });
@@ -121,6 +123,52 @@ describe('buildSnapshot', () => {
     expect(s.history).toEqual([]);
     expect(s.totalSessions).toBe(0);
     expect(s.indexing).toBe(true);
+  });
+});
+
+describe('where a row says the work is', () => {
+  const pr = (n: number, ts: number, o: Partial<PrLink> = {}): PrLink => ({ n, repo: 'acme/app', url: `https://github.com/acme/app/pull/${n}`, ts, branch: null, ...o });
+  const one = (m: SessionMeta, opts: Parameters<typeof buildSnapshot>[2] = {}) =>
+    buildSnapshot({ v: 1, builtAt: 0, sessions: [m], prose: [] }, new Map(), opts).history[0]!;
+
+  it('names the project after the folder the session started in, or its directory when it recorded none', () => {
+    expect(one(meta({ launchCwd: '/workspaces/aida/.claude/worktrees/x' })).project).toBe('aida');
+    expect(one(meta({ launchCwd: null })).project).toBe('workspaces-aida');
+  });
+
+  it('flags a session from outside this window\'s workspace — and only when the window says so', () => {
+    expect(one(meta({}), { isHere: () => false }).elsewhere).toBe(true);
+    expect(one(meta({}), { isHere: () => true })).not.toHaveProperty('elsewhere');
+    expect(one(meta({}))).not.toHaveProperty('elsewhere');
+  });
+
+  it('carries the branch, where it is now, and the worktree', () => {
+    const worktree = { name: 'board-stats', path: '/w/aida/.claude/worktrees/board-stats' };
+    expect(one(meta({ branch: 'shobhit/x', branchNow: 'main', worktree }))).toMatchObject({ branch: 'shobhit/x', branchNow: 'main', worktree });
+    expect(one(meta({}))).not.toHaveProperty('worktree');
+  });
+
+  it('lists PRs newest first, with what GitHub says about each once it is known', () => {
+    const r = one(meta({ prs: [pr(1, 100, { branch: 'shobhit/guess' }), pr(2, 300), pr(3, 200)] }),
+                  { prInfo: p => p.n === 1 ? { state: 'merged', title: 'Fix the thing', head: 'shobhit/real' } : undefined });
+    expect(r.prs.map(p => p.n)).toEqual([2, 3, 1]);
+    expect(r.prs[2]).toEqual({ n: 1, repo: 'acme/app', url: 'https://github.com/acme/app/pull/1', ts: 100, branch: 'shobhit/real', state: 'merged', title: 'Fix the thing' });
+    expect(r.prs[0]).not.toHaveProperty('state');
+  });
+
+  it('makes a PR\'s link from its repo when Claude Code recorded none, and drops one it cannot link', () => {
+    const r = one(meta({ prs: [pr(1, 1, { url: null }), pr(2, 2, { url: null, repo: null })] }));
+    expect(r.prs.map(p => [p.n, p.url])).toEqual([[1, 'https://github.com/acme/app/pull/1']]);
+  });
+
+  it('lists Slack threads newest first', () => {
+    const r = one(meta({ slack: [{ url: 'u1', thread: 'C/1', ts: 1, said: 'a' }, { url: 'u2', thread: 'C/2', ts: 2, said: 'b' }] }));
+    expect(r.slack).toEqual([{ url: 'u2', ts: 2, said: 'b' }, { url: 'u1', ts: 1, said: 'a' }]);
+  });
+
+  it('an unindexed live session has nothing to say yet', () => {
+    const r = buildSnapshot(null, new Map([live('new', { kind: 'running' }, 5)])).active[0]!;
+    expect(r).toMatchObject({ project: '', branch: null, branchNow: null, prs: [], slack: [] });
   });
 });
 
@@ -182,7 +230,8 @@ describe('rowsForHits / resolveTabSession', () => {
       { session: index.sessions[2]!, score: 1, matchCount: 1, best: null },
     ];
     const rows = rowsForHits(hits, new Map([live('a', { kind: 'attention', reason: 'your-turn' }, 5)]), firstPrompts(index));
-    expect(rows[0]).toMatchObject({ sessionId: 'a', title: 'Ledger GUI', matches: 3, pr: 20231, live: { state: 'attention', reason: 'your-turn', lastWriteMs: 5 } });
+    expect(rows[0]).toMatchObject({ sessionId: 'a', title: 'Ledger GUI', matches: 3, branch: 'shobhit/ledger', live: { state: 'attention', reason: 'your-turn', lastWriteMs: 5 } });
+    expect(rows[0]!.prs.map(p => p.n)).toEqual([20231]);
     expect(rows[0]!.live).not.toHaveProperty('ringing');
     expect(rowsForHits(hits, new Map([live('a', { kind: 'attention', reason: 'your-turn' }, 5)]), firstPrompts(index), { rings: () => true })[0]!.live)
       .toMatchObject({ ringing: true });

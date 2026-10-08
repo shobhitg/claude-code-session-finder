@@ -7,7 +7,7 @@ import { parseQuery, search, snippet, withWindow, type SessionHit } from '../cor
 import { planOpen, readsInView } from '../core/resolve.js';
 import type { SearchIndex } from '../core/types.js';
 import { executePlan, folderUri, openTranscript } from '../open.js';
-import { projectLabel, stateIcon } from '../core/rows.js';
+import { whereOf, stateIcon } from '../core/rows.js';
 import type { Liveness } from '../core/state.js';
 
 interface Row extends vscode.QuickPickItem { hit?: SessionHit; action?: 'all' | 'deep' }
@@ -27,8 +27,9 @@ const ago = (ts: number) => {
 
 function toRow(hit: SessionHit, liveness: ReadonlyMap<string, Liveness>): Row {
   const m = hit.session;
-  const bits = [projectLabel(m.projectDir), m.branches.at(-1) ?? '', ago(m.lastTs)];
-  if (m.prLinks.length) bits.push(`PR #${m.prLinks.at(-1)}`);
+  const where = whereOf(m);
+  const bits = [where.project, where.branch ?? '', ago(m.lastTs)];
+  if (where.prs[0]) bits.push(`PR #${where.prs[0].n}`);                  // the newest
   if (!m.cwdExists) bits.push('⚠ folder missing');
   // Stage 1 (spec §9.3): the glyph is the session's live state; history keeps the sparkle.
   const live = liveness.get(m.sessionId);

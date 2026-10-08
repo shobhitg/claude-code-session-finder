@@ -8,6 +8,7 @@ import { inScope } from './core/scope.js';
 import { applyClosed, type ClosedMarkers } from './core/closed.js';
 import { Bell, LooksFile } from './core/looks.js';
 import { workspaceRoots } from './scope-roots.js';
+import { PrStates } from './pr-states.js';
 import type { SearchIndex, SessionMeta } from './core/types.js';
 import type { Liveness, Thresholds } from './core/state.js';
 
@@ -52,10 +53,13 @@ export class LiveHost implements vscode.Disposable {
   /** The rule of the last snapshot, for surfaces that build rows of their own (the inline filter). */
   rings: (l: Liveness) => boolean = () => false;
   private ringingKey = '';
+  /** What GitHub says about the PRs on screen — the colour of each PR's icon. */
+  readonly prStates: PrStates;
 
   constructor(private readonly ctx: vscode.ExtensionContext, private readonly log: vscode.LogOutputChannel) {
     this.closed = ctx.globalState.get<ClosedMarkers>(CLOSED_KEY) ?? {};
     this.bell = new Bell(new LooksFile(join(ctx.globalStorageUri.fsPath, 'looks.json')));
+    this.prStates = new PrStates(ctx, log, () => this.publish());
     this.rebuildTracker();
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration(e => {
@@ -110,6 +114,9 @@ export class LiveHost implements vscode.Disposable {
 
   /** Whether the sidebar shows this session. Global surfaces (status bar, picker) never ask. */
   readonly inScope = (m: SessionMeta): boolean => this.scope === 'all' || inScope(m, this.roots);
+
+  /** Whether the session is this window's workspace's, whatever the scope — a row from elsewhere names its project. A window with no folder has none. */
+  readonly isHere = (m: SessionMeta): boolean => this.roots.length > 0 && inScope(m, this.roots);
 
   get liveness(): ReadonlyMap<string, Liveness> { return this.live; }
 
@@ -187,7 +194,8 @@ export class LiveHost implements vscode.Disposable {
     this.live = r.liveness;
     this.rings = this.bell.update(this.live, vscode.window.state.focused, id => this.session(id)?.headless === true);
     this.snapshot = buildSnapshot(this.index, this.live, { indexing: this.indexing !== null, scope: this.scope, inScope: this.inScope, rings: this.rings,
-                                                          hideHeadless: this.hideHeadless });
+                                                          hideHeadless: this.hideHeadless, isHere: this.isHere, prInfo: this.prStates.info });
+    this.prStates.want([...this.snapshot.active, ...this.snapshot.history].flatMap(r => r.prs));
     this.logRinging();
     this.emitter.fire(this.snapshot);
   }
