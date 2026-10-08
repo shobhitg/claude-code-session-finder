@@ -3,6 +3,8 @@ import type { SearchIndex, SessionMeta, Role } from './types.js';
 export interface ParsedQuery {
   terms: string[]; phrase: string | null; pr: number | null;
   sinceMs: number | null; deep: boolean; raw: string;
+  /** is:headless → true, -is:headless → false, neither → null (D15) */
+  headless: boolean | null;
 }
 
 const HOUR = 3_600_000;
@@ -82,8 +84,11 @@ export function parseQuery(input: string, defaultWindow: string, now: number): P
   let sinceSpec: string | null = null;
   rest = rest.replace(/(?:^|\s)since:(\S+)(?=\s|$)/gi, (_, v: string) => { sinceSpec = v; return ' '; });
 
+  let headless: boolean | null = null;
+  rest = rest.replace(/(?:^|\s)(-?)is:headless(?=\s|$)/gi, (_, not: string) => { headless = not !== '-'; return ' '; });
+
   return {
-    raw, deep, phrase, pr,
+    raw, deep, phrase, pr, headless,
     sinceMs: resolveSince(sinceSpec ?? defaultWindow, defaultWindow, now),
     terms: rest.toLowerCase().split(/\s+/).filter(Boolean),
   };
@@ -144,12 +149,18 @@ export function search(index: SearchIndex, q: ParsedQuery, now: number): Session
       .filter(m => m.prLinks.includes(q.pr!))
       .map(session => ({ session, score: 1000, matchCount: 1, best: null }));
   }
-  if (!q.terms.length && !q.phrase) return [];
+  const kind = (m: SessionMeta) => q.headless === null || m.headless === q.headless;
+  if (!q.terms.length && !q.phrase) {
+    // is:headless on its own is a question in itself: which runs, newest first.
+    if (q.headless === null) return [];
+    return index.sessions.filter(m => inWindow(m) && kind(m)).sort((a, b) => b.lastTs - a.lastTs)
+      .map(session => ({ session, score: 0, matchCount: 0, best: null }));
+  }
 
   const acc = new Map<number, { score: number; count: number; best: SessionHit['best'] }>();
   for (const p of index.prose) {
     const session = index.sessions[p.s];
-    if (!session || !inWindow(session)) continue;
+    if (!session || !inWindow(session) || !kind(session)) continue;
     const { score: quality, at } = matchQuality(p.x.toLowerCase(), q);
     if (!quality) continue;
     const score = quality * ROLE_WEIGHT[p.r] * recencyBoost(p.t, now);

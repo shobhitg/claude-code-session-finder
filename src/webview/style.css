@@ -3,7 +3,7 @@
    view is right in the user's theme, Light+, High Contrast and themes that do not exist yet.
    The only values invented here are rhythm (spacing, radius, row height) and motion. */
 /* Tokens live in tokens.css (shared with the Session View); this file is components only. */
-@media (prefers-reduced-motion: reduce) { .skeleton__bar { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .skeleton__bar, .ghost__dot, .ghost__spark { animation: none; } }
 
 * { box-sizing: border-box; }
 html, body {
@@ -149,6 +149,30 @@ main:focus-visible { outline: none; }
 .row[data-reason="stalled"] .row__icon { color: var(--st-stalled); }
 .row[data-reason="stalled"] { opacity: .7; }
 .row[data-state="history"] .row__icon { color: var(--st-idle); }
+
+/* ─── a headless run (D15): the ghost takes the icon slot, in purple; a dot on its corner says how the run
+   is doing — ringed in the row's own background so 7px still reads. It sits after the state rules: the
+   ghost's colour wins over theirs, and the dot carries the state instead. ─── */
+.row[data-ghost] .row__icon { position: relative; color: var(--st-headless); }
+.row[data-ghost="closed"] .row__icon { opacity: .65; }
+.ghost__svg { width: 16px; height: 16px; display: block; overflow: visible; }
+.ghost__dot {
+  position: absolute; right: -3px; bottom: -3px; width: 7px; height: 7px; border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--s-bg);
+}
+.row:hover .ghost__dot { box-shadow: 0 0 0 1.5px var(--s-hover); }
+.row[aria-selected="true"] .ghost__dot { box-shadow: 0 0 0 1.5px var(--s-sel); }
+.ghost__dot[data-ghost="running"] { background: var(--st-running); animation: ghost-pulse 1.6s ease-in-out infinite; }
+.ghost__dot[data-ghost="done"] { background: var(--st-ok); }
+.ghost__dot[data-ghost="failed"] { background: var(--st-error); }
+.ghost__dot[data-ghost="waiting"] { background: var(--st-needs); }
+.ghost__dot[data-ghost="stalled"] { background: var(--st-stalled); }
+.ghost__dot[data-ghost="closed"] { display: none; }
+/* the spark in the ghost's eye twinkles while the run works */
+.row[data-ghost="running"] .ghost__spark { transform-box: fill-box; transform-origin: center; animation: ghost-twinkle 1.6s ease-in-out infinite; }
+@keyframes ghost-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.55); opacity: .55; } }
+@keyframes ghost-twinkle { 0%, 100% { transform: scale(1) rotate(0deg); } 50% { transform: scale(.6) rotate(45deg); } }
+.row--link .ghost__svg { color: var(--st-headless); }
 
 /* ─── row actions: line 1's right end, laid out always, visible on hover AND on keyboard focus ───
    Every button, tag and label has a spot of its own; hovering only makes the actions visible, so nothing

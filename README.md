@@ -64,6 +64,13 @@ Hover a glyph for the sentence behind it. Rows are ordered by when you last touc
 
 **Cost meter.** Each active row carries a small bar with its context size: the tokens the model was given on its last turn, and therefore what every further turn costs. One absolute scale for every session, ramping green → yellow → orange → red toward `sessionFinder.contextBudget` (1M by default, where compaction lands), and pinned full in deep red past it: compact or start a new session. Hover the bar for the numbers.
 
+**Headless runs.** A session started without a UI — `claude -p`, the Agent SDK, a daemon — wears a purple
+**ghost** in place of the state glyph, with a dot on its corner for how the run is doing: blue and pulsing
+while it works, green when it finished, red when it stopped before finishing. Claude Code's own tab shows
+these sessions blank, so clicking one reads it in the Session View; the right-panel button still resumes it
+in Claude Code. The ghost button in the view's title bar hides them (per workspace; a "N headless runs hidden
+· show" link brings them back), and `is:headless` in the filter finds them either way.
+
 State is derived from the last conversational record of each recently written
 transcript, so a session in another window, another worktree, or a terminal
 shows up too. Sessions written within `sessionFinder.activeWindow`
@@ -132,6 +139,7 @@ box or the `Ctrl+Alt+S` picker — matches what you and Claude actually **said**
 | `"paste image"` | that exact phrase |
 | `pr:1234` | the session that opened that PR — exact, so the recency window is ignored |
 | `since:30d`, `since:all` | narrow or widen the default 60-day window (`sessionFinder.defaultWindow`) |
+| `is:headless`, `-is:headless` | only headless runs (`claude -p` and kin), or everything but them — on its own, every run in the window |
 | `!"npm run build"` | also search tool calls and results, including subagents — slower |
 
 A `!` search matches whole transcripts, so quote a phrase unless you really do
@@ -139,7 +147,7 @@ want every session that mentions all those words anywhere.
 
 | Row action | Behavior |
 |---|---|
-| `Enter` | opens the session — revealing an already-open tab, or opening a new one. A session from another git worktree opens in a window on that folder |
+| `Enter` | opens the session — revealing an already-open tab, or opening a new one. A session from another git worktree opens in a window on that folder. A headless run (👻) opens in the Session View instead |
 | 🌳 Session View | reads the session without resuming it |
 | 🔗 Copy deep link | `vscode://anthropic.claude-code/open?session=<id>` |
 | 📁 Reveal folder | reveals the session's folder in the explorer |
@@ -174,6 +182,7 @@ agents pill shows the same tree live; this view is for the ones you don't.
 | **Claude: Show Sessions** | focus the Sessions view |
 | **Claude: Filter Sessions** | focus the sidebar's filter box |
 | **Claude: Sessions — Show All Projects** / **Show This Workspace Only** | toggle the sidebar's scope for this workspace |
+| **Claude: Sessions — Hide Headless Runs** / **Show Headless Runs** | the ghost button: toggle headless runs in the sidebar for this workspace |
 | **Claude: Open Session View** | read the current or a chosen session |
 | **Claude: Open Session in Tab** / **in Right Panel** | resume a session where you want it |
 | **Claude: Refresh Sessions** | re-scan now |
@@ -182,6 +191,7 @@ agents pill shows the same tree live; this view is for the ones you don't.
 |---|---|---|
 | `sessionFinder.defaultWindow` | `60d` | recency window for searches; `pr:` ignores it |
 | `sessionFinder.sidebarScope` | `workspace` | `workspace`: this workspace's folders, repo and worktrees · `all`: every project. The view's filter button overrides it per workspace |
+| `sessionFinder.hideHeadlessRuns` | `false` | keep headless runs out of the Sessions view; the ghost button overrides it per workspace |
 | `sessionFinder.activeWindow` | `4h` | sessions written within this are Active and carry a state |
 | `sessionFinder.toolQuietSeconds` | `60` | waiting on a tool longer than this shows 🔔 |
 | `sessionFinder.stalledMinutes` | `15` | silence longer than this mid-turn shows ⚠ |

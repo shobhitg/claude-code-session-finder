@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+**Headless runs wear a ghost.** A session started without a UI — `claude -p`,
+the Agent SDK, a daemon — shows a purple ghost where the state glyph goes, and
+a dot on its corner says how the run is doing: blue and pulsing while it works,
+green when it finished, red when it stopped first. A finished run no longer
+reads "your turn", and a run busy in a long tool no longer rings the bell: it
+cannot be waiting on a permission prompt. Claude Code's own tab shows these
+sessions blank, so a click (or Enter, or the picker) now reads one in the
+Session View; the right-panel button still resumes it in Claude Code. The new
+ghost button in the view's title bar hides them per workspace
+(`sessionFinder.hideHeadlessRuns` sets the default), a "N headless runs hidden ·
+show" link brings them back, and `is:headless` / `-is:headless` in the filter
+finds them or leaves them out. The search index is rebuilt once to learn which
+sessions are headless.
+
 ## 0.9.0
 
 **Only you move a row.** Both lists are ordered by when you last touched a

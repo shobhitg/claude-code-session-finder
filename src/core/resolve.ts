@@ -1,5 +1,14 @@
 import type { SessionMeta } from './types.js';
+import type { OpenWhere } from './open-args.js';
 import { samePath, isInside } from './paths.js';
+
+/**
+ * D15: a plain open (a row click, Enter, the picker) of a headless session reads it in the Session View —
+ * Claude Code's own tab comes up blank for one. Asking for the right panel is still asking to resume it.
+ */
+export function readsInView(session: Pick<SessionMeta, 'headless'>, where: OpenWhere): boolean {
+  return session.headless && where === 'tab';
+}
 
 export type OpenPlan =
   | { kind: 'here'; sessionId: string; file: string; note?: string }

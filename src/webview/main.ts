@@ -95,11 +95,37 @@ filterInput.addEventListener('keydown', e => {
   else if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); firstRow()?.focus(); }
 });
 const focusFilter = (): void => { filterInput.focus(); filterInput.select(); };
-const linkAction = (a: LinkVM['action']): void => { if (a === 'search') focusFilter(); else post({ type: 'toggleScope' }); };
+const linkAction = (a: LinkVM['action']): void => {
+  if (a === 'search') focusFilter(); else post({ type: a === 'headless' ? 'toggleHeadless' : 'toggleScope' });
+};
 
 // ---------------------------------------------------------------- rows
 
 const keyOf = (r: RowVM | LinkVM): string => r.kind === 'link' ? `link:${r.action}` : r.sessionId;
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function svgEl(tag: string, attrs: Record<string, string>): SVGElement {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+/** D15: the headless glyph — a ghost (it runs with nobody there) with a spark for an eye. Drawn for this view; currentColor. */
+function ghostSvg(): SVGElement {
+  const svg = svgEl('svg', { class: 'ghost__svg', viewBox: '0 0 16 16', 'aria-hidden': 'true' });
+  svg.append(
+    svgEl('path', { d: 'M3 14.4V7.6A5 5 0 0 1 13 7.6V14.4L11.35 13.1L9.7 14.4L8 13.1L6.3 14.4L4.65 13.1Z', fill: 'none', stroke: 'currentColor',
+                    'stroke-width': '1.25', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+    svgEl('circle', { cx: '6.2', cy: '7.7', r: '.95', fill: 'currentColor' }),
+    svgEl('path', { class: 'ghost__spark', fill: 'currentColor', d: 'M9.9 6.2Q10.2 7.4 11.4 7.7Q10.2 8 9.9 9.2Q9.6 8 8.4 7.7Q9.6 7.4 9.9 6.2Z' }));
+  return svg;
+}
+/** Put the ghost and its dot in a row's icon slot — or take them out. The slot is never rebuilt otherwise. */
+function setGhost(icon: HTMLElement, ghost: RowVM['ghost'] | 'link'): void {
+  if (!ghost) { if (icon.firstChild) icon.replaceChildren(); return; }
+  if (!icon.querySelector('.ghost__svg')) icon.replaceChildren(ghostSvg(), ...(ghost === 'link' ? [] : [h('span', { class: 'ghost__dot' })]));
+  const dot = icon.querySelector<HTMLElement>('.ghost__dot');
+  if (dot && ghost !== 'link' && dot.dataset.ghost !== ghost) dot.dataset.ghost = ghost;
+}
 
 /** Bring an existing row's attributes and text in line with its model. Structure never changes, so no rebuild. */
 function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
@@ -107,16 +133,24 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
     const el = li.querySelector<HTMLElement>(sel);
     if (el && el.textContent !== value) el.textContent = value;
   };
-  if (r.kind === 'link') { text('.row__title', r.title); text('.row__time', r.meta); li.querySelector('.row__icon')!.className = `row__icon ${r.iconClass}`; return; }
+  if (r.kind === 'link') {
+    text('.row__title', r.title); text('.row__time', r.meta);
+    const icon = li.querySelector<HTMLElement>('.row__icon')!;
+    icon.className = `row__icon ${r.iconClass}`; setGhost(icon, r.ghost ? 'link' : undefined);
+    return;
+  }
   li.className = `row${r.snippet ? ' row--snippet' : ''}`;
   li.dataset.state = r.state;
   if (r.reason) li.dataset.reason = r.reason; else delete li.dataset.reason;
   if (r.ringing) li.dataset.ringing = 'true'; else delete li.dataset.ringing;
+  if (r.ghost) li.dataset.ghost = r.ghost; else delete li.dataset.ghost;
   li.title = r.title;
   li.setAttribute('aria-selected', String(r.selected));
   li.querySelector<HTMLElement>('.action--close')!.hidden = r.state === 'history';   // nothing to close on a closed row
   const icon = li.querySelector<HTMLElement>('.row__icon')!;
-  icon.className = `row__icon tip tip--left ${r.iconClass}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
+  // a ghost row draws its own glyph: the state's codicon would paint over it
+  icon.className = `row__icon tip tip--left${r.ghost ? '' : ` ${r.iconClass}`}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
+  setGhost(icon, r.ghost);
   text('.row__title', r.title); text('.row__time', r.age ? '' : r.time);   // the age tag stands in for the time
   const meta = li.querySelector<HTMLElement>('.row__meta')!;
   const metaText = r.meta + (r.missing ? '⚠ folder missing' : '');
@@ -155,11 +189,13 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
         h('span', { class: 'row__title' }, r.title),
         h('span', { class: 'row__time' }, r.meta))));
     li.addEventListener('click', () => linkAction(r.action));
+    updateRow(li, r);
     return li;
   }
   const id = r.sessionId;
   const li = h('li', { class: 'row', role: 'option', tabindex: '-1', 'data-id': id, 'data-key': keyOf(r) });
-  // Click resumes in a tab, so no button repeats that. Four that look, each saying what, then the one that closes.
+  // Click resumes in a tab — or, for a headless run, reads it here (D15, decided by the host) — so no button
+  // repeats that. Four that look, each saying what, then the one that closes.
   const close = actionButton('close', 'Close: move to Closed and close its tab (Delete)', () => post({ type: 'close', sessionId: id }));
   close.classList.add('action--close');
   const actions = h('span', { class: 'row__actions' },

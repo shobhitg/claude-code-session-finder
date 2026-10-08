@@ -21,3 +21,4 @@ esbuild.mjs
 .worktrees
 .local_claude/**
 .pytest_cache/**
+.claude/**

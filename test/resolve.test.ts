@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { planOpen } from '../src/core/resolve.js';
+import { planOpen, readsInView } from '../src/core/resolve.js';
 import type { SessionMeta } from '../src/core/types.js';
 
 const s = (over: Partial<SessionMeta> = {}): SessionMeta => ({
   sessionId: 'sid', file: '/p/sid.jsonl', extraFiles: [], projectDir: '-w-a', cwd: '/w/a', cwdExists: true,
-  title: null, branches: [], prLinks: [], firstTs: 0, lastTs: 0, lastActTs: 0, msgCount: 0, mtimeMs: 0, size: 0, ...over,
+  title: null, branches: [], prLinks: [], firstTs: 0, lastTs: 0, lastActTs: 0, headless: false, msgCount: 0, mtimeMs: 0, size: 0, ...over,
 });
 
 describe('planOpen', () => {
@@ -40,5 +40,16 @@ describe('planOpen', () => {
 
   it('hands off when there is no workspace open at all', () => {
     expect(planOpen(s(), []).kind).toBe('handoff');
+  });
+});
+
+describe('readsInView (D15)', () => {
+  it('a headless session opens in the Session View by default — Claude Code\'s tab shows it blank', () => {
+    expect(readsInView(s({ headless: true }), 'tab')).toBe(true);
+    expect(readsInView(s(), 'tab')).toBe(false);
+  });
+
+  it('asking for the right panel is asking to resume it there, headless or not', () => {
+    expect(readsInView(s({ headless: true }), 'right')).toBe(false);
   });
 });

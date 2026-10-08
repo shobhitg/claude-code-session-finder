@@ -6,7 +6,7 @@ import { firstPrompts, resolveTabSession, rowsForHits, knownTitles, labelMatches
 import { durationMs, parseQuery, search } from '../core/query.js';
 import type { SearchIndex } from '../core/types.js';
 import { VIEW_TYPE as SESSION_VIEW_TYPE } from './session-view.js';
-import { planOpen } from '../core/resolve.js';
+import { planOpen, readsInView } from '../core/resolve.js';
 import type { OpenWhere } from '../core/open-args.js';
 import { executePlan, folderUri, openTranscript } from '../open.js';
 
@@ -22,6 +22,7 @@ type Inbound =
   | { type: 'search' }
   | { type: 'filter'; q: string }
   | { type: 'toggleScope' }
+  | { type: 'toggleHeadless' }
   | { type: 'open'; sessionId: string; where: OpenWhere }
   | { type: 'view'; sessionId: string }
   | { type: 'transcript'; sessionId: string }
@@ -34,7 +35,7 @@ function isInbound(m: unknown): m is Inbound {
   if (typeof m !== 'object' || m === null) return false;
   const o = m as Record<string, unknown>;
   switch (o.type) {
-    case 'ready': case 'search': case 'toggleScope': return true;
+    case 'ready': case 'search': case 'toggleScope': case 'toggleHeadless': return true;
     case 'filter': return typeof o.q === 'string';
     case 'open': return typeof o.sessionId === 'string' && (o.where === 'tab' || o.where === 'right');
     case 'view': case 'transcript': case 'copyLink': case 'reveal': case 'close': return typeof o.sessionId === 'string';
@@ -295,7 +296,9 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     if (!this.view) return;
     const index = this.host.searchIndex;
     const defaultWindow = vscode.workspace.getConfiguration('sessionFinder').get<string>('defaultWindow', '60d');
-    const parsed = parseQuery(q, defaultWindow, Date.now());
+    const typed = parseQuery(q, defaultWindow, Date.now());
+    // D15: hidden runs stay hidden in the filter too — unless the query names them (is:headless).
+    const parsed = { ...typed, headless: typed.headless ?? (this.host.hideHeadless ? false : null) };
     const titles = this.firstPromptsCached();
     const rows = index && !parsed.deep && q.trim()
       ? rowsForHits(search(index, parsed, Date.now()).filter(h => this.host.inScope(h.session)), this.host.liveness, titles, { rings: this.host.rings }) : [];
@@ -311,6 +314,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
       }
       if (raw.type === 'filter') { this.postResults(raw.q); return; }
       if (raw.type === 'toggleScope') { await this.host.toggleScope(); return; }
+      if (raw.type === 'toggleHeadless') { await this.host.toggleHeadless(); return; }
       if (raw.type === 'search') { await vscode.commands.executeCommand('sessionFinder.search'); return; }
       if (raw.type === 'copyLink') {
         await vscode.env.clipboard.writeText(`vscode://anthropic.claude-code/open?session=${raw.sessionId}`);
@@ -332,6 +336,7 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
         void this.host.refreshIndex();
         return;
       }
+      if (readsInView(m, raw.where)) { await vscode.commands.executeCommand('sessionFinder.openSessionView', m.sessionId); return; }   // D15
       const folders = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.path);
       await executePlan(planOpen(m, folders), this.ctx, raw.where);
     } catch (err) {

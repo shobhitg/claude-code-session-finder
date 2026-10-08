@@ -123,3 +123,26 @@ describe('titles (spec L12)', () => {
     expect(extractSession(f(), text).meta.title).toBe('Second');
   });
 });
+
+describe('headless (D15)', () => {
+  const rec = (o: object) => line({ type: 'user', timestamp: '2026-08-01T00:00:00Z', message: { content: 'go' }, ...o });
+
+  it('a session started by claude -p (an SDK entrypoint) is headless; an interactive one is not', () => {
+    for (const ep of ['sdk-cli', 'sdk-ts', 'sdk-py']) expect(extractSession(f(), rec({ entrypoint: ep })).meta.headless).toBe(true);
+    for (const ep of ['cli', 'claude-vscode']) expect(extractSession(f(), rec({ entrypoint: ep })).meta.headless).toBe(false);
+    expect(extractSession(f(), rec({})).meta.headless).toBe(false);
+  });
+
+  it('the first entrypoint decides — a -p run resumed in VS Code stays headless, as Claude Code itself counts it', () => {
+    const resumed = [line({ type: 'queue-operation', operation: 'enqueue' }), rec({ entrypoint: 'sdk-cli' }), rec({ entrypoint: 'claude-vscode' })].join('\n');
+    expect(extractSession(f(), resumed).meta.headless).toBe(true);
+    const interactive = [rec({ entrypoint: 'claude-vscode' }), rec({ entrypoint: 'sdk-cli' })].join('\n');
+    expect(extractSession(f(), interactive).meta.headless).toBe(false);
+  });
+
+  it('a daemon session is headless; a background (bg) one, which you can attach to, is not', () => {
+    expect(extractSession(f(), rec({ entrypoint: 'cli', sessionKind: 'daemon' })).meta.headless).toBe(true);
+    expect(extractSession(f(), rec({ entrypoint: 'cli', sessionKind: 'daemon-worker' })).meta.headless).toBe(true);
+    expect(extractSession(f(), rec({ entrypoint: 'cli', sessionKind: 'bg' })).meta.headless).toBe(false);
+  });
+});

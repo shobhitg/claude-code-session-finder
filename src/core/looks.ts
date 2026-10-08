@@ -18,11 +18,13 @@ export const LOOKS_KEEP_MS = 7 * 24 * 3_600_000;
  * Whether a session rings. A question (or a plan to approve) is sticky: it rings until Claude moves
  * again. Your turn, an interruption and a quiet tool call — which may be a permission prompt, or only a
  * long command — ring until you look after they land. Running and stalled never: the ball is not with you.
+ * A headless run (D15) cannot stop for a permission prompt, so its quiet tool call is only a long command.
  */
-export function rings(l: Pick<Liveness, 'sessionId' | 'state' | 'lastWriteMs'>, looks: Looks): boolean {
+export function rings(l: Pick<Liveness, 'sessionId' | 'state' | 'lastWriteMs'>, looks: Looks, headless = false): boolean {
   if (l.state.kind !== 'attention') return false;
   if (l.state.reason === 'question') return true;
   if (l.state.reason === 'stalled') return false;
+  if (headless && l.state.reason === 'tool-or-permission') return false;
   return l.lastWriteMs > Math.max(looks.at[l.sessionId] ?? 0, looks.since);
 }
 
@@ -139,7 +141,7 @@ export class Bell {
   }
 
   /** A window without focus records nothing: a tab left on screen behind another app is not being read. */
-  update(live: ReadonlyMap<string, Liveness>, focused: boolean): (l: Liveness) => boolean {
+  update(live: ReadonlyMap<string, Liveness>, focused: boolean, isHeadless: (sessionId: string) => boolean = () => false): (l: Liveness) => boolean {
     if (focused) {
       const theirs = this.file.peek();
       if (theirs) this.looks = mergeLooks(this.looks, theirs);
@@ -151,6 +153,6 @@ export class Bell {
       }
     }
     const looks = this.looks;
-    return l => rings(l, looks);
+    return l => rings(l, looks, isHeadless(l.sessionId));
   }
 }

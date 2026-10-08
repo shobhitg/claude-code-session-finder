@@ -13,15 +13,22 @@ export interface LiveRow {
   contextTokens?: number; model?: string;
   /** the bell (core/looks.ts): the ball is in your court and you have not seen it there */
   ringing?: true;
+  /** started without a UI — `claude -p` and kin (D15) */
+  headless?: true;
 }
 export interface HistoryRow {
   sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
   cwdExists: boolean; lastTs: number; msgCount: number;
   /** when you last touched it (touchedMs) — what CLOSED is ordered by, so the date it shows */
   touchedTs: number;
+  headless?: true;
 }
 export type SidebarScope = 'workspace' | 'all';
-export interface Snapshot { active: LiveRow[]; history: HistoryRow[]; totalSessions: number; indexing: boolean; scope: SidebarScope }
+export interface Snapshot {
+  active: LiveRow[]; history: HistoryRow[]; totalSessions: number; indexing: boolean; scope: SidebarScope;
+  /** headless sessions the toggle keeps out of both lists (D15); 0 while they are shown */
+  hiddenHeadless: number;
+}
 /** A row of the sidebar's inline filter: a HISTORY-shaped row plus what matched, and its live state if it has one. */
 export interface SearchRow extends HistoryRow {
   snippet: string | null; matches: number;
@@ -124,6 +131,7 @@ export function rowsForHits(hits: SessionHit[], liveness: ReadonlyMap<string, Li
       branch: m.branches.at(-1) ?? null, pr: m.prLinks.at(-1) ?? null, cwdExists: m.cwdExists, lastTs: m.lastTs, msgCount: m.msgCount,
       touchedTs: touchedMs(m, l), snippet: h.best ? snippet(h.best.text, h.best.index) : null, matches: h.matchCount,
     };
+    if (m.headless) row.headless = true;
     if (l) row.live = { state: l.state.kind, lastWriteMs: l.lastWriteMs, ...(l.state.kind === 'attention' ? { reason: l.state.reason } : {}),
                         ...(l.contextTokens !== undefined ? { contextTokens: l.contextTokens } : {}), ...(l.model !== undefined ? { model: l.model } : {}),
                         ...(opts.rings?.(l) ? { ringing: true as const } : {}) };
@@ -254,7 +262,8 @@ export function tabsToClose(sessionId: string, tabs: readonly TabRef[], learned:
 export function buildSnapshot(
   index: SearchIndex | null,
   liveness: ReadonlyMap<string, Liveness>,
-  opts: { historyLimit?: number; indexing?: boolean; scope?: SidebarScope; inScope?: (m: SessionMeta) => boolean; rings?: (l: Liveness) => boolean } = {},
+  opts: { historyLimit?: number; indexing?: boolean; scope?: SidebarScope; inScope?: (m: SessionMeta) => boolean; rings?: (l: Liveness) => boolean;
+          hideHeadless?: boolean } = {},
 ): Snapshot {
   const limit = opts.historyLimit ?? 50;
   const byId = new Map<string, SessionMeta>();
@@ -263,12 +272,14 @@ export function buildSnapshot(
 
   // Scope: a session the index knows and the predicate rejects is another project's. A live session
   // the index has not seen yet stays — it is probably this window's newest, and hiding it would be worse.
+  // The headless toggle (D15) hides only what the index knows to be headless, for the same reason.
   const keep = (m: SessionMeta | undefined): boolean => !m || !opts.inScope || opts.inScope(m);
+  const shown = (m: SessionMeta | undefined): boolean => !(opts.hideHeadless && m?.headless);
   const scoped = (index?.sessions ?? []).filter(keep);
 
   const touched = (l: Liveness): number => touchedMs(byId.get(l.sessionId), l);
   const active: LiveRow[] = [...liveness.values()]
-    .filter(l => keep(byId.get(l.sessionId)))
+    .filter(l => keep(byId.get(l.sessionId)) && shown(byId.get(l.sessionId)))
     .sort((a, b) => touched(b) - touched(a) || b.lastWriteMs - a.lastWriteMs)
     .map(l => {
       const m = byId.get(l.sessionId);
@@ -282,19 +293,21 @@ export function buildSnapshot(
       if (l.contextTokens !== undefined) row.contextTokens = l.contextTokens;
       if (l.model !== undefined) row.model = l.model;
       if (opts.rings?.(l)) row.ringing = true;
+      if (m?.headless) row.headless = true;
       return row;
     });
 
   const history: HistoryRow[] = scoped
-    .filter(s => !liveness.has(s.sessionId))
+    .filter(s => !liveness.has(s.sessionId) && shown(s))
     .map(m => ({ m, touchedTs: touchedMs(m) }))
     .sort((a, b) => b.touchedTs - a.touchedTs)
     .slice(0, limit)
     .map(({ m, touchedTs }) => ({
       sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt), project: projectLabel(m.projectDir),
       branch: m.branches.at(-1) ?? null, pr: m.prLinks.at(-1) ?? null, cwdExists: m.cwdExists,
-      lastTs: m.lastTs, msgCount: m.msgCount, touchedTs,
+      lastTs: m.lastTs, msgCount: m.msgCount, touchedTs, ...(m.headless ? { headless: true as const } : {}),
     }));
 
-  return { active, history, totalSessions: scoped.length, indexing: opts.indexing ?? false, scope: opts.scope ?? 'all' };
+  return { active, history, totalSessions: scoped.length, indexing: opts.indexing ?? false, scope: opts.scope ?? 'all',
+           hiddenHeadless: scoped.filter(m => !shown(m)).length };
 }

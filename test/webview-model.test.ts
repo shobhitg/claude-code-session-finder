@@ -62,7 +62,7 @@ describe('viewModel', () => {
   const snap: Snapshot = {
     active: [live({ sessionId: 'a' }), live({ sessionId: 'b', state: 'attention', reason: 'your-turn', cwdExists: false })],
     history: [hist({ sessionId: 'h' })],
-    totalSessions: 40, indexing: false, scope: 'all',
+    totalSessions: 40, indexing: false, scope: 'all', hiddenHeadless: 0,
   };
   const opts = { activeWindowLabel: '4h', searchKey: 'Ctrl+Alt+S' };
 
@@ -87,7 +87,7 @@ describe('viewModel', () => {
     expect(viewModel({ ...snap, active: [], scope: 'workspace' }, now, opts).sections[0]!.empty).toContain('in this workspace');
   });
   it('empty ACTIVE explains the window; indexing shows a skeleton and no link', () => {
-    const vm = viewModel({ active: [], history: [], totalSessions: 0, indexing: true, scope: 'all' }, now, opts);
+    const vm = viewModel({ active: [], history: [], totalSessions: 0, indexing: true, scope: 'all', hiddenHeadless: 0 }, now, opts);
     expect(vm.sections[0]!.empty).toBe('Nothing running. Sessions touched in the last 4h, or open in a tab, appear here.');
     expect(vm.sections[1]!.skeleton).toBe(true);
     expect(vm.sections[1]!.rows).toEqual([]);
@@ -122,7 +122,7 @@ describe('the bell on a row', () => {
   const opts = { activeWindowLabel: '4h', searchKey: 'k' };
   it('a live row that rings says so; one you have seen does not', () => {
     const vm = viewModel({ active: [live({ sessionId: 'r', state: 'attention', reason: 'your-turn', ringing: true }), live({ sessionId: 's', state: 'attention', reason: 'your-turn' })],
-                           history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, opts);
+                           history: [], totalSessions: 2, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, opts);
     expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'r', ringing: true });
     expect(vm.sections[0]!.rows[1]).not.toHaveProperty('ringing');
   });
@@ -141,7 +141,7 @@ describe('ACTIVE keeps the host order (D14: the host orders by your last act, wh
       live({ sessionId: 'asks', state: 'attention', reason: 'question', lastWriteMs: now - 5 * M }),
       live({ sessionId: 'old', state: 'attention', reason: 'your-turn', lastWriteMs: now - 13 * H }),
     ];
-    const rows = viewModel({ active, history: [], totalSessions: 4, indexing: false, scope: 'all' }, now, opts).sections[0]!.rows;
+    const rows = viewModel({ active, history: [], totalSessions: 4, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, opts).sections[0]!.rows;
     expect(rows.map(r => r.kind === 'session' ? r.sessionId : r.action)).toEqual(['new', 'done', 'asks', 'old']);
   });
 });
@@ -162,7 +162,7 @@ describe('heatOf (the cost meter): one absolute scale, five tiers', () => {
   });
   it('rides on the row when the live state carries a context size, using the budget from options', () => {
     const vm = viewModel({ active: [live({ sessionId: 'a', contextTokens: 168_000, model: 'claude-opus-5' }), live({ sessionId: 'b' })],
-                           history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, { activeWindowLabel: '4h', searchKey: 'k', contextBudget: 200_000 });
+                           history: [], totalSessions: 2, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, { activeWindowLabel: '4h', searchKey: 'k', contextBudget: 200_000 });
     expect(vm.sections[0]!.rows[0]).toMatchObject({ heat: { tier: 'high', label: '168k' } });
     expect(vm.sections[0]!.rows[1]).not.toHaveProperty('heat');
   });
@@ -192,10 +192,52 @@ describe('the age tag: an ACTIVE session older than the window is there only bec
     const old = live({ sessionId: 'o', state: 'attention', reason: 'your-turn', lastWriteMs: now - 26 * H });
     expect(ageTag(live({ lastWriteMs: now - 3 * H }), now, opts)).toBeUndefined();
     expect(ageTag(old, now, { activeWindowLabel: '4h', searchKey: 'k' })).toBeUndefined();          // no window known: no tag
-    const vm = viewModel({ active: [old, live({ sessionId: 'a' })], history: [], totalSessions: 2, indexing: false, scope: 'all' }, now, opts);
+    const vm = viewModel({ active: [old, live({ sessionId: 'a' })], history: [], totalSessions: 2, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, opts);
     expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'o', age: { label: '> 1d 2h', tier: 'stale' } });
     expect(vm.sections[0]!.rows[1]).not.toHaveProperty('age');
     expect(vm.sections[0]!.empty).toBeNull();
-    expect(viewModel({ active: [], history: [], totalSessions: 0, indexing: false, scope: 'all' }, now, opts).sections[0]!.empty).toContain('open in a tab');
+    expect(viewModel({ active: [], history: [], totalSessions: 0, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, opts).sections[0]!.empty).toContain('open in a tab');
+  });
+});
+
+describe('headless rows (D15): the ghost in the icon slot, a dot for how the run is doing', () => {
+  const opts = { activeWindowLabel: '4h', searchKey: 'Ctrl+Alt+S' };
+  const one = (r: LiveRow | HistoryRow, isLive = true) => viewModel({ active: isLive ? [r as LiveRow] : [], history: isLive ? [] : [r as HistoryRow],
+    totalSessions: 1, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, opts).sections[isLive ? 0 : 1]!.rows[0]!;
+
+  it('maps each state to a dot — a -p run never waits on a permission prompt, so a quiet tool call is still running', () => {
+    const ghostOf = (o: Partial<LiveRow>) => (one(live({ headless: true, ...o })) as { ghost?: string }).ghost;
+    expect(ghostOf({ state: 'running' })).toBe('running');
+    expect(ghostOf({ state: 'attention', reason: 'tool-or-permission' })).toBe('running');
+    expect(ghostOf({ state: 'attention', reason: 'your-turn' })).toBe('done');
+    expect(ghostOf({ state: 'attention', reason: 'interrupted' })).toBe('failed');
+    expect(ghostOf({ state: 'attention', reason: 'question' })).toBe('waiting');
+    expect(ghostOf({ state: 'attention', reason: 'stalled' })).toBe('stalled');
+    expect((one(hist({ headless: true }), false) as { ghost?: string }).ghost).toBe('closed');
+  });
+
+  it('the tooltip says it in words, and that a click reads it rather than resuming it', () => {
+    expect(one(live({ headless: true, state: 'attention', reason: 'your-turn' }))).toMatchObject({ stateLabel: 'Headless run (claude -p) — finished · click to read it' });
+    expect(one(hist({ headless: true }), false)).toMatchObject({ stateLabel: 'Headless run (claude -p) — closed · click to read it' });
+  });
+
+  it('an interactive row has no ghost', () => {
+    expect(one(live({}))).not.toHaveProperty('ghost');
+    expect(one(hist({}), false)).not.toHaveProperty('ghost');
+  });
+
+  it('a search result keeps the ghost', () => {
+    const row = (o: Partial<SearchRow>): SearchRow => ({ ...hist({}), snippet: null, matches: 1, ...o });
+    const vm = resultsModel([row({ headless: true, live: { state: 'running', lastWriteMs: now } }), row({ headless: true })], 'promo', false, now, opts);
+    expect(vm.sections[0]!.rows.map(r => (r as { ghost?: string }).ghost)).toEqual(['running', 'closed']);
+  });
+
+  it('hidden runs: a link counts them and brings them back, and CLOSED\'s count leaves them out', () => {
+    const snap: Snapshot = { active: [live({})], history: [hist({})], totalSessions: 40, indexing: false, scope: 'all', hiddenHeadless: 3 };
+    const vm = viewModel(snap, now, opts);
+    expect(vm.sections[1]!.count).toBe(36);
+    expect(vm.sections[1]!.rows.at(-1)).toEqual({ kind: 'link', title: '3 headless runs hidden · show', meta: '', iconClass: '', action: 'headless', ghost: true });
+    expect(viewModel({ ...snap, hiddenHeadless: 1 }, now, opts).sections[1]!.rows.at(-1)).toMatchObject({ title: '1 headless run hidden · show' });
+    expect(viewModel({ ...snap, hiddenHeadless: 0 }, now, opts).sections[1]!.rows.at(-1)).toMatchObject({ action: 'scope' });
   });
 });

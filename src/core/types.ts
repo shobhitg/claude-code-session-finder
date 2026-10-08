@@ -1,4 +1,4 @@
-export const INDEX_VERSION = 3;
+export const INDEX_VERSION = 4;
 
 /** 'u' your prompt · 'a' Claude prose · 't' session title · 'sub' subagent prose */
 export type Role = 'u' | 'a' | 't' | 'sub';
@@ -25,6 +25,8 @@ export interface SessionMeta {
   lastTs: number;
   /** When you last did something to it (core/acts.ts) — 0 if you never did. The sidebar's order (D14). */
   lastActTs: number;
+  /** Started without a UI — `claude -p`, the Agent SDK, a daemon (D15). Claude Code's tab cannot show these. */
+  headless: boolean;
   msgCount: number;
   mtimeMs: number;
   size: number;

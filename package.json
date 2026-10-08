@@ -54,6 +54,16 @@
         "icon": "$(filter)"
       },
       {
+        "command": "sessionFinder.hideHeadless",
+        "title": "Claude: Sessions — Hide Headless Runs",
+        "icon": { "light": "resources/ghost-light.svg", "dark": "resources/ghost-dark.svg" }
+      },
+      {
+        "command": "sessionFinder.showHeadless",
+        "title": "Claude: Sessions — Show Headless Runs",
+        "icon": { "light": "resources/ghost-filled-light.svg", "dark": "resources/ghost-filled-dark.svg" }
+      },
+      {
         "command": "sessionFinder.showSessions",
         "title": "Claude: Show Sessions"
       },
@@ -96,6 +106,11 @@
             "Every Claude Code session on this machine."
           ],
           "description": "Which sessions the Sessions view lists. The filter button in the view toggles it per workspace; the status bar and the search picker always cover every project."
+        },
+        "sessionFinder.hideHeadlessRuns": {
+          "type": "boolean",
+          "default": false,
+          "description": "Keep headless sessions (claude -p runs, Agent SDK and daemon sessions, marked with a ghost) out of the Sessions view and its status bar count. The ghost button in the view toggles it per workspace; is:headless in the view's filter still finds them, and the search picker always does."
         },
         "sessionFinder.contextBudget": {
           "type": "number",
@@ -151,19 +166,29 @@
           "group": "navigation@1"
         },
         {
+          "command": "sessionFinder.hideHeadless",
+          "when": "view == sessionFinder.live && sessionFinder.headless != hidden",
+          "group": "navigation@2"
+        },
+        {
+          "command": "sessionFinder.showHeadless",
+          "when": "view == sessionFinder.live && sessionFinder.headless == hidden",
+          "group": "navigation@2"
+        },
+        {
           "command": "sessionFinder.showAllProjects",
           "when": "view == sessionFinder.live && sessionFinder.scope == workspace",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "sessionFinder.showThisWorkspace",
           "when": "view == sessionFinder.live && sessionFinder.scope == all",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "sessionFinder.refresh",
           "when": "view == sessionFinder.live",
-          "group": "navigation@3"
+          "group": "navigation@4"
         }
       ]
     },

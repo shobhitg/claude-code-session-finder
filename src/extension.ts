@@ -54,6 +54,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
     vscode.window.tabGroups.onDidChangeTabGroups(() => live.noteActiveTab()),
     vscode.commands.registerCommand('sessionFinder.showAllProjects', () => host.toggleScope()),
     vscode.commands.registerCommand('sessionFinder.showThisWorkspace', () => host.toggleScope()),
+    vscode.commands.registerCommand('sessionFinder.hideHeadless', () => host.toggleHeadless()),
+    vscode.commands.registerCommand('sessionFinder.showHeadless', () => host.toggleHeadless()),
     vscode.commands.registerCommand('sessionFinder.filterSessions', async (q?: string) => {
       await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
       live.focusFilter(typeof q === 'string' ? q : undefined);

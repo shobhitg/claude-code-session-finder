@@ -9,8 +9,16 @@ interface Part { type?: string; text?: string }
 interface Line extends ActRec {
   type?: string; cwd?: string; gitBranch?: string; timestamp?: string;
   isSidechain?: boolean; aiTitle?: string; customTitle?: string; prNumber?: number;
+  entrypoint?: string; sessionKind?: string;
   message?: { content?: string | Part[] };
 }
+
+/**
+ * D15: Claude Code's own test for a session it keeps out of its history — an SDK entrypoint (`claude -p`
+ * writes sdk-cli) or a daemon. The FIRST of each decides: a -p run later resumed in VS Code is still one.
+ */
+const SDK_ENTRYPOINTS = new Set(['sdk-cli', 'sdk-ts', 'sdk-py']);
+const DAEMON_KINDS = new Set(['daemon', 'daemon-worker']);
 
 function parse(line: string): Line | null {
   if (!line) return null;
@@ -34,12 +42,15 @@ export function extractSession(file: SourceFile, text: string): { meta: BareMeta
   let aiTitle: string | null = null;
   let customTitle: string | null = null;      // L12: written by "Rename Session Tab"; beats every ai-title
   let firstTs = 0, lastTs = 0, msgCount = 0;
+  let entrypoint: string | undefined, sessionKind: string | undefined;
   const acts = actClock();
 
   for (const raw of text.split('\n')) {
     const d = parse(raw);
     if (!d) continue;
     acts.see(d);
+    if (entrypoint === undefined && typeof d.entrypoint === 'string') entrypoint = d.entrypoint;
+    if (sessionKind === undefined && typeof d.sessionKind === 'string') sessionKind = d.sessionKind;
 
     if (typeof d.cwd === 'string' && d.cwd) cwd = d.cwd;            // LAST wins (F6)
     if (typeof d.gitBranch === 'string' && d.gitBranch) branches.add(d.gitBranch);
@@ -68,6 +79,7 @@ export function extractSession(file: SourceFile, text: string): { meta: BareMeta
       sessionId: file.sessionId, file: file.path, projectDir: file.projectDir,
       cwd, title: customTitle ?? aiTitle, branches: [...branches], prLinks: [...prLinks],
       firstTs, lastTs, lastActTs: acts.last ?? 0, msgCount, mtimeMs: file.mtimeMs, size: file.size,
+      headless: SDK_ENTRYPOINTS.has(entrypoint ?? '') || DAEMON_KINDS.has(sessionKind ?? ''),
     },
     prose,
   };

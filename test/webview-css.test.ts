@@ -43,6 +43,19 @@ describe('webview stylesheets (spec §10, D7)', () => {
     expect(style).toMatch(/\.section\[data-id="active"\] \.section__body \{ min-height: calc\(10 \* var\(--row\)\); \}/);
     expect(style).toMatch(/\.section\[data-collapsed="true"\] \.section__body \{ display: none; \}/);
   });
+  it('a headless run (D15) wears its own colour, purple, which no state uses — and a dot for every status the model emits', () => {
+    const style = sheets[1]![1];
+    expect(tokens).toMatch(/--st-headless:\s*var\(--vscode-charts-purple\)/);
+    expect(tokens.match(/--st-(?!headless)[a-z-]+:\s*var\(--vscode-charts-purple\)/)).toBeNull();
+    for (const g of ['running', 'done', 'failed', 'waiting', 'stalled', 'closed']) expect(style, g).toContain(`.ghost__dot[data-ghost="${g}"]`);
+    expect(style).toMatch(/\.ghost__dot\[data-ghost="running"\] \{[^}]*animation: ghost-pulse/);
+  });
+  it('under reduced motion the running dot and the spark hold still', () => {
+    const style = sheets[1]![1];
+    const reduced = /@media \(prefers-reduced-motion: reduce\) \{([^{}]*\{[^}]*\})*\s*\}/.exec(style)?.[0] ?? '';
+    expect(reduced).toContain('.ghost__dot');
+    expect(reduced).toContain('.ghost__spark');
+  });
   it('styles every state the models can emit', () => {
     const style = sheets[1]![1], session = sheets[2]![1];
     for (const sel of ['[data-state="running"]', '[data-reason="tool-or-permission"]', '[data-reason="your-turn"]', '[data-reason="stalled"]', '[data-reason="question"]', '[data-reason="interrupted"]', '[data-state="history"]', '[aria-selected="true"]', '[data-ringing="true"]', '[data-heat="low"]', '[data-heat="mid"]', '[data-heat="warm"]', '[data-heat="high"]', '[data-heat="full"]', '.tip']) expect(style, sel).toContain(sel);

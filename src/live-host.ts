@@ -37,7 +37,7 @@ export class LiveHost implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [this.emitter];
 
   readonly onSnapshot: vscode.Event<Snapshot> = this.emitter.event;
-  snapshot: Snapshot = { active: [], history: [], totalSessions: 0, indexing: true, scope: 'all' };
+  snapshot: Snapshot = { active: [], history: [], totalSessions: 0, indexing: true, scope: 'all', hiddenHeadless: 0 };
   /** The override that keeps a recently written session under CLOSED: the × on a row put it there. */
   private closed: ClosedMarkers = {};
   private activeWindowMs = 4 * HOUR;
@@ -59,7 +59,7 @@ export class LiveHost implements vscode.Disposable {
     this.rebuildTracker();
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('sessionFinder')) this.rebuildTracker();
+        if (e.affectsConfiguration('sessionFinder')) { this.rebuildTracker(); void this.syncHeadlessContext(); }
       }),
       // D6: nothing runs while the window is unfocused; the first focus event sweeps at once. Another
       // window may have looked at a session meanwhile: the snapshot published now re-reads the looks.
@@ -71,6 +71,7 @@ export class LiveHost implements vscode.Disposable {
       vscode.workspace.onDidChangeWorkspaceFolders(() => void this.refreshIndex()),
     );
     void this.syncScopeContext();
+    void this.syncHeadlessContext();
     void this.refreshIndex();
   }
 
@@ -89,6 +90,22 @@ export class LiveHost implements vscode.Disposable {
   /** The view-title toggle shows one of two icons; the `when` clause reads this context key. */
   private syncScopeContext(): Thenable<unknown> {
     return vscode.commands.executeCommand('setContext', 'sessionFinder.scope', this.scope);
+  }
+
+  /** D15: whether the sidebar keeps headless runs out — per workspace (the ghost toggle) over the setting, as scope is. */
+  get hideHeadless(): boolean {
+    return this.ctx.workspaceState.get<boolean>('hideHeadless')
+      ?? vscode.workspace.getConfiguration('sessionFinder').get<boolean>('hideHeadlessRuns', false);
+  }
+
+  async toggleHeadless(): Promise<void> {
+    await this.ctx.workspaceState.update('hideHeadless', !this.hideHeadless);
+    await this.syncHeadlessContext();
+    this.publish();
+  }
+
+  private syncHeadlessContext(): Thenable<unknown> {
+    return vscode.commands.executeCommand('setContext', 'sessionFinder.headless', this.hideHeadless ? 'hidden' : 'shown');
   }
 
   /** Whether the sidebar shows this session. Global surfaces (status bar, picker) never ask. */
@@ -168,8 +185,9 @@ export class LiveHost implements vscode.Disposable {
     const r = applyClosed(raw, this.closed, { now: Date.now(), activeWindowMs: this.activeWindowMs, pinned: this.pinned });
     if (r.changed) { this.closed = r.markers; void this.ctx.globalState.update(CLOSED_KEY, r.markers); }
     this.live = r.liveness;
-    this.rings = this.bell.update(this.live, vscode.window.state.focused);
-    this.snapshot = buildSnapshot(this.index, this.live, { indexing: this.indexing !== null, scope: this.scope, inScope: this.inScope, rings: this.rings });
+    this.rings = this.bell.update(this.live, vscode.window.state.focused, id => this.session(id)?.headless === true);
+    this.snapshot = buildSnapshot(this.index, this.live, { indexing: this.indexing !== null, scope: this.scope, inScope: this.inScope, rings: this.rings,
+                                                          hideHeadless: this.hideHeadless });
     this.logRinging();
     this.emitter.fire(this.snapshot);
   }

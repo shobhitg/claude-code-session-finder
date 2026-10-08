@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { refreshIndex } from '../core/cache.js';
 import { deepSearch } from '../core/deep.js';
 import { parseQuery, search, snippet, withWindow, type SessionHit } from '../core/query.js';
-import { planOpen } from '../core/resolve.js';
+import { planOpen, readsInView } from '../core/resolve.js';
 import type { SearchIndex } from '../core/types.js';
 import { executePlan, folderUri, openTranscript } from '../open.js';
 import { projectLabel, stateIcon } from '../core/rows.js';
@@ -194,6 +194,7 @@ export async function showSearchQuickPick(
     }
 
     qp.hide();
+    if (readsInView(picked.hit.session, 'tab')) { await vscode.commands.executeCommand('sessionFinder.openSessionView', picked.hit.session.sessionId); return; }   // D15
     const folders = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.path);
     await executePlan(planOpen(picked.hit.session, folders), ctx);
   });

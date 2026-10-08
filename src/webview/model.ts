@@ -15,11 +15,14 @@ export interface RowVM {
   age?: AgeTag;
   /** the bell (D13): the ball is in your court and you have not seen it there — the needs-you look */
   ringing?: true;
+  /** a headless run (D15): the ghost takes the icon slot and this is its dot — none on a closed row */
+  ghost?: GhostStatus;
 }
+export type GhostStatus = 'running' | 'done' | 'failed' | 'waiting' | 'stalled' | 'closed';
 export interface AgeTag { label: string; title: string; tier: 'old' | 'stale' }
 export type HeatTier = 'low' | 'mid' | 'warm' | 'high' | 'full';
 export interface Heat { tokens: number; budget: number; pct: number; tier: HeatTier; label: string; title: string }
-export interface LinkVM { kind: 'link'; title: string; meta: string; iconClass: string; action: 'search' | 'scope' }
+export interface LinkVM { kind: 'link'; title: string; meta: string; iconClass: string; action: 'search' | 'scope' | 'headless'; ghost?: true }
 export interface SectionVM {
   id: 'active' | 'history' | 'results'; label: string; count: number; rows: Array<RowVM | LinkVM>;
   empty: string | null; skeleton: boolean;
@@ -117,6 +120,28 @@ export function heatOf(tokens: number, budget = DEFAULT_CONTEXT_BUDGET): Heat {
 // Under reduced motion the spinner becomes a static dot in the running colour (spec §10).
 const runningIcon = (reducedMotion?: boolean): string => reducedMotion ? 'circle-large-filled' : 'loading~spin';
 
+/**
+ * D15: a headless run is a job, not a conversation, so its dot reads like one. `claude -p` cannot stop
+ * for a permission prompt, so a quiet tool call is a long tool, still running; "your turn" is a finished
+ * run; an interruption stopped it before it finished.
+ */
+export function ghostStatus(r: Pick<LiveRow, 'state' | 'reason'>): GhostStatus {
+  if (r.state === 'running') return 'running';
+  switch (r.reason) {
+    case 'tool-or-permission': return 'running';
+    case 'your-turn': return 'done';
+    case 'interrupted': return 'failed';
+    case 'question': return 'waiting';
+    default: return 'stalled';
+  }
+}
+const GHOST_LABEL: Record<GhostStatus, string> = {
+  running: 'working', done: 'finished · click to read it', failed: 'stopped before it finished · click to read it',
+  waiting: 'asked a question nobody is there to answer', stalled: 'nothing written for a while — it may have died',
+  closed: 'closed · click to read it',
+};
+const ghostLabel = (g: GhostStatus): string => `Headless run (claude -p) — ${GHOST_LABEL[g]}`;
+
 function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
   const vm: RowVM = {
     kind: 'session', sessionId: r.sessionId, title: r.title, meta: metaLabel(r), time: timeLabel(r, now),
@@ -128,15 +153,18 @@ function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
   const age = ageTag(r, now, opts);
   if (age) vm.age = age;
   if (r.ringing) vm.ringing = true;
+  if (r.headless) { vm.ghost = ghostStatus(r); vm.stateLabel = ghostLabel(vm.ghost); }
   return vm;
 }
 
 function historyRow(r: HistoryRow, opts: ViewOpts): RowVM {
-  return {
+  const vm: RowVM = {
     kind: 'session', sessionId: r.sessionId, title: r.title, meta: metaLabel(r), time: historyLabel(r),
     iconClass: iconClass('history'), state: 'history', missing: !r.cwdExists, selected: r.sessionId === opts.activeId,
     stateLabel: 'Closed · click to resume',
   };
+  if (r.headless) { vm.ghost = 'closed'; vm.stateLabel = ghostLabel('closed'); }
+  return vm;
 }
 
 export function viewModel(s: Snapshot, now: number, opts: ViewOpts): ViewModel {
@@ -148,11 +176,16 @@ export function viewModel(s: Snapshot, now: number, opts: ViewOpts): ViewModel {
     history.push(s.scope === 'workspace'
       ? { kind: 'link', title: 'This workspace only · show all projects', meta: '', iconClass: iconClass('filter-filled'), action: 'scope' }
       : { kind: 'link', title: 'All projects · show this workspace only', meta: '', iconClass: iconClass('filter'), action: 'scope' });
+    // D15: hidden is said out loud, with the way back — no link while nothing is hidden.
+    if (s.hiddenHeadless > 0) {
+      history.push({ kind: 'link', title: `${s.hiddenHeadless} headless run${s.hiddenHeadless === 1 ? '' : 's'} hidden · show`, meta: '',
+                     iconClass: '', action: 'headless', ghost: true });
+    }
   }
 
   // HISTORY in the data model (spec §6: everything not ACTIVE) is labelled Closed in the view: the × on an
   // active row puts a session here by closing its tab, and clicking a row here resumes it.
-  const historyCount = Math.max(0, s.totalSessions - s.active.length);
+  const historyCount = Math.max(0, s.totalSessions - s.active.length - s.hiddenHeadless);
   return {
     sections: [
       { id: 'active', label: 'Active', count: active.length, rows: active, skeleton: false,

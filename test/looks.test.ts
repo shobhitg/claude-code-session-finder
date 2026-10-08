@@ -35,6 +35,10 @@ describe('rings: the bell rings while the ball is in your court and you have not
     expect(rings(lv('a', turn, T), looks({}, T + MIN))).toBe(false);
     expect(rings(lv('a', turn, T + 2 * MIN), looks({}, T + MIN))).toBe(true);
   });
+  it('a headless run cannot stop for a permission prompt: its quiet tool call is a long tool, still working, and never rings (D15)', () => {
+    expect(rings(lv('a', tool, T), looks(), true)).toBe(false);
+    for (const s of [turn, interrupted, question]) expect(rings(lv('a', s, T), looks(), true)).toBe(true);   // a finished or stopped run is news
+  });
 });
 
 describe('stampLooks: a look counts only while the ball is in your court', () => {
@@ -128,6 +132,11 @@ describe('Bell: what the host asks before every snapshot', () => {
     expect(ids(live, b.bell.update(live, true))).toEqual(['b']);
     await Promise.resolve();
     expect(b.file().at).toEqual({ a: T });                                  // written down for the other windows
+  });
+  it('asks which sessions are headless, so a run busy in a long tool stays quiet (D15)', () => {
+    const b = setup(looks({}, 0));
+    const live = new Map([['run', lv('run', tool, T - 1_000)], ['you', lv('you', tool, T - 1_000)]]);
+    expect(ids(live, b.bell.update(live, true, id => id === 'run'))).toEqual(['you']);
   });
   it('an unfocused window records no look: a tab on screen behind another app is not being read', () => {
     const b = setup(looks({}, 0));

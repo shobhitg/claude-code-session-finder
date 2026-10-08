@@ -7,7 +7,7 @@ const DAY = 86_400_000;
 
 const meta = (id: string, over: Partial<SessionMeta> = {}): SessionMeta => ({
   sessionId: id, file: `/${id}.jsonl`, extraFiles: [], projectDir: '-w-a', cwd: '/w/a', cwdExists: true,
-  title: null, branches: [], prLinks: [], firstTs: NOW - DAY, lastTs: NOW - DAY, lastActTs: NOW - DAY,
+  title: null, branches: [], prLinks: [], firstTs: NOW - DAY, lastTs: NOW - DAY, lastActTs: NOW - DAY, headless: false,
   msgCount: 1, mtimeMs: 1, size: 1, ...over,
 });
 
@@ -219,6 +219,37 @@ describe('search', () => {
   it('a second quoted group does not suppress a real match on the first phrase', () => {
     const hits = search(index, parseQuery('"paste image" "npm run"', '7d', NOW), NOW);
     expect(hits.map(h => h.session.sessionId)).toContain('s1');
+  });
+});
+
+describe('is:headless (D15)', () => {
+  const runs: SearchIndex = {
+    v: INDEX_VERSION, builtAt: NOW,
+    sessions: [meta('run', { headless: true }), meta('you'), meta('older-run', { headless: true, lastTs: NOW - 2 * DAY }),
+               meta('ancient-run', { headless: true, lastTs: NOW - 40 * DAY })],
+    prose: [
+      { s: 0, r: 'u', t: NOW - DAY, x: 'Make one promo video' },
+      { s: 1, r: 'u', t: NOW - DAY, x: 'why is the promo video blank' },
+      { s: 2, r: 'u', t: NOW - 2 * DAY, x: 'Make one promo video' },
+    ],
+  };
+
+  it('parses is:headless and -is:headless out of the terms, in any case; absent is null', () => {
+    expect(parseQuery('promo is:headless', '7d', NOW)).toMatchObject({ headless: true, terms: ['promo'] });
+    expect(parseQuery('-IS:Headless promo', '7d', NOW)).toMatchObject({ headless: false, terms: ['promo'] });
+    expect(parseQuery('promo', '7d', NOW).headless).toBeNull();
+  });
+
+  it('narrows a search to the runs, or to everything else', () => {
+    const ids = (q: string) => search(runs, parseQuery(q, '7d', NOW), NOW).map(h => h.session.sessionId).sort();
+    expect(ids('promo is:headless')).toEqual(['older-run', 'run']);
+    expect(ids('promo -is:headless')).toEqual(['you']);
+  });
+
+  it('on its own it lists the matching sessions in the window, newest first', () => {
+    const ids = (q: string) => search(runs, parseQuery(q, '7d', NOW), NOW).map(h => h.session.sessionId);
+    expect(ids('is:headless')).toEqual(['run', 'older-run']);
+    expect(ids('is:headless since:all')).toEqual(['run', 'older-run', 'ancient-run']);
   });
 });
 

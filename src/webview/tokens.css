@@ -39,6 +39,8 @@
      the git "modified" colour is a dependable orange-tan everywhere */
   --st-warm:     var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-editorWarning-foreground));
   --st-full:     var(--vscode-charts-red);
+  /* a headless run (D15): purple, which no state uses, so it can only mean "a machine started this" */
+  --st-headless: var(--vscode-charts-purple);
   --s-tip-bg:    var(--vscode-editorHoverWidget-background);
   --s-tip-fg:    var(--vscode-editorHoverWidget-foreground);
   --s-tip-border: var(--vscode-editorHoverWidget-border);

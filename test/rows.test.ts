@@ -6,7 +6,7 @@ import type { Liveness } from '../src/core/state.js';
 
 const meta = (o: Partial<SessionMeta>): SessionMeta => ({
   sessionId: 'x', file: '/p/x.jsonl', extraFiles: [], projectDir: '-workspaces-aida', cwd: '/w', cwdExists: true,
-  title: null, branches: [], prLinks: [], firstTs: 1, lastTs: 1, lastActTs: 0, msgCount: 0, mtimeMs: 1, size: 1, ...o,
+  title: null, branches: [], prLinks: [], firstTs: 1, lastTs: 1, lastActTs: 0, headless: false, msgCount: 0, mtimeMs: 1, size: 1, ...o,
 });
 const live = (sessionId: string, state: Liveness['state'], lastWriteMs: number, lastActMs?: number): [string, Liveness] =>
   [sessionId, { sessionId, verdict: 'awaiting-tool', state, lastWriteMs, ...(lastActMs !== undefined ? { lastActMs } : {}) }];
@@ -132,6 +132,46 @@ describe('scope', () => {
     expect(s.history.map(r => r.sessionId)).toEqual(['a', 'c']);
     expect(s.totalSessions).toBe(2);
     expect(s.scope).toBe('workspace');
+  });
+});
+
+describe('headless (D15)', () => {
+  const idx: SearchIndex = {
+    v: 1, builtAt: 0, prose: [],
+    sessions: [
+      meta({ sessionId: 'run', title: 'Make one promo video', headless: true, firstTs: 900 }),
+      meta({ sessionId: 'you', title: 'Fix the bell', lastActTs: 800 }),
+      meta({ sessionId: 'old-run', title: 'Make one promo video', headless: true, firstTs: 300 }),
+      meta({ sessionId: 'old-you', title: 'Timeline labels', lastActTs: 200 }),
+      meta({ sessionId: 'elsewhere', title: 'Another project\'s run', headless: true, firstTs: 100 }),
+    ],
+  };
+  const liveRuns = new Map([live('run', { kind: 'running' }, 5), live('you', { kind: 'running' }, 4)]);
+
+  it('marks the live and closed rows of headless sessions, and only those', () => {
+    const s = buildSnapshot(idx, liveRuns);
+    expect(s.active.map(r => [r.sessionId, r.headless])).toEqual([['run', true], ['you', undefined]]);
+    expect(s.history.filter(r => r.headless).map(r => r.sessionId)).toEqual(['old-run', 'elsewhere']);
+    expect(s.hiddenHeadless).toBe(0);
+  });
+
+  it('hidden: headless rows leave ACTIVE and CLOSED, and the snapshot counts what it hid — in scope only', () => {
+    const s = buildSnapshot(idx, liveRuns, { hideHeadless: true, inScope: m => m.sessionId !== 'elsewhere' });
+    expect(s.active.map(r => r.sessionId)).toEqual(['you']);
+    expect(s.history.map(r => r.sessionId)).toEqual(['old-you']);
+    expect(s.hiddenHeadless).toBe(2);
+    expect(s.totalSessions).toBe(4);                  // "Search all N sessions" still searches them
+  });
+
+  it('a live session the index has not seen yet is not known to be headless, so it is never hidden', () => {
+    const s = buildSnapshot(idx, new Map([live('brand-new', { kind: 'running' }, 9)]), { hideHeadless: true });
+    expect(s.active.map(r => r.sessionId)).toEqual(['brand-new']);
+  });
+
+  it('search hits carry the mark too', () => {
+    const rows = rowsForHits([{ session: idx.sessions[0]!, score: 1, matchCount: 1, best: null }, { session: idx.sessions[1]!, score: 1, matchCount: 1, best: null }],
+                             new Map(), new Map());
+    expect(rows.map(r => r.headless)).toEqual([true, undefined]);
   });
 });
 
