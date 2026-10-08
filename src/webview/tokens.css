@@ -67,6 +67,9 @@
   --tx-ok:      color-mix(in oklab, var(--st-ok) 75%, var(--s-fg));
   --tx-stalled: color-mix(in oklab, var(--st-stalled) 70%, var(--s-fg));
   --tx-error:   color-mix(in oklab, var(--st-error) 75%, var(--s-fg));
+  /* the shimmer's bright band on running words, and the top light on a glossy pill (D19) */
+  --tx-sheen:   color-mix(in oklab, var(--tx-running) 40%, var(--s-fg));
+  --gloss:      color-mix(in srgb, var(--vscode-foreground) 13%, transparent);
 
   /* type — the IDE's */
   --font:      var(--vscode-font-family);
@@ -81,6 +84,8 @@
   --row: 44px;                       /* two 22px lines: VS Code's list row height, doubled */
   --dur: 120ms; --ease: cubic-bezier(.2, 0, .2, 1);
 }
+/* a light theme's top light is its background, not its (dark) text */
+body.vscode-light { --gloss: color-mix(in srgb, var(--vscode-editor-background) 75%, transparent); }
 @media (prefers-reduced-motion: reduce) {
   :root { --dur: 0ms; }
   .codicon-modifier-spin { animation: none; }

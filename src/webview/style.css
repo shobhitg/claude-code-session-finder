@@ -3,7 +3,10 @@
    view is right in the user's theme, Light+, High Contrast and themes that do not exist yet.
    The only values invented here are rhythm (spacing, radius, row height) and motion. */
 /* Tokens live in tokens.css (shared with the Session View); this file is components only. */
-@media (prefers-reduced-motion: reduce) { .skeleton__bar, .ghost__dot, .ghost__spark { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton__bar, .ghost__dot, .ghost__spark, .spark__svg, .row[data-tone="running"] .row__time, .row[data-ringing="true"]::before, .heat__label { animation: none; }
+  .row[data-tone="running"]::after, .burst { display: none; }
+}
 
 * { box-sizing: border-box; }
 html, body {
@@ -27,6 +30,11 @@ main:focus-visible { outline: none; }
   border: 1px solid var(--s-input-border); background: var(--s-input-bg); color: var(--s-input-fg); font: inherit;
 }
 .filter__input::placeholder { color: var(--s-input-placeholder); }
+/* its edge wears the running → cost → done gradient (D19); high contrast keeps the theme's own border */
+body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .filter__input {
+  border-color: transparent;
+  background: linear-gradient(var(--s-input-bg), var(--s-input-bg)) padding-box, linear-gradient(90deg, var(--st-running), var(--st-cost), var(--st-ok)) border-box;
+}
 .filter__input:focus { outline: 1px solid var(--s-focus); outline-offset: -1px; }
 .filter .action { display: none; }
 .filter[data-active="true"] .action { display: inline-flex; }
@@ -150,8 +158,13 @@ main:focus-visible { outline: none; }
 .link--pr[data-state="merged"] { --pr: var(--st-pr-merged); }
 .link--pr[data-state="closed"] { --pr: var(--st-pr-closed); }
 .link--pr[data-state="draft"] { --pr: var(--st-pr-draft); }
-.link--pr[data-state] { padding: 0 5px 0 3px; background: color-mix(in srgb, var(--pr) 14%, transparent); color: color-mix(in oklab, var(--pr) 60%, var(--s-fg)); }
-.link--pr[data-state]:hover { background: color-mix(in srgb, var(--pr) 26%, transparent); }
+.link--pr[data-state] {
+  padding: 0 5px 0 3px; color: color-mix(in oklab, var(--pr) 60%, var(--s-fg));
+  /* glossy: a top light over the tint, and a hairline of the state's colour (D19) */
+  background-color: color-mix(in srgb, var(--pr) 14%, transparent); background-image: linear-gradient(180deg, var(--gloss), transparent 75%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pr) 30%, transparent);
+}
+.link--pr[data-state]:hover { background-color: color-mix(in srgb, var(--pr) 26%, transparent); }
 .slack-mark { width: 14px; height: 14px; display: block; }
 /* high contrast: the Slack mark in the text colour, like every other icon */
 body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .slack-mark path { fill: currentColor; }
@@ -159,9 +172,9 @@ body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .sla
 /* the list behind +N */
 .links-list {
   position: fixed; z-index: 20; min-width: 220px; max-width: calc(100vw - 8px); max-height: 60vh; overflow: auto;
-  padding: var(--sp-1); border-radius: var(--radius);
-  background: linear-gradient(var(--s-tip-bg), var(--s-tip-bg)), var(--s-bg); color: var(--s-tip-fg); border: 1px solid var(--s-tip-border);
-  font-size: var(--size-meta);
+  padding: var(--sp-1); border-radius: 8px; color: var(--s-tip-fg); font-size: var(--size-meta);
+  background: color-mix(in srgb, var(--s-tip-bg) 82%, transparent); -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, var(--s-tip-fg) 14%, transparent); box-shadow: 0 8px 24px var(--s-shadow);
 }
 .links-list[hidden] { display: none; }
 .links-list__item {
@@ -183,9 +196,14 @@ body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .sla
 .heat__track { width: 28px; height: 4px; border-radius: 2px; background: var(--s-badge-bg); overflow: hidden; }
 /* High contrast paints the badge black on black: outline the track so how full it is still reads */
 body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__track { outline: 1px solid var(--s-contrast); outline-offset: 1px; }
-.heat__fill { display: block; height: 100%; border-radius: 2px; transform-origin: left; transition: transform var(--dur) var(--ease); }
-.row[data-heat="low"] .heat__fill, .row[data-heat="mid"] .heat__fill, .row[data-heat="warm"] .heat__fill { background: var(--st-cost); }
-.row[data-heat="high"] .heat__fill { background: var(--st-warm); }
+/* One ramp — cyan to 60%, amber by 80%, red at the budget — that the fill reveals as it grows (D19): the fill is scaled by
+   --p and its ramp sized by 1/--p, so a 40% fill shows only cyan and an 87% one shows cyan running into amber. */
+.heat__fill {
+  display: block; height: 100%; border-radius: 2px; transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform var(--dur) var(--ease);
+  background: linear-gradient(90deg, var(--st-cost) 0 60%, var(--st-warm) 82%, var(--st-full) 100%) 0 0 / calc(100% / max(var(--p, 1), .02)) 100% no-repeat;
+}
+.heat__label { display: inline-block; }
+.heat__label.tick { animation: tick 450ms cubic-bezier(.2, .8, .2, 1); }
 .row[data-heat="high"] .row__heat { color: var(--st-warm); }
 .row[data-heat="full"] .heat__fill { background: var(--st-full); }
 .row[data-heat="full"] .heat__track { box-shadow: 0 0 0 1px var(--st-full); }
@@ -197,13 +215,19 @@ body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__t
   content: attr(data-tip); position: absolute; top: calc(100% + 4px); right: 0; z-index: 10;
   box-sizing: border-box;   /* `*` does not reach ::after: without this, padding and border overshoot the max-width */
   max-width: min(260px, calc(100vw - 32px)); padding: 3px 7px; border-radius: var(--radius);   /* never wider than the view: a tooltip must not make it scroll sideways */
-  /* on the view's colour too: a theme's translucent hover colour must not let the rows show through */
-  background: linear-gradient(var(--s-tip-bg), var(--s-tip-bg)), var(--s-bg); color: var(--s-tip-fg); border: 1px solid var(--s-tip-border);
-  box-shadow: 0 2px 8px var(--s-shadow);
+  /* frosted glass (D19): the hover colour, mostly opaque, over a blur of what is behind it — the row is lifted above the rest
+     (.row:hover z-index), so what shows through is blurred, never painted over the text. High contrast is solid. */
+  background: color-mix(in srgb, var(--s-tip-bg) 82%, transparent);
+  color: var(--s-tip-fg); border: 1px solid color-mix(in srgb, var(--s-tip-fg) 14%, transparent); border-radius: 7px;
+  box-shadow: 0 8px 24px var(--s-shadow); text-shadow: none;
   font-family: var(--font); font-size: var(--size-meta); font-weight: 400; font-style: normal; line-height: 1.35; text-align: left; white-space: normal; width: max-content;
   opacity: 0; pointer-events: none; transition: opacity var(--dur) var(--ease) 300ms;
 }
 .tip:hover::after, .tip:focus-visible::after { opacity: 1; }
+/* the blur only on the tooltip that shows: one on every hidden tooltip was a compositing layer each, dozens a list */
+.tip:hover::after, .tip:focus-visible::after { -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4); }
+body.vscode-high-contrast .tip::after, body.vscode-high-contrast-light .tip::after,
+body.vscode-high-contrast .links-list, body.vscode-high-contrast-light .links-list { background: var(--s-tip-bg); backdrop-filter: none; border-color: var(--s-tip-border); }
 .tip--left::after { right: auto; left: 0; }
 .row__snippet {
   height: 18px; padding-bottom: 2px;
@@ -219,6 +243,8 @@ body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__t
 .row[data-ringing="true"] .row__title { font-weight: 600; }
 .row[data-ringing="true"]::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--st-needs);
+  /* it glows, and breathes slowly while the ball is in your court (D19) */
+  box-shadow: 0 0 9px 1px color-mix(in srgb, var(--st-needs) 70%, transparent); animation: bell-glow 2.8s ease-in-out infinite;
 }
 .row[data-reason="your-turn"] .row__icon { color: var(--st-ok); }
 .row[data-reason="interrupted"] .row__icon { color: var(--st-stalled); }
@@ -233,6 +259,30 @@ body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__t
 .row[data-tone="done"] .row__time { color: var(--tx-ok); }
 .row[data-tone="stalled"] .row__time { color: var(--tx-stalled); }
 .row[data-tone="failed"] .row__time { color: var(--tx-error); }
+/* ─── the live layer (D19): what is working shimmers, sparkles and streams; what finished bursts; live glyphs glow ─── */
+.row[data-tone="running"]:not([aria-current="true"]) .row__time {
+  color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(100deg, var(--tx-running) 30%, var(--tx-sheen) 47%, var(--tx-running) 64%); background-size: 250% 100%;
+  animation: shimmer 2.4s linear infinite;
+}
+.row[data-tone="running"]::after {
+  content: ""; position: absolute; left: var(--sp-3); right: var(--sp-2); bottom: 0; height: 1.5px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--st-running), transparent) 0 0 / 38% 100% no-repeat; animation: sweep 1.9s ease-in-out infinite;
+}
+.spark__svg { width: 16px; height: 16px; display: block; transform-origin: center; animation: spark-breathe 2.6s ease-in-out infinite; }
+/* a soft halo of its own colour round a live glyph: the glyph's text or drawing, never its tooltip */
+.row[data-state="running"] .row__icon, .row[data-state="attention"] .row__icon { text-shadow: 0 0 6px color-mix(in srgb, currentColor 70%, transparent); }
+.row[data-state="running"] .row__icon > svg, .row[data-state="attention"] .row__icon > svg { filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 70%, transparent)); }
+body.vscode-high-contrast .row__icon, body.vscode-high-contrast-light .row__icon { text-shadow: none; }
+.burst { position: absolute; inset: 0; pointer-events: none; }
+.burst i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%; background: var(--st-ok); animation: burst 900ms ease-out forwards; }
+@keyframes shimmer { from { background-position: 120% 0; } to { background-position: -130% 0; } }
+@keyframes sweep { from { background-position: -45% 0; } to { background-position: 145% 0; } }
+@keyframes spark-breathe { 0% { transform: rotate(0) scale(.82); } 50% { transform: rotate(90deg) scale(1.08); } 100% { transform: rotate(180deg) scale(.82); } }
+@keyframes bell-glow { 0%, 100% { opacity: .65; } 50% { opacity: 1; } }
+@keyframes burst { from { transform: translate(0, 0) scale(.4); opacity: 1; } to { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; } }
+@keyframes tick { from { transform: translateY(4px); opacity: .3; } to { transform: none; opacity: 1; } }
+
 /* on the selection colour, the selection's text colour: blue words on a blue selection would vanish */
 .row[aria-current="true"] .where,
 .row[aria-current="true"] .where__branch,

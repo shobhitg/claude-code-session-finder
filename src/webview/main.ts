@@ -119,12 +119,37 @@ function ghostSvg(): SVGElement {
     svgEl('path', { class: 'ghost__spark', fill: 'currentColor', d: 'M9.9 6.2Q10.2 7.4 11.4 7.7Q10.2 8 9.9 9.2Q9.6 8 8.4 7.7Q9.6 7.4 9.9 6.2Z' }));
   return svg;
 }
-/** Put the ghost and its dot in a row's icon slot — or take them out. The slot is never rebuilt otherwise. */
-function setGhost(icon: HTMLElement, ghost: RowVM['ghost'] | 'link'): void {
-  if (!ghost) { if (icon.firstChild) icon.replaceChildren(); return; }
-  if (!icon.querySelector('.ghost__svg')) icon.replaceChildren(ghostSvg(), ...(ghost === 'link' ? [] : [h('span', { class: 'ghost__dot' })]));
+/** D19: the running glyph — a four-point sparkle that breathes, in place of the IDE's spinner. Drawn for this view; currentColor. */
+function sparkSvg(): SVGElement {
+  const svg = svgEl('svg', { class: 'spark__svg', viewBox: '0 0 16 16', 'aria-hidden': 'true' });
+  svg.append(svgEl('path', { fill: 'currentColor', d: 'M8 1.6c.45 3.1 1.55 4.5 4.6 6.4-3.05 1.9-4.15 3.3-4.6 6.4-.45-3.1-1.55-4.5-4.6-6.4 3.05-1.9 4.15-3.3 4.6-6.4z' }));
+  return svg;
+}
+/** Put a drawn glyph in a row's icon slot — the ghost and its dot, or the running sparkle — or take it out. Never rebuilt otherwise. */
+function setGlyph(icon: HTMLElement, glyph: RowVM['ghost'] | 'link' | 'spark'): void {
+  if (!glyph) { if (icon.querySelector('svg')) icon.replaceChildren(); return; }
+  if (glyph === 'spark') { if (!icon.querySelector('.spark__svg')) icon.replaceChildren(sparkSvg()); return; }
+  if (!icon.querySelector('.ghost__svg')) icon.replaceChildren(ghostSvg(), ...(glyph === 'link' ? [] : [h('span', { class: 'ghost__dot' })]));
   const dot = icon.querySelector<HTMLElement>('.ghost__dot');
-  if (dot && ghost !== 'link' && dot.dataset.ghost !== ghost) dot.dataset.ghost = ghost;
+  if (dot && glyph !== 'link' && dot.dataset.ghost !== glyph) dot.dataset.ghost = glyph;
+}
+
+/** D19: a session that just finished throws a small burst of sparks off its glyph — once, on the change, never at rest. */
+function burst(icon: HTMLElement): void {
+  if (reducedMotion) return;
+  const b = h('span', { class: 'burst', 'aria-hidden': 'true' });
+  for (let i = 0; i < 6; i++) {
+    const a = (i * 60 + 30) * Math.PI / 180;
+    const dot = h('i'); dot.style.setProperty('--dx', `${(Math.cos(a) * 11).toFixed(1)}px`); dot.style.setProperty('--dy', `${(Math.sin(a) * 11).toFixed(1)}px`);
+    b.append(dot);
+  }
+  b.addEventListener('animationend', () => b.remove(), { once: true });
+  icon.append(b);
+}
+/** D19: a number that just changed rises into place. */
+function tick(el: HTMLElement): void {
+  if (reducedMotion) return;
+  el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick');
 }
 
 /** Bring an existing row's attributes and text in line with its model. Structure never changes, so no rebuild. */
@@ -136,7 +161,7 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   if (r.kind === 'link') {
     text('.row__title', r.title); text('.row__time', r.meta);
     const icon = li.querySelector<HTMLElement>('.row__icon')!;
-    icon.className = `row__icon ${r.iconClass}`; setGhost(icon, r.ghost ? 'link' : undefined);
+    icon.className = `row__icon ${r.iconClass}`; setGlyph(icon, r.ghost ? 'link' : undefined);
     return;
   }
   li.className = `row${r.snippet ? ' row--snippet' : ''}`;
@@ -144,6 +169,7 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   if (r.reason) li.dataset.reason = r.reason; else delete li.dataset.reason;
   if (r.ringing) li.dataset.ringing = 'true'; else delete li.dataset.ringing;
   if (r.ghost) li.dataset.ghost = r.ghost; else delete li.dataset.ghost;
+  const wasTone = li.dataset.tone;
   if (r.tone) li.dataset.tone = r.tone; else delete li.dataset.tone;
   if (r.selected) li.setAttribute('aria-current', 'true'); else li.removeAttribute('aria-current');
   li.querySelector<HTMLElement>('.action--close')!.hidden = r.state === 'history';   // nothing to close on a closed row
@@ -151,9 +177,11 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   const menu = JSON.stringify({ webviewSection: 'session', sessionId: r.sessionId, closed: r.state === 'history', headless: !!r.ghost, preventDefaultContextMenuItems: true });
   if (li.dataset.vscodeContext !== menu) li.dataset.vscodeContext = menu;
   const icon = li.querySelector<HTMLElement>('.row__icon')!;
-  // a ghost row draws its own glyph: the state's codicon would paint over it
-  icon.className = `row__icon tip tip--left${r.ghost ? '' : ` ${r.iconClass}`}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
-  setGhost(icon, r.ghost);
+  // a ghost row and a running one draw their own glyph (the ghost, the sparkle): the state's codicon would paint over it
+  const spark = !r.ghost && r.state === 'running';
+  icon.className = `row__icon tip tip--left${r.ghost || spark ? '' : ` ${r.iconClass}`}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
+  setGlyph(icon, r.ghost ?? (spark ? 'spark' : undefined));
+  if (wasTone && wasTone !== 'done' && r.tone === 'done') burst(icon);
   // a new title may now fit, or not: fit() decides whether it names itself in a tooltip
   const titleEl = li.querySelector<HTMLElement>('.row__title')!;
   if (titleEl.textContent !== r.title) { titleEl.textContent = r.title; fitted.delete(li); fitSoon(); }
@@ -168,9 +196,10 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
     li.dataset.heat = r.heat.tier;
     if (!heat.firstChild) heat.append(h('span', { class: 'heat__track' }, h('span', { class: 'heat__fill' })), h('span', { class: 'heat__label' }));
     heat.dataset.tip = r.heat.title; heat.setAttribute('aria-label', r.heat.title);
-    heat.querySelector<HTMLElement>('.heat__fill')!.style.transform = `scaleX(${r.heat.pct / 100})`;
+    // --p scales the fill and, inversely, its ramp, so the fill shows the part of cyan → amber → red it has reached (D19)
+    heat.querySelector<HTMLElement>('.heat__fill')!.style.setProperty('--p', String(r.heat.pct / 100));
     const label = heat.querySelector<HTMLElement>('.heat__label')!;
-    if (label.textContent !== r.heat.label) label.textContent = r.heat.label;
+    if (label.textContent !== r.heat.label) { const had = label.textContent; label.textContent = r.heat.label; if (had) tick(label); }
   } else if (heat.firstChild) { heat.replaceChildren(); delete heat.dataset.tip; heat.removeAttribute('aria-label'); delete li.dataset.heat; }
   setAge(li.querySelector<HTMLElement>('.row__age')!, r.age);
   const snippet = li.querySelector<HTMLElement>('.row__snippet');

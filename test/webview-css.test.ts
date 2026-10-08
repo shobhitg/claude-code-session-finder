@@ -41,8 +41,12 @@ describe('webview stylesheets (spec §10, D7)', () => {
     for (const [, sel, body] of style.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
       for (const one of sel!.split(',')) if (hosts.test(one.trim())) expect(body, one.trim()).not.toMatch(/(?:^|;|\s)opacity:/);
     }
-    // and the tooltip itself sits on the view's colour, whatever the hover colour's alpha
-    expect(style).toMatch(/\.tip::after \{[^}]*background: linear-gradient\(var\(--s-tip-bg\), var\(--s-tip-bg\)\), var\(--s-bg\)/);
+    // and the tooltip is frosted glass (D19): mostly the hover colour, over a blur — solid in high contrast
+    expect(style).toMatch(/\.tip::after \{[^}]*background: color-mix\(in srgb, var\(--s-tip-bg\) 82%, transparent\);/);
+    // the blur only on the tooltip showing — on every hidden one it was a compositing layer each
+    expect(style).not.toMatch(/\.tip::after \{[^}]*backdrop-filter/);
+    expect(style).toMatch(/\.tip:hover::after, \.tip:focus-visible::after \{ -webkit-backdrop-filter: blur\(12px\) saturate\(1\.4\); backdrop-filter: blur\(12px\) saturate\(1\.4\); \}/);
+    expect(style).toMatch(/body\.vscode-high-contrast \.tip::after[^{]*\{ background: var\(--s-tip-bg\); backdrop-filter: none;/);
   });
   it('the needs-you look (accent bar, semibold title) belongs to a row that rings, not to a state (D13)', () => {
     const style = sheets[1]![1];
@@ -54,8 +58,9 @@ describe('webview stylesheets (spec §10, D7)', () => {
   it('the state words wear their state\'s colour, mixed toward the text colour so they read on light themes too (D18)', () => {
     const style = sheets[1]![1];
     const tx = [...tokens.matchAll(/^\s*(--tx-[a-z]+):\s*([^;]+);/gm)];
-    expect(tx.map(([, n]) => n)).toEqual(['--tx-running', '--tx-needs', '--tx-ok', '--tx-stalled', '--tx-error']);
-    for (const [, name, value] of tx) expect(value, name).toMatch(/^color-mix\(in oklab, var\(--st-[a-z]+\) \d+%, var\(--s-fg\)\)$/);
+    expect(tx.map(([, n]) => n)).toEqual(['--tx-running', '--tx-needs', '--tx-ok', '--tx-stalled', '--tx-error', '--tx-sheen']);
+    for (const [, name, value] of tx.slice(0, 5)) expect(value, name).toMatch(/^color-mix\(in oklab, var\(--st-[a-z]+\) \d+%, var\(--s-fg\)\)$/);
+    expect(tx[5]![2]).toMatch(/^color-mix\(in oklab, var\(--tx-running\) \d+%, var\(--s-fg\)\)$/);   // the shimmer's band: still the running hue
     for (const tone of ['running', 'needs', 'done', 'stalled', 'failed']) expect(style, tone).toMatch(new RegExp(`\\.row\\[data-tone="${tone}"\\] \\.row__time \\{ color: var\\(--tx-`));
   });
   it('the Slack mark falls back to the text colour in high-contrast themes', () => {
@@ -66,13 +71,28 @@ describe('webview stylesheets (spec §10, D7)', () => {
     expect(style).not.toMatch(/\.section\[data-id="active"\] \.section__body \{[^}]*min-height/);
     expect(style).toMatch(/\.section\[data-collapsed="true"\] \.section__body \{ display: none; \}/);
   });
-  it('the cost meter is a measurement below 80% — its own cyan, no state colour — then amber, then red (D17, D18)', () => {
+  it('the cost meter fills along one ramp — its own cyan, then amber, then red — that it reveals as it grows; past the budget, solid red (D17–D19)', () => {
     const style = sheets[1]![1];
-    expect(style).toMatch(/\.row\[data-heat="low"\] \.heat__fill, \.row\[data-heat="mid"\] \.heat__fill, \.row\[data-heat="warm"\] \.heat__fill \{ background: var\(--st-cost\); \}/);
-    for (const rule of style.match(/\.row\[data-heat="(?:low|mid|warm)"\][^{]*\{[^}]*\}/g) ?? []) expect(rule.replace(/--st-cost/g, ''), rule).not.toMatch(/--st-/);
+    expect(style).toMatch(/\.heat__fill \{[^}]*transform: scaleX\(var\(--p, 0\)\);[^}]*background: linear-gradient\(90deg, var\(--st-cost\) 0 60%, var\(--st-warm\) 82%, var\(--st-full\) 100%\) 0 0 \/ calc\(100% \/ max\(var\(--p, 1\), \.02\)\) 100% no-repeat;/);
+    expect(style).not.toMatch(/\.heat__fill \{[^}]*transition: width/);   // transform only: the meter never re-lays out its row
     expect(tokens).toMatch(/--st-cost:\s*var\(--vscode-terminal-ansiCyan/);
-    expect(style).toMatch(/\.row\[data-heat="high"\] \.heat__fill \{ background: var\(--st-warm\); \}/);
     expect(style).toMatch(/\.row\[data-heat="full"\] \.heat__fill \{ background: var\(--st-full\); \}/);
+  });
+  it('the live layer (D19): running words shimmer, a running row streams along its foot, the running glyph is a sparkle, live glyphs glow, a finish bursts — and all of it holds still under reduced motion', () => {
+    const style = sheets[1]![1];
+    expect(style).toMatch(/\.row\[data-tone="running"\]:not\(\[aria-current="true"\]\) \.row__time \{[^}]*background-clip: text;[^}]*animation: shimmer/);
+    expect(style).toMatch(/\.row\[data-tone="running"\]::after \{[^}]*animation: sweep/);
+    expect(style).toMatch(/\.spark__svg \{[^}]*animation: spark-breathe/);
+    expect(style).toMatch(/\.row\[data-ringing="true"\]::before \{[^}]*animation: bell-glow/);
+    expect(style).toMatch(/\.burst i \{[^}]*animation: burst 900ms ease-out forwards/);
+    expect(style).toMatch(/text-shadow: 0 0 6px color-mix\(in srgb, currentColor 70%, transparent\)/);
+    const reduced = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(style)?.[1] ?? '';
+    for (const sel of ['.spark__svg', '.row[data-tone="running"] .row__time', '.row[data-ringing="true"]::before', '.heat__label']) expect(reduced, sel).toContain(sel);
+    expect(reduced).toMatch(/\.row\[data-tone="running"\]::after, \.burst \{ display: none; \}/);
+  });
+  it('the filter\'s edge wears the running → cost → done gradient, but high contrast keeps its border (D19)', () => {
+    const style = sheets[1]![1];
+    expect(style).toMatch(/body:not\(\.vscode-high-contrast\):not\(\.vscode-high-contrast-light\) \.filter__input \{[^}]*linear-gradient\(90deg, var\(--st-running\), var\(--st-cost\), var\(--st-ok\)\) border-box/);
   });
   it('high contrast outlines the cost meter\'s track, which it would paint black on black', () => {
     expect(sheets[1]![1]).toMatch(/body\.vscode-high-contrast \.heat__track, body\.vscode-high-contrast-light \.heat__track \{[^}]*outline: 1px solid var\(--s-contrast\)/);
@@ -95,7 +115,7 @@ describe('webview stylesheets (spec §10, D7)', () => {
   });
   it('styles every state the models can emit', () => {
     const style = sheets[1]![1], session = sheets[2]![1];
-    for (const sel of ['[data-state="running"]', '[data-reason="tool-or-permission"]', '[data-reason="your-turn"]', '[data-reason="stalled"]', '[data-reason="question"]', '[data-reason="interrupted"]', '[data-state="history"]', '[aria-current="true"]', '[data-ringing="true"]', '[data-heat="low"]', '[data-heat="mid"]', '[data-heat="warm"]', '[data-heat="high"]', '[data-heat="full"]', '.tip', '[data-state="open"]', '[data-state="merged"]', '[data-state="closed"]', '[data-state="draft"]', '.where__branch--quiet', '.where__worktree--gone', '.where__item--icon', '.links__sep[hidden]', '.link--more', '.links-list']) expect(style, sel).toContain(sel);
+    for (const sel of ['[data-state="running"]', '[data-reason="tool-or-permission"]', '[data-reason="your-turn"]', '[data-reason="stalled"]', '[data-reason="question"]', '[data-reason="interrupted"]', '[data-state="history"]', '[aria-current="true"]', '[data-ringing="true"]', '[data-heat="high"]', '[data-heat="full"]', '.spark__svg', '.burst', '[data-tone="running"]', '.tip', '[data-state="open"]', '[data-state="merged"]', '[data-state="closed"]', '[data-state="draft"]', '.where__branch--quiet', '.where__worktree--gone', '.where__item--icon', '.links__sep[hidden]', '.link--more', '.links-list']) expect(style, sel).toContain(sel);
     for (const sel of ['.bar--running', '.bar--completed', '.bar--failed', '.bar--stopped', '.bar--launched', '.tool--error', '.turn--notification', '.turn--command', '.tree__tag']) expect(session, sel).toContain(sel);
   });
 });

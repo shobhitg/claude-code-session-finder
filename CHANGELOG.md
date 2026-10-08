@@ -22,6 +22,22 @@
 - **A row you clicked no longer keeps its buttons up**; they show on hover and
   on keyboard focus.
 
+**And a live layer, so it feels like the tools it watches.** Only what is
+changing moves:
+
+- A working session's state words **shimmer**, its glyph is a **breathing
+  sparkle** instead of the spinner, and a thin line **streams** along its row.
+- The bar of a row that needs you **glows** softly; live glyphs carry a **halo**
+  of their own colour.
+- When a session finishes, its glyph throws a small **burst** of sparks — once.
+- The cost meter reveals its **cyan → amber → red ramp** as it fills, and its
+  token count **ticks** into place when it grows.
+- The filter box has a **gradient edge**, PR pills are **glossy**, and tooltips
+  are **frosted glass**.
+
+High-contrast themes stay solid and plain, and with reduced motion turned on
+nothing moves.
+
 ## 0.10.0
 
 **Headless runs wear a ghost.** A session started without a UI — `claude -p`,
