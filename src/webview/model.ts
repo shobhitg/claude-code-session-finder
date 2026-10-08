@@ -18,6 +18,8 @@ export interface RowVM {
   selected: boolean;
   /** one sentence for the glyph's tooltip */
   stateLabel: string;
+  /** the colour of the state words (D18) — none on a closed row */
+  tone?: Tone;
   /** how expensive the next turn is: context size against the model's window */
   heat?: Heat;
   /** written longer ago than the active window — here only because its tab is open */
@@ -28,6 +30,7 @@ export interface RowVM {
   ghost?: GhostStatus;
 }
 export type GhostStatus = 'running' | 'done' | 'failed' | 'waiting' | 'stalled' | 'closed';
+export type Tone = 'running' | 'needs' | 'done' | 'stalled' | 'failed';
 export interface AgeTag { label: string; title: string; tier: 'old' | 'stale' }
 export interface WhereVM {
   /** only a session from another project names it */
@@ -241,6 +244,21 @@ export function activeReserve(heldPx: number, contentPx: number, rowPx: number):
   return Math.max(heldPx, Math.ceil(contentPx + rowPx));
 }
 
+const GHOST_TONE: Record<GhostStatus, Tone> = { running: 'running', done: 'done', failed: 'failed', waiting: 'needs', stalled: 'stalled', closed: 'stalled' };
+/**
+ * D18: the hue of a live row's state words, the same as its glyph's — working blue, waiting on you yellow, done
+ * green, interrupted or stalled amber; a headless run's follows its dot (an interrupted run failed: red).
+ */
+export function toneOf(r: Pick<LiveRow, 'state' | 'reason' | 'headless'>): Tone {
+  if (r.headless) return GHOST_TONE[ghostStatus(r)];
+  if (r.state === 'running') return 'running';
+  switch (r.reason) {
+    case 'question': case 'tool-or-permission': return 'needs';
+    case 'your-turn': return 'done';
+    default: return 'stalled';
+  }
+}
+
 // Under reduced motion the spinner becomes a static dot in the running colour (spec §10).
 const runningIcon = (reducedMotion?: boolean): string => reducedMotion ? 'circle-large-filled' : 'loading~spin';
 
@@ -270,7 +288,7 @@ function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
   const vm: RowVM = {
     kind: 'session', sessionId: r.sessionId, title: r.title, time: timeLabel(r, now), timeTip: timeTip(r, now), ...whereAndLinks(r),
     iconClass: iconClass(r.state === 'running' ? runningIcon(opts.reducedMotion) : stateIcon(r)), state: r.state,
-    selected: r.sessionId === opts.activeId, stateLabel: stateLabel(r),
+    selected: r.sessionId === opts.activeId, stateLabel: stateLabel(r), tone: toneOf(r),
   };
   if (r.reason) vm.reason = r.reason;
   if (r.contextTokens) vm.heat = heatOf(r.contextTokens, opts.contextBudget);

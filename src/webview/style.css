@@ -50,6 +50,7 @@ main:focus-visible { outline: none; }
   background: var(--s-badge-bg); color: var(--s-badge-fg);
   font-weight: 600; letter-spacing: 0; text-transform: none;
 }
+.section[data-id="active"] .section__count { background: var(--s-accent-bg); color: var(--s-accent-fg); }
 
 /* ─── rows ─────────────────────────────────────────────────────────────────── */
 .list { list-style: none; margin: 0; padding: 0; }
@@ -63,15 +64,17 @@ main:focus-visible { outline: none; }
 /* only a row that has just appeared fades in; existing rows are updated in place and never blink */
 .row--new { animation: row-in 200ms var(--ease); }
 @keyframes row-in { from { opacity: 0; } to { opacity: 1; } }
-.row:hover { background: var(--s-hover); --row-paint: var(--s-hover); }
+/* What a row is painted with, for the actions laid over it: its tint (a ringing row's) over its colour over the view's */
+.row { --row-paint: transparent; --row-tint: transparent; }
+.row:hover { background-color: var(--s-hover); --row-paint: var(--s-hover); }
+/* A row under the pointer or the keyboard stands above the rows after it, so its tooltips — which open below it —
+   are never painted over by the next row's text. Until 0.10.1 they were wherever a row was dimmed with opacity
+   (the selected row, a stalled one): opacity boxed the tooltip in. Nothing here dims with opacity any more. */
+.row:hover, .row:focus-within { z-index: 1; }
 .row:focus-visible, .row[aria-current="true"] { outline: 1px solid var(--s-focus); outline-offset: -1px; }
 /* The session behind the active editor tab: selection colour, a 3px focus-colour bar, bold title. */
-.row[aria-current="true"] { background: var(--s-sel); color: var(--s-sel-fg); box-shadow: inset 3px 0 0 var(--s-focus); --row-paint: var(--s-sel); }
+.row[aria-current="true"] { background: var(--s-sel); color: var(--s-sel-fg); box-shadow: inset 3px 0 0 var(--s-focus); --row-paint: var(--s-sel); --row-tint: transparent; }
 .row[aria-current="true"] .row__title { font-weight: 600; }
-.row[aria-current="true"] .where,
-.row[aria-current="true"] .where__branch,
-.row[aria-current="true"] .link,
-.row[aria-current="true"] .row__time { color: inherit; opacity: .85; }
 
 /* The state icon sits beside lines 1–2 however many lines the row grows. */
 .row__icon {
@@ -116,7 +119,7 @@ main:focus-visible { outline: none; }
 
 /* ─── the links: PRs newest first, then the Slack threads you pasted — each a button that opens it ── */
 .row__line--links[hidden], .links[hidden] { display: none; }
-.links { flex: none; display: flex; align-items: center; gap: 2px; }
+.links { flex: none; display: flex; align-items: center; gap: 3px; }
 .link {
   flex: none; height: 20px; min-width: 20px; padding: 0 4px 0 2px; border-radius: var(--radius);
   display: inline-flex; align-items: center; justify-content: center; gap: 2px;
@@ -134,13 +137,21 @@ main:focus-visible { outline: none; }
 .links__sep[hidden] { display: none; }
 /* Line 2's and the links' tooltips open under the row's text and no wider than it, so one near the right edge cannot widen the view. */
 .row__lines { position: relative; }
-.where__item.tip, .link.tip, .row__line--where .row__time.tip { position: static; }
-.where__item.tip::after, .link.tip::after, .row__line--where .row__time.tip::after { left: 0; right: auto; max-width: min(260px, 100%); white-space: pre-line; }
+/* A cut title's tooltip (fit()) anchors there too: anchored to the title, its own overflow would clip it. */
+.where__item.tip, .link.tip, .row__line--where .row__time.tip, .row__title.tip { position: static; }
+.where__item.tip::after, .link.tip::after, .row__line--where .row__time.tip::after, .row__title.tip::after { left: 0; right: auto; max-width: min(260px, 100%); white-space: pre-line; }
 /* A PR's icon is its state on GitHub: open, merged, closed or draft; unknown stays in the text colour. */
 [data-state="open"] > .codicon-git-pull-request { color: var(--st-pr-open); }
 [data-state="merged"] > .codicon-git-merge { color: var(--st-pr-merged); }
 [data-state="closed"] > .codicon-git-pull-request-closed { color: var(--st-pr-closed); }
 [data-state="draft"] > .codicon-git-pull-request-draft { color: var(--st-pr-draft); }
+/* …and its chip is a pill tinted with that state (D18): green open, red closed, grey draft, neutral merged. */
+.link--pr[data-state="open"] { --pr: var(--st-pr-open); }
+.link--pr[data-state="merged"] { --pr: var(--st-pr-merged); }
+.link--pr[data-state="closed"] { --pr: var(--st-pr-closed); }
+.link--pr[data-state="draft"] { --pr: var(--st-pr-draft); }
+.link--pr[data-state] { padding: 0 5px 0 3px; background: color-mix(in srgb, var(--pr) 14%, transparent); color: color-mix(in oklab, var(--pr) 60%, var(--s-fg)); }
+.link--pr[data-state]:hover { background: color-mix(in srgb, var(--pr) 26%, transparent); }
 .slack-mark { width: 14px; height: 14px; display: block; }
 /* high contrast: the Slack mark in the text colour, like every other icon */
 body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .slack-mark path { fill: currentColor; }
@@ -149,7 +160,7 @@ body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .sla
 .links-list {
   position: fixed; z-index: 20; min-width: 220px; max-width: calc(100vw - 8px); max-height: 60vh; overflow: auto;
   padding: var(--sp-1); border-radius: var(--radius);
-  background: var(--s-tip-bg); color: var(--s-tip-fg); border: 1px solid var(--s-tip-border);
+  background: linear-gradient(var(--s-tip-bg), var(--s-tip-bg)), var(--s-bg); color: var(--s-tip-fg); border: 1px solid var(--s-tip-border);
   font-size: var(--size-meta);
 }
 .links-list[hidden] { display: none; }
@@ -163,8 +174,8 @@ body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .sla
 .links-list__sub { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--s-muted); }
 
 /* ─── cost meter: context size against the budget — line 2, right end. Below 80% it is a measurement, not an
-   alarm: the text colour, quiet, so the state words lead the row and its colours stay the states' own (D17).
-   Then amber as compaction nears, and red past the budget: compact or start a new session. ── */
+   alarm: its own cyan, a hue no state uses, so the states' colours stay theirs (D17, D18). Then amber as
+   compaction nears, and red past the budget: compact or start a new session. ── */
 .row__heat {
   flex: none; display: flex; align-items: center; gap: var(--sp-1);
   font-family: var(--mono); font-size: var(--size-meta); font-variant-numeric: tabular-nums; color: var(--s-muted); white-space: nowrap;
@@ -173,7 +184,7 @@ body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .sla
 /* High contrast paints the badge black on black: outline the track so how full it is still reads */
 body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__track { outline: 1px solid var(--s-contrast); outline-offset: 1px; }
 .heat__fill { display: block; height: 100%; border-radius: 2px; transform-origin: left; transition: transform var(--dur) var(--ease); }
-.row[data-heat="low"] .heat__fill, .row[data-heat="mid"] .heat__fill, .row[data-heat="warm"] .heat__fill { background: var(--s-fg); opacity: .55; }
+.row[data-heat="low"] .heat__fill, .row[data-heat="mid"] .heat__fill, .row[data-heat="warm"] .heat__fill { background: var(--st-cost); }
 .row[data-heat="high"] .heat__fill { background: var(--st-warm); }
 .row[data-heat="high"] .row__heat { color: var(--st-warm); }
 .row[data-heat="full"] .heat__fill { background: var(--st-full); }
@@ -186,8 +197,10 @@ body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__t
   content: attr(data-tip); position: absolute; top: calc(100% + 4px); right: 0; z-index: 10;
   box-sizing: border-box;   /* `*` does not reach ::after: without this, padding and border overshoot the max-width */
   max-width: min(260px, calc(100vw - 32px)); padding: 3px 7px; border-radius: var(--radius);   /* never wider than the view: a tooltip must not make it scroll sideways */
-  background: var(--s-tip-bg); color: var(--s-tip-fg); border: 1px solid var(--s-tip-border);
-  font-family: var(--font); font-size: var(--size-meta); font-weight: 400; font-style: normal; line-height: 1.35; white-space: normal; width: max-content;
+  /* on the view's colour too: a theme's translucent hover colour must not let the rows show through */
+  background: linear-gradient(var(--s-tip-bg), var(--s-tip-bg)), var(--s-bg); color: var(--s-tip-fg); border: 1px solid var(--s-tip-border);
+  box-shadow: 0 2px 8px var(--s-shadow);
+  font-family: var(--font); font-size: var(--size-meta); font-weight: 400; font-style: normal; line-height: 1.35; text-align: left; white-space: normal; width: max-content;
   opacity: 0; pointer-events: none; transition: opacity var(--dur) var(--ease) 300ms;
 }
 .tip:hover::after, .tip:focus-visible::after { opacity: 1; }
@@ -207,17 +220,30 @@ body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__t
 .row[data-ringing="true"]::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--st-needs);
 }
-.row[data-reason="your-turn"] .row__icon { color: var(--s-fg); }
+.row[data-reason="your-turn"] .row__icon { color: var(--st-ok); }
 .row[data-reason="interrupted"] .row__icon { color: var(--st-stalled); }
 .row[data-reason="stalled"] .row__icon { color: var(--st-stalled); }
-.row[data-reason="stalled"] { opacity: .7; }
+.row[data-reason="stalled"] .row__lines { color: var(--s-muted); }
 .row[data-state="history"] .row__icon { color: var(--st-idle); }
+/* A ringing row is washed with the needs-you yellow behind its bar (D18) — the one tint in the list */
+.row[data-ringing="true"]:not([aria-current="true"]) { background-image: linear-gradient(var(--row-tint), var(--row-tint)); --row-tint: color-mix(in srgb, var(--st-needs) 6%, transparent); }
+/* The state words wear the state's colour (RowVM.tone, D18): they are what a row says first. */
+.row[data-tone="running"] .row__time { color: var(--tx-running); }
+.row[data-tone="needs"] .row__time { color: var(--tx-needs); }
+.row[data-tone="done"] .row__time { color: var(--tx-ok); }
+.row[data-tone="stalled"] .row__time { color: var(--tx-stalled); }
+.row[data-tone="failed"] .row__time { color: var(--tx-error); }
+/* on the selection colour, the selection's text colour: blue words on a blue selection would vanish */
+.row[aria-current="true"] .where,
+.row[aria-current="true"] .where__branch,
+.row[aria-current="true"] .link,
+.row[aria-current="true"] .row__time { color: color-mix(in srgb, var(--s-sel-fg) 85%, transparent); }
 
 /* ─── a headless run (D15): the ghost takes the icon slot, in purple; a dot on its corner says how the run
    is doing — ringed in the row's own background so 7px still reads. It sits after the state rules: the
    ghost's colour wins over theirs, and the dot carries the state instead. ─── */
 .row[data-ghost] .row__icon { position: relative; color: var(--st-headless); }
-.row[data-ghost="closed"] .row__icon { opacity: .65; }
+.row[data-ghost="closed"] .ghost__svg { opacity: .65; }
 .ghost__svg { width: 16px; height: 16px; display: block; overflow: visible; }
 .ghost__dot {
   /* on the ghost's corner: the slot is as tall as two lines and the 16px ghost is centred in it */
@@ -238,24 +264,18 @@ body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__t
 @keyframes ghost-twinkle { 0%, 100% { transform: scale(1) rotate(0deg); } 50% { transform: scale(.6) rotate(45deg); } }
 .row--link .ghost__svg { color: var(--st-headless); }
 
-/* ─── row actions: line 1's right end, laid out always, visible on hover AND on keyboard focus ───
-   Every button, tag and label has a spot of its own; hovering only makes the actions visible, so nothing
-   on the row moves under the pointer. The × is the top-right corner of the row. Each is also on the row's
-   right-click menu (package.json, webview/context). */
-.row__actions { flex: none; display: flex; gap: 0; visibility: hidden; }
-.row:hover .row__actions, .row:focus-within .row__actions { visibility: visible; }
-/* A narrow sidebar cannot spare that slot beside the title. Below 380px the actions sit over line 2's right
-   end instead — over the age tag and the meter, painted in the row's own colour — so the state words on
-   line 1 stay in sight while you point at the row (before 0.10.0 the actions hid them), and still nothing moves. */
-main { container-type: inline-size; }
-.row { --row-paint: transparent; }
-@container (max-width: 380px) {
-  /* placed in .row__lines (positioned), above line 2's own positioned tags and meter */
-  .row__actions {
-    position: absolute; top: 22px; right: 0; z-index: 2; height: 22px; align-items: center; padding-left: var(--sp-1);
-    background: linear-gradient(var(--row-paint), var(--row-paint)), var(--s-bg);
-  }
+/* ─── row actions: over line 2's right end (the age tag and the meter), painted in the row's own colours, at any
+   width. Shown on hover and on keyboard focus — not on the focus a click leaves behind, which kept them up on a row
+   you had clicked. Nothing on the row moves (0.7.2), and nothing is reserved for them: until 0.10.1 line 1 kept
+   ~100px empty for them beside every title. Each is also on the row's right-click menu (webview/context). ─── */
+.row__actions {
+  /* in .row__lines (positioned), above line 2's own positioned tags and meter */
+  position: absolute; top: 22px; right: 0; z-index: 2; height: 22px;
+  display: flex; align-items: center; gap: 0; padding-left: var(--sp-1);
+  background: linear-gradient(var(--row-tint), var(--row-tint)), linear-gradient(var(--row-paint), var(--row-paint)), var(--s-bg);
+  visibility: hidden;
 }
+.row:hover .row__actions, .row:focus-visible .row__actions, .row:has(:focus-visible) .row__actions { visibility: visible; }
 .action {
   width: 20px; height: 20px; border-radius: var(--radius);
   display: inline-flex; align-items: center; justify-content: center; color: inherit;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, timeLabel, timeTip, historyLabel, whereVM, linksVM, moreLabel, activeReserve, iconClass, viewModel, resultsModel, heatOf, fmtWindow, ageTag } from '../src/webview/model.js';
+import { fmtDuration, timeLabel, timeTip, historyLabel, whereVM, linksVM, moreLabel, activeReserve, toneOf, iconClass, viewModel, resultsModel, heatOf, fmtWindow, ageTag } from '../src/webview/model.js';
 import type { Snapshot, LiveRow, HistoryRow, SearchRow, RowPr } from '../src/core/rows.js';
 
 const S = 1_000, M = 60 * S, H = 60 * M;
@@ -142,6 +142,27 @@ describe('the links: PRs newest first, then Slack threads', () => {
     expect(vm.sections.map(s => s.rows[0]!.kind === 'session' ? s.rows[0]!.links.map(c => c.label) : [])).toEqual([['#20231'], ['#21264']]);
     expect(resultsModel([{ ...hist({ prs: [pr({})] }), snippet: null, matches: 1 }], 'x', false, now, { activeWindowLabel: '4h', searchKey: 'k' })
       .sections[0]!.rows[0]).toMatchObject({ links: [{ label: '#21264' }], where: {} });
+  });
+});
+
+describe('toneOf (D18)', () => {
+  it('the state words take the glyph\'s hue: working blue, waiting on you yellow, done green, interrupted or stalled amber', () => {
+    expect(toneOf(live({}))).toBe('running');
+    expect(toneOf(live({ state: 'attention', reason: 'question' }))).toBe('needs');
+    expect(toneOf(live({ state: 'attention', reason: 'tool-or-permission' }))).toBe('needs');
+    expect(toneOf(live({ state: 'attention', reason: 'your-turn' }))).toBe('done');
+    expect(toneOf(live({ state: 'attention', reason: 'interrupted' }))).toBe('stalled');
+    expect(toneOf(live({ state: 'attention', reason: 'stalled' }))).toBe('stalled');
+  });
+  it('a headless run follows its dot: a long tool call is working, an interruption failed', () => {
+    expect(toneOf(live({ state: 'attention', reason: 'tool-or-permission', headless: true }))).toBe('running');
+    expect(toneOf(live({ state: 'attention', reason: 'interrupted', headless: true }))).toBe('failed');
+    expect(toneOf(live({ state: 'attention', reason: 'your-turn', headless: true }))).toBe('done');
+  });
+  it('rides on live rows only', () => {
+    const vm = viewModel({ active: [live({})], history: [hist({})], totalSessions: 2, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, { activeWindowLabel: '4h', searchKey: 'k' });
+    expect(vm.sections[0]!.rows[0]).toMatchObject({ tone: 'running' });
+    expect(vm.sections[1]!.rows[0]).not.toHaveProperty('tone');
   });
 });
 

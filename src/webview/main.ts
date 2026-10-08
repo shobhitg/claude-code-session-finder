@@ -144,7 +144,7 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   if (r.reason) li.dataset.reason = r.reason; else delete li.dataset.reason;
   if (r.ringing) li.dataset.ringing = 'true'; else delete li.dataset.ringing;
   if (r.ghost) li.dataset.ghost = r.ghost; else delete li.dataset.ghost;
-  li.title = r.title;
+  if (r.tone) li.dataset.tone = r.tone; else delete li.dataset.tone;
   if (r.selected) li.setAttribute('aria-current', 'true'); else li.removeAttribute('aria-current');
   li.querySelector<HTMLElement>('.action--close')!.hidden = r.state === 'history';   // nothing to close on a closed row
   // The right-click menu (package.json, webview/context): VS Code reads this, offers the row's commands and passes it to them.
@@ -154,7 +154,9 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   // a ghost row draws its own glyph: the state's codicon would paint over it
   icon.className = `row__icon tip tip--left${r.ghost ? '' : ` ${r.iconClass}`}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
   setGhost(icon, r.ghost);
-  text('.row__title', r.title);
+  // a new title may now fit, or not: fit() decides whether it names itself in a tooltip
+  const titleEl = li.querySelector<HTMLElement>('.row__title')!;
+  if (titleEl.textContent !== r.title) { titleEl.textContent = r.title; fitted.delete(li); fitSoon(); }
   setTime(li.querySelector<HTMLElement>('.row__time')!, r.age ? '' : r.time, r.timeTip);   // the age tag stands in for the time
   const where = JSON.stringify([r.where, r.links, r.missing]);
   if (drawn.get(li) !== where) { drawn.set(li, where); drawWhere(li, r); fitted.delete(li); fitSoon(); }
@@ -282,6 +284,11 @@ function fit(li: HTMLElement): void {
       if (prs.length && slack[0] && !slack[0].hidden && !fitsIn(links, line3)) { fold(slack[0]); show(); }
     }
   } else line3.hidden = true;
+  // A title cut short names itself in our tooltip. Not a native `title` on the row, which showed over every other
+  // tooltip on it (0.10.0); an uncut title needs none.
+  const title = li.querySelector<HTMLElement>('.row__title')!;
+  if (cut(title)) { title.classList.add('tip'); if (title.dataset.tip !== title.textContent) title.dataset.tip = title.textContent ?? ''; }
+  else if (title.classList.contains('tip')) { title.classList.remove('tip'); delete title.dataset.tip; }
   // A worktree or project squeezed past a readable name keeps only its icon; hovering still names it.
   for (const it of Array.from(line2.querySelectorAll<HTMLElement>('.where__worktree, .where__project'))) {
     const t = it.querySelector<HTMLElement>('.where__txt')!;

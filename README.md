@@ -62,7 +62,7 @@ you reply or close it.
 
 Hover a glyph for the sentence behind it. Rows are ordered by when you last touched them — a prompt (typed, or queued while Claude works), a slash command, `Esc`, an answer to a question or a plan — newest on top. A row moves only because of something you did: Claude replying, finishing or asking never reorders the list, so nothing shuffles under your pointer, and the bell marks what needs you. A session you start goes on top; a session you resume goes on top when you send it something. Active keeps the room it has needed since the view opened, plus a row, so Closed stays where it is as sessions come and go.
 
-**Cost meter.** Each active row carries a small bar with its context size: the tokens the model was given on its last turn, and therefore what every further turn costs. One absolute scale for every session toward `sessionFinder.contextBudget` (1M by default, where compaction lands): quiet, in the text colour, until 80% of it, amber from there, and pinned full in red past it: compact or start a new session. Hover the bar for the numbers.
+**Cost meter.** Each active row carries a small bar with its context size: the tokens the model was given on its last turn, and therefore what every further turn costs. One absolute scale for every session toward `sessionFinder.contextBudget` (1M by default, where compaction lands): cyan until 80% of it, amber from there, and pinned full in red past it: compact or start a new session. Hover the bar for the numbers.
 
 **Headless runs.** A session started without a UI — `claude -p`, the Agent SDK, a daemon — wears a purple
 **ghost** (purple means nothing else in the view) in place of the state glyph, with a dot on its corner for how the run is doing: blue and pulsing
@@ -123,8 +123,9 @@ a tab, read another in the Session View, come back, refine, and `Esc` or the
 `↑` `↓` move · `Enter` opens in a tab · `Shift+Enter` opens in the right panel ·
 `V` opens the Session View · `T` opens the raw transcript · `Delete` closes the
 session · `/` filters. Hover or focus a row for the same actions as buttons,
-plus a copyable deep link — beside the title, or over the line below it in a
-narrow sidebar — and right-click a row for all of them as a menu. In a narrow
+plus a copyable deep link — laid over the line below the title, so nothing
+moves and the title keeps its width — and right-click a row for all of them as
+a menu. In a narrow
 sidebar (under 380 px) the title has the first line to itself and the state
 words start the second.
 

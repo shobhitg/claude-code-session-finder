@@ -26,12 +26,23 @@ describe('webview stylesheets (spec §10, D7)', () => {
   it('hover and focus only reveal the row actions — nothing on a row moves under the pointer, at any width', () => {
     const style = sheets[1]![1];
     expect(style).toMatch(/\.row__actions \{[^}]*visibility: hidden/);
-    expect(style).toMatch(/\.row:hover \.row__actions, \.row:focus-within \.row__actions \{ visibility: visible; \}/);
-    for (const rule of style.match(/\.row:(?:hover|focus-within)[^{]*\{[^}]*\}/g) ?? []) expect(rule, rule).not.toMatch(/display:/);
-    // a narrow sidebar lays the actions over line 2 (absolute) instead of taking the state words' place
-    const narrow = /@container \(max-width: 380px\) \{([\s\S]*?)\n\}/.exec(style)?.[1] ?? '';
-    expect(narrow).toMatch(/\.row__actions \{[^}]*position: absolute/);
-    expect(narrow).not.toMatch(/\.row__end/);
+    // shown on hover and on KEYBOARD focus — not on the focus a click leaves on the row
+    expect(style).toMatch(/\.row:hover \.row__actions, \.row:focus-visible \.row__actions, \.row:has\(:focus-visible\) \.row__actions \{ visibility: visible; \}/);
+    expect(style).not.toMatch(/\.row:focus-within \.row__actions/);
+    for (const rule of style.match(/\.row:(?:hover|focus-within|focus-visible)[^{]*\{[^}]*\}/g) ?? []) expect(rule, rule).not.toMatch(/display:/);
+    // laid over line 2 at every width, so line 1 keeps no empty slot beside the title (D18)
+    expect(style).toMatch(/\.row__actions \{[^}]*position: absolute/);
+    expect(style).not.toMatch(/@container/);
+  });
+  it('a row\'s tooltips are never painted over by the next row: the hovered row is lifted, and nothing that hosts a tooltip is dimmed with opacity (D18)', () => {
+    const style = sheets[1]![1];
+    expect(style).toMatch(/\.row:hover, \.row:focus-within \{ z-index: 1; \}/);
+    const hosts = /(?:\.row(?:\[[^\]]*\])*|\.row__icon|\.row__lines|\.row__time|\.where|\.where__branch|\.link|\.row__heat)\s*$/;
+    for (const [, sel, body] of style.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      for (const one of sel!.split(',')) if (hosts.test(one.trim())) expect(body, one.trim()).not.toMatch(/(?:^|;|\s)opacity:/);
+    }
+    // and the tooltip itself sits on the view's colour, whatever the hover colour's alpha
+    expect(style).toMatch(/\.tip::after \{[^}]*background: linear-gradient\(var\(--s-tip-bg\), var\(--s-tip-bg\)\), var\(--s-bg\)/);
   });
   it('the needs-you look (accent bar, semibold title) belongs to a row that rings, not to a state (D13)', () => {
     const style = sheets[1]![1];
@@ -39,6 +50,13 @@ describe('webview stylesheets (spec §10, D7)', () => {
     expect(style).toMatch(/\.row\[data-ringing="true"\]::before \{[^}]*background: var\(--st-needs\)/);
     expect(style).not.toMatch(/\.row\[data-reason="[a-z-]+"\]::before/);
     expect(style).not.toMatch(/\.row\[data-reason="[a-z-]+"\] \.row__title/);
+  });
+  it('the state words wear their state\'s colour, mixed toward the text colour so they read on light themes too (D18)', () => {
+    const style = sheets[1]![1];
+    const tx = [...tokens.matchAll(/^\s*(--tx-[a-z]+):\s*([^;]+);/gm)];
+    expect(tx.map(([, n]) => n)).toEqual(['--tx-running', '--tx-needs', '--tx-ok', '--tx-stalled', '--tx-error']);
+    for (const [, name, value] of tx) expect(value, name).toMatch(/^color-mix\(in oklab, var\(--st-[a-z]+\) \d+%, var\(--s-fg\)\)$/);
+    for (const tone of ['running', 'needs', 'done', 'stalled', 'failed']) expect(style, tone).toMatch(new RegExp(`\\.row\\[data-tone="${tone}"\\] \\.row__time \\{ color: var\\(--tx-`));
   });
   it('the Slack mark falls back to the text colour in high-contrast themes', () => {
     expect(sheets[1]![1]).toMatch(/body\.vscode-high-contrast \.slack-mark path, body\.vscode-high-contrast-light \.slack-mark path \{ fill: currentColor; \}/);
@@ -48,10 +66,11 @@ describe('webview stylesheets (spec §10, D7)', () => {
     expect(style).not.toMatch(/\.section\[data-id="active"\] \.section__body \{[^}]*min-height/);
     expect(style).toMatch(/\.section\[data-collapsed="true"\] \.section__body \{ display: none; \}/);
   });
-  it('the cost meter is a measurement below 80% — the text colour, no state colour — then amber, then red (D17)', () => {
+  it('the cost meter is a measurement below 80% — its own cyan, no state colour — then amber, then red (D17, D18)', () => {
     const style = sheets[1]![1];
-    expect(style).toMatch(/\.row\[data-heat="low"\] \.heat__fill, \.row\[data-heat="mid"\] \.heat__fill, \.row\[data-heat="warm"\] \.heat__fill \{ background: var\(--s-fg\)/);
-    for (const rule of style.match(/\.row\[data-heat="(?:low|mid|warm)"\][^{]*\{[^}]*\}/g) ?? []) expect(rule, rule).not.toMatch(/--st-/);
+    expect(style).toMatch(/\.row\[data-heat="low"\] \.heat__fill, \.row\[data-heat="mid"\] \.heat__fill, \.row\[data-heat="warm"\] \.heat__fill \{ background: var\(--st-cost\); \}/);
+    for (const rule of style.match(/\.row\[data-heat="(?:low|mid|warm)"\][^{]*\{[^}]*\}/g) ?? []) expect(rule.replace(/--st-cost/g, ''), rule).not.toMatch(/--st-/);
+    expect(tokens).toMatch(/--st-cost:\s*var\(--vscode-terminal-ansiCyan/);
     expect(style).toMatch(/\.row\[data-heat="high"\] \.heat__fill \{ background: var\(--st-warm\); \}/);
     expect(style).toMatch(/\.row\[data-heat="full"\] \.heat__fill \{ background: var\(--st-full\); \}/);
   });

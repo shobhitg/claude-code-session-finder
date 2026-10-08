@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.10.1
+
+**More colour, and the room goes to the titles.**
+
+- **The state words are in colour.** `working` is blue, `may need you` and
+  `asks you` yellow, `done` green, `interrupted` and `stalled` amber — the same
+  hue as the row's glyph, adjusted so it reads on light themes too.
+- **Rows that need you are washed** with a little of that yellow behind their
+  bar, so they stand out at a glance.
+- **PRs are tinted pills:** green open, red closed, grey draft, neutral merged.
+- **The cost meter is cyan** until 80% of the budget (then amber, then red), and
+  Active's count wears your theme's accent badge.
+- **Titles get the width.** A row's buttons now appear over the line below the
+  title at every width, so the first line no longer keeps about 100 px empty
+  for them: at 480 px a title shows about twice as much.
+- **Tooltips are solid.** On the selected row (and a stalled one) a tooltip was
+  painted over by the rows below it, so their text showed through; the row you
+  point at now stands above the rest. The browser's own tooltip with the row's
+  title no longer pops up over ours — a title cut short shows ours instead.
+- **A row you clicked no longer keeps its buttons up**; they show on hover and
+  on keyboard focus.
+
 ## 0.10.0
 
 **Headless runs wear a ghost.** A session started without a UI — `claude -p`,

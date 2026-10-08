@@ -50,9 +50,23 @@
   --st-pr-draft:  var(--vscode-descriptionForeground);
   /* high-contrast themes outline what they draw; elsewhere this is transparent */
   --s-contrast:  var(--vscode-contrastBorder, transparent);
+  /* the cost meter's own hue below 80% of the budget: cyan, which no state uses (D18) */
+  --st-cost:     var(--vscode-terminal-ansiCyan, var(--vscode-charts-blue));
+  /* the theme's accent badge, for ACTIVE's count */
+  --s-accent-bg: var(--vscode-activityBarBadge-background);
+  --s-accent-fg: var(--vscode-activityBarBadge-foreground);
   --s-tip-bg:    var(--vscode-editorHoverWidget-background);
   --s-tip-fg:    var(--vscode-editorHoverWidget-foreground);
   --s-tip-border: var(--vscode-editorHoverWidget-border);
+  --s-shadow:    var(--vscode-widget-shadow, transparent);
+
+  /* The state colours as small text (D18): each hue mixed toward the text colour — darker on a light theme, lighter
+     on a dark one — so "asks you" in the theme's yellow still reads on white. Still the theme's colours, mixed. */
+  --tx-running: color-mix(in oklab, var(--st-running) 75%, var(--s-fg));
+  --tx-needs:   color-mix(in oklab, var(--st-needs) 65%, var(--s-fg));
+  --tx-ok:      color-mix(in oklab, var(--st-ok) 75%, var(--s-fg));
+  --tx-stalled: color-mix(in oklab, var(--st-stalled) 70%, var(--s-fg));
+  --tx-error:   color-mix(in oklab, var(--st-error) 75%, var(--s-fg));
 
   /* type — the IDE's */
   --font:      var(--vscode-font-family);

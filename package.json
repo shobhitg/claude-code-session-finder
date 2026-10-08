@@ -2,7 +2,7 @@
   "name": "claude-code-session-finder",
   "displayName": "Claude Code Sessions & Agents",
   "description": "See which Claude Code sessions are running or waiting on you, browse and search every session's content, and open any of them in a tab or the right panel.",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "license": "MIT",
   "publisher": "shobhitg",
   "repository": {
@@ -133,7 +133,7 @@
           "type": "number",
           "default": 1000000,
           "minimum": 1000,
-          "description": "Tokens of context at which a session's cost meter reads full (deep red). Set it to where Claude Code compacts for your models; the meter stays in the text colour until 80% of it, then turns amber, and red past it."
+          "description": "Tokens of context at which a session's cost meter reads full (deep red). Set it to where Claude Code compacts for your models; the meter is cyan until 80% of it, then turns amber, and red past it."
         },
         "sessionFinder.activeWindow": {
           "type": "string",
