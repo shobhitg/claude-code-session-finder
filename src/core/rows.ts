@@ -11,14 +11,14 @@ export interface LiveRow {
   lastWriteMs: number;
   /** context the model was last given, and the model — the cost meter */
   contextTokens?: number; model?: string;
-  /** quiet past the active window, listed only because its tab is open */
-  parked?: true;
   /** the bell (core/looks.ts): the ball is in your court and you have not seen it there */
   ringing?: true;
 }
 export interface HistoryRow {
   sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
   cwdExists: boolean; lastTs: number; msgCount: number;
+  /** when you last touched it (touchedMs) — what CLOSED is ordered by, so the date it shows */
+  touchedTs: number;
 }
 export type SidebarScope = 'workspace' | 'all';
 export interface Snapshot { active: LiveRow[]; history: HistoryRow[]; totalSessions: number; indexing: boolean; scope: SidebarScope }
@@ -89,16 +89,15 @@ export function stateLabel(row: { state: 'running' | 'attention'; reason?: Atten
 }
 
 /**
- * Spec §6 ordering: things that need you, then things that are working, then things probably dead — and
- * below all of them, whatever their state, the sessions parked there by an open tab: a tab left open
- * since yesterday does not need you more than a session working now.
+ * Spec §6 ordering (D14): both lists by when you last touched a session — your last act (core/acts.ts) —
+ * newest first, so a row moves only because of something you did: Claude replying, finishing or asking
+ * never reorders the list (the bell says what needs you). The tail knows of an act before the index does,
+ * and the index of one the tail is too short to hold. A session you never acted on (a scripted one) sorts
+ * by when it began.
  */
-const RANK: Record<string, number> = {
-  'attention/question': 0, 'attention/tool-or-permission': 1, 'attention/your-turn': 2, 'attention/interrupted': 3, running: 4, 'attention/stalled': 5,
-};
-const PARKED = 10;
-const rank = (l: Liveness) =>
-  l.parked ? PARKED : RANK[l.state.kind === 'attention' ? `attention/${l.state.reason}` : 'running'] ?? 9;
+export function touchedMs(m: SessionMeta | undefined, l?: Liveness): number {
+  return Math.max(l?.lastActMs ?? 0, m?.lastActTs ?? 0) || m?.firstTs || l?.lastWriteMs || m?.lastTs || 0;
+}
 
 function titleOf(m: SessionMeta | undefined, sessionId: string, firstPrompt: Map<string, string>): string {
   return m?.title ?? firstPrompt.get(sessionId)?.slice(0, 80) ?? sessionId.slice(0, 8);
@@ -123,7 +122,7 @@ export function rowsForHits(hits: SessionHit[], liveness: ReadonlyMap<string, Li
     const row: SearchRow = {
       sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt), project: projectLabel(m.projectDir),
       branch: m.branches.at(-1) ?? null, pr: m.prLinks.at(-1) ?? null, cwdExists: m.cwdExists, lastTs: m.lastTs, msgCount: m.msgCount,
-      snippet: h.best ? snippet(h.best.text, h.best.index) : null, matches: h.matchCount,
+      touchedTs: touchedMs(m, l), snippet: h.best ? snippet(h.best.text, h.best.index) : null, matches: h.matchCount,
     };
     if (l) row.live = { state: l.state.kind, lastWriteMs: l.lastWriteMs, ...(l.state.kind === 'attention' ? { reason: l.state.reason } : {}),
                         ...(l.contextTokens !== undefined ? { contextTokens: l.contextTokens } : {}), ...(l.model !== undefined ? { model: l.model } : {}),
@@ -267,9 +266,10 @@ export function buildSnapshot(
   const keep = (m: SessionMeta | undefined): boolean => !m || !opts.inScope || opts.inScope(m);
   const scoped = (index?.sessions ?? []).filter(keep);
 
+  const touched = (l: Liveness): number => touchedMs(byId.get(l.sessionId), l);
   const active: LiveRow[] = [...liveness.values()]
     .filter(l => keep(byId.get(l.sessionId)))
-    .sort((a, b) => rank(a) - rank(b) || b.lastWriteMs - a.lastWriteMs)
+    .sort((a, b) => touched(b) - touched(a) || b.lastWriteMs - a.lastWriteMs)
     .map(l => {
       const m = byId.get(l.sessionId);
       const row: LiveRow = {
@@ -281,19 +281,19 @@ export function buildSnapshot(
       if (l.state.kind === 'attention') row.reason = l.state.reason;
       if (l.contextTokens !== undefined) row.contextTokens = l.contextTokens;
       if (l.model !== undefined) row.model = l.model;
-      if (l.parked) row.parked = true;
       if (opts.rings?.(l)) row.ringing = true;
       return row;
     });
 
   const history: HistoryRow[] = scoped
     .filter(s => !liveness.has(s.sessionId))
-    .sort((a, b) => b.lastTs - a.lastTs)
+    .map(m => ({ m, touchedTs: touchedMs(m) }))
+    .sort((a, b) => b.touchedTs - a.touchedTs)
     .slice(0, limit)
-    .map(m => ({
+    .map(({ m, touchedTs }) => ({
       sessionId: m.sessionId, title: titleOf(m, m.sessionId, firstPrompt), project: projectLabel(m.projectDir),
       branch: m.branches.at(-1) ?? null, pr: m.prLinks.at(-1) ?? null, cwdExists: m.cwdExists,
-      lastTs: m.lastTs, msgCount: m.msgCount,
+      lastTs: m.lastTs, msgCount: m.msgCount, touchedTs,
     }));
 
   return { active, history, totalSessions: scoped.length, indexing: opts.indexing ?? false, scope: opts.scope ?? 'all' };

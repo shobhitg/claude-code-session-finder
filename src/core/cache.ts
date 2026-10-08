@@ -50,6 +50,7 @@ function mergeDuplicate(cur: SessionMeta, other: PersistedMeta): SessionMeta {
     extraFiles: [...base.extraFiles, lost.file],
     firstTs: Math.min(cur.firstTs || other.firstTs, other.firstTs || cur.firstTs),
     lastTs: Math.max(cur.lastTs, other.lastTs),
+    lastActTs: Math.max(cur.lastActTs, other.lastActTs),
     msgCount: cur.msgCount + other.msgCount,
     branches: [...new Set([...base.branches, ...lost.branches])],
     prLinks: [...new Set([...base.prLinks, ...lost.prLinks])],

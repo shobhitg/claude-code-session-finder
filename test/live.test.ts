@@ -170,23 +170,36 @@ describe('LivenessTracker pins (a session behind an open tab never ages out)', (
     expect([...h.tracker.liveness.keys()]).toEqual(['fresh']);
     expect(h.changes.at(-1)!.membershipChanged).toBe(true);
   });
-  it('a pinned session past the window is parked; crossing the window on a tick parks it as a change, a write un-parks it', async () => {
+  it('a pinned session stays listed past the window, and crossing it is not a change (the age tag runs on the view\'s clock)', async () => {
     const t0 = 100 * H;
     const h = harness([main('edge', t0 - MIN), main('old', t0 - 26 * H)],
       { '/p/-w/edge.jsonl': { verdict: 'turn-ended', lastTs: t0 - 4 * H + MIN }, '/p/-w/old.jsonl': 'turn-ended' }, t0);
     h.tracker.setPinned(new Set(['edge', 'old']));
     await h.tracker.sweep();
-    expect(h.tracker.liveness.get('old')!.parked).toBe(true);
-    expect(h.tracker.liveness.get('edge')!.parked).toBeUndefined();
+    expect([...h.tracker.liveness.keys()].sort()).toEqual(['edge', 'old']);
     const before = h.changes.length;
     h.advance(2 * MIN);
     await h.tracker.tick();
-    expect(h.tracker.liveness.get('edge')!.parked).toBe(true);
-    expect(h.changes.length).toBe(before + 1);
-    expect(h.changes.at(-1)!.membershipChanged).toBe(false);
-    h.files[1]!.mtimeMs = h.now(); h.files[1]!.size = 20;
+    expect(h.tracker.liveness.has('edge')).toBe(true);
+    expect(h.changes.length).toBe(before);
+  });
+  it('carries your last act from the tail (D14), and a new act is a change', async () => {
+    const t0 = 100 * H;
+    const tails: Record<string, TailInfo> = { '/p/-w/s.jsonl': { verdict: 'turn-ended', lastTs: t0 - MIN, lastActTs: t0 - 5 * MIN }, '/p/-w/n.jsonl': { verdict: 'turn-ended', lastTs: t0 - MIN } };
+    const h = harness([main('s', t0 - MIN), main('n', t0 - MIN)], tails, t0);
+    await h.tracker.sweep();
+    expect(h.tracker.liveness.get('s')!.lastActMs).toBe(t0 - 5 * MIN);
+    expect(h.tracker.liveness.get('n')).not.toHaveProperty('lastActMs');   // nothing of yours in the tail: the index answers
+    const before = h.changes.length;
+    tails['/p/-w/s.jsonl'] = { verdict: 'turn-ended', lastTs: t0 - MIN, lastActTs: t0 };   // a queued prompt: no new conversational record yet
+    h.files[0]!.size = 20;
     await h.tracker.tick();
-    expect(h.tracker.liveness.get('old')!.parked).toBeUndefined();
+    expect(h.tracker.liveness.get('s')!.lastActMs).toBe(t0);
+    expect(h.changes.length).toBe(before + 1);
+    tails['/p/-w/s.jsonl'] = { verdict: 'turn-ended', lastTs: t0 + MIN };   // a long reply pushed your prompt out of the tail
+    h.files[0]!.size = 30;
+    await h.tracker.tick();
+    expect(h.tracker.liveness.get('s')!.lastActMs).toBe(t0);                 // the act already seen stands
   });
   it('a pin for a session with no transcript is harmless', async () => {
     const h = harness([main('fresh', 100 * H - MIN)], {}, 100 * H);

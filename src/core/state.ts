@@ -1,4 +1,5 @@
 import type { SourceFile } from './discover.js';
+import { lastAct } from './acts.js';
 
 /** What the last conversational record says, independent of time (spec §6). */
 export type TailVerdict =
@@ -28,12 +29,15 @@ export interface Liveness {
   /** context the model was last given: input + cache-read + cache-creation tokens of the newest assistant record */
   contextTokens?: number;
   model?: string;
-  /** quiet for longer than the active window — ACTIVE only because its tab is open (D12); it sorts below everything live */
-  parked?: true;
+  /** when you last did something to it, from the tail (core/acts.ts) — the sidebar's order (D14); absent when the tail holds nothing of yours */
+  lastActMs?: number;
 }
 
-/** Everything the tail of a transcript tells us in one read. `lastTs`: when the verdict record was written. */
-export interface TailInfo { verdict: TailVerdict; contextTokens?: number; model?: string; lastTs?: number }
+/**
+ * Everything the tail of a transcript tells us in one read. `lastTs`: when the verdict record was written.
+ * `lastActTs`: when you last did something in the tail (core/acts.ts) — absent when the tail holds nothing of yours.
+ */
+export interface TailInfo { verdict: TailVerdict; contextTokens?: number; model?: string; lastTs?: number; lastActTs?: number }
 
 const CONVERSATIONAL = new Set(['user', 'assistant', 'system']);
 /** system subtypes that end a turn. Others (e.g. compact_boundary) are not boundaries and are skipped. */
@@ -67,14 +71,14 @@ const contextOf = (u: Usage | undefined): number =>
  * turn costs — so the walk continues past the verdict record until it has both.
  */
 export function readTailInfo(text: string): TailInfo {
-  const lines = text.split('\n');
+  const recs = text.split('\n').flatMap(raw => { const d = raw.trim() ? parse(raw) : null; return d ? [d] : []; });
   const info: TailInfo = { verdict: 'unknown' };
+  const act = lastAct(recs);
+  if (act !== undefined) info.lastActTs = act;
   let verdict: TailVerdict | null = null;
-  for (let i = lines.length - 1; i >= 0 && !(verdict !== null && info.contextTokens !== undefined); i--) {
-    const raw = lines[i];
-    if (!raw || !raw.trim()) continue;
-    const d = parse(raw);
-    if (!d || !d.type || !CONVERSATIONAL.has(d.type) || d.isSidechain === true) continue;
+  for (let i = recs.length - 1; i >= 0 && !(verdict !== null && info.contextTokens !== undefined); i--) {
+    const d = recs[i]!;
+    if (!d.type || !CONVERSATIONAL.has(d.type) || d.isSidechain === true) continue;
     if (d.type === 'assistant') {
       if (info.contextTokens === undefined) {
         const n = contextOf(d.message?.usage);

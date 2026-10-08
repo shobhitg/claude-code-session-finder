@@ -7,7 +7,7 @@ const DAY = 86_400_000;
 
 const meta = (id: string, over: Partial<SessionMeta> = {}): SessionMeta => ({
   sessionId: id, file: `/${id}.jsonl`, extraFiles: [], projectDir: '-w-a', cwd: '/w/a', cwdExists: true,
-  title: null, branches: [], prLinks: [], firstTs: NOW - DAY, lastTs: NOW - DAY,
+  title: null, branches: [], prLinks: [], firstTs: NOW - DAY, lastTs: NOW - DAY, lastActTs: NOW - DAY,
   msgCount: 1, mtimeMs: 1, size: 1, ...over,
 });
 

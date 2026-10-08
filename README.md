@@ -60,7 +60,7 @@ Looking in one window quiets the bell in all of them. A session running in a
 terminal, or in Claude Code's side panel, has no tab to look at: it rings until
 you reply or close it.
 
-Hover a glyph for the sentence behind it. Rows are ordered by how much they need you: question, permission, done, interrupted, running, stalled — then the sessions kept only by an open tab, youngest first. Within a group a row stays where it is while Claude works, so nothing shuffles under your pointer; a session enters its group at the top when it starts, resumes or finishes.
+Hover a glyph for the sentence behind it. Rows are ordered by when you last touched them — a prompt (typed, or queued while Claude works), a slash command, `Esc`, an answer to a question or a plan — newest on top. A row moves only because of something you did: Claude replying, finishing or asking never reorders the list, so nothing shuffles under your pointer, and the bell marks what needs you. A session you start goes on top; a session you resume goes on top when you send it something. Active keeps room for ten rows, so Closed stays where it is as sessions come and go.
 
 **Cost meter.** Each active row carries a small bar with its context size: the tokens the model was given on its last turn, and therefore what every further turn costs. One absolute scale for every session, ramping green → yellow → orange → red toward `sessionFinder.contextBudget` (1M by default, where compaction lands), and pinned full in deep red past it: compact or start a new session. Hover the bar for the numbers.
 
@@ -82,15 +82,15 @@ The row for the session in your active editor tab is highlighted, and follows
 you as you switch between Claude Code tabs and Session Views.
 
 - **Active** — sessions written in the last `activeWindow`, or open in a
-  Claude Code tab in this window, most urgent first: needs you, your turn,
-  running, stalled. The time label says how long a session has been quiet — the time
-  of the last prompt or reply, not of the file, so looking at a session does
-  not count. One kept here only by its tab, past the window, is listed below
-  all of those and wears an orange `> 19h` or `> 2d 1h` tag instead (red after
-  a day): close it when you mean to, and not before.
-- **Closed** — the 50 most recent sessions that are not active, with their
-  project, branch and PR, and **Search all…** for everything older. Clicking
-  one resumes it, which makes it active.
+  Claude Code tab in this window, the one you touched last on top. The time
+  label says how long a session has been quiet — the time of the last prompt or
+  reply, not of the file, so looking at a session does not count. One kept here
+  only by its tab, past the window, wears an orange `> 19h` or `> 2d 1h` tag
+  instead (red after a day): close it when you mean to, and not before.
+- **Closed** — the 50 sessions you touched most recently that are not active,
+  with the day you last touched each, its project, branch and PR, and
+  **Search all…** for everything older. Clicking one resumes it, which makes it
+  active.
 
 **Closing a session.** Resuming a session writes its transcript, so one
 accidental click under Closed promotes a finished session to Active for the

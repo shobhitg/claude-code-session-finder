@@ -196,3 +196,15 @@ describe('readTailInfo — when the conversation last moved', () => {
     expect(readTailInfo([user({ timestamp: 'garbage' }), sidecars].join('\n')).lastTs).toBeUndefined();
   });
 });
+
+describe('readTailInfo — when you last acted (D14, core/acts.ts)', () => {
+  it('is your newest prompt in the tail, however much Claude wrote after it', () => {
+    const t = readTailInfo([user({ timestamp: '2026-09-23T01:00:00.000Z' }), assistant('tool_use', { timestamp: '2026-09-23T01:05:00.000Z' }),
+      line({ type: 'user', timestamp: '2026-09-23T01:06:00.000Z', message: { content: [{ type: 'tool_result', tool_use_id: 't', content: 'ok' }] } }),
+      assistant('end_turn', { timestamp: '2026-09-23T01:09:00.000Z' }), sidecars].join('\n'));
+    expect(t).toMatchObject({ verdict: 'turn-ended', lastTs: Date.parse('2026-09-23T01:09:00.000Z'), lastActTs: Date.parse('2026-09-23T01:00:00.000Z') });
+  });
+  it('is absent when the tail holds nothing of yours', () => {
+    expect(readTailInfo([assistant('end_turn', { timestamp: '2026-09-23T01:09:00.000Z' }), sidecars].join('\n'))).not.toHaveProperty('lastActTs');
+  });
+});

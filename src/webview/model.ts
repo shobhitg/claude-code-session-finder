@@ -13,8 +13,6 @@ export interface RowVM {
   heat?: Heat;
   /** written longer ago than the active window — here only because its tab is open */
   age?: AgeTag;
-  /** the host's word for the same thing: the row sorts in the parked group, below everything live */
-  parked?: true;
   /** the bell (D13): the ball is in your court and you have not seen it there — the needs-you look */
   ringing?: true;
 }
@@ -84,8 +82,9 @@ export function ageTag(row: Pick<LiveRow, 'state' | 'reason' | 'lastWriteMs'>, n
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** The day you last touched it — CLOSED's order (D14), so the dates read in order — and its size. */
 export function historyLabel(row: HistoryRow): string {
-  const d = new Date(row.lastTs);
+  const d = new Date(row.touchedTs);
   return `${MONTHS[d.getMonth()]} ${d.getDate()} · ${row.msgCount} msgs`;
 }
 
@@ -128,7 +127,6 @@ function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
   if (r.contextTokens) vm.heat = heatOf(r.contextTokens, opts.contextBudget);
   const age = ageTag(r, now, opts);
   if (age) vm.age = age;
-  if (r.parked) vm.parked = true;
   if (r.ringing) vm.ringing = true;
   return vm;
 }
@@ -163,55 +161,6 @@ export function viewModel(s: Snapshot, now: number, opts: ViewOpts): ViewModel {
         skeleton: s.indexing && history.length === 0, empty: null },
     ],
   };
-}
-
-/** The group an ACTIVE row is ordered within: its state and reason, or parked whatever its state. */
-export const orderGroup = (r: { state: string; reason?: string; parked?: true }): string =>
-  r.parked ? 'parked' : `${r.state}/${r.reason ?? ''}`;
-
-/** When each ACTIVE row arrived in its group — a stamp, higher = later — persisted with the webview. */
-export interface Arrivals { n: number; at: Record<string, { n: number; group: string }> }
-
-/**
- * Stamp the rows that arrived in a group since the last snapshot — new to ACTIVE, back in it, or in a new
- * state — with the next numbers (host order top→bottom becoming high→low), so each enters its group at
- * the top: a session you just started, resumed or that just finished is the first of its kind. A row that
- * stays in its group keeps its stamp however often it writes; a row gone from ACTIVE is forgotten.
- */
-export function noteArrivals(prev: Arrivals | undefined, active: readonly LiveRow[]): Arrivals {
-  let n = prev?.n ?? 0;
-  const at: Arrivals['at'] = {};
-  const arrived: LiveRow[] = [];
-  for (const r of active) {
-    const was = prev?.at[r.sessionId];
-    if (was && was.group === orderGroup(r)) at[r.sessionId] = was; else arrived.push(r);
-  }
-  for (const r of arrived.reverse()) at[r.sessionId] = { n: ++n, group: orderGroup(r) };
-  return { n, at };
-}
-
-/**
- * Keep rows where they are. The host orders each urgency group by last write, so two running sessions
- * swap every time one of them writes. Within each contiguous group the rows are ordered by arrival
- * instead (noteArrivals: newest on top); a row moves only when its state changes. Parked rows keep the
- * host's order — youngest first, and nothing in there writes. Link rows stay put.
- */
-export function stableOrder(rows: Array<RowVM | LinkVM>, arrivals: Arrivals): Array<RowVM | LinkVM> {
-  const out: Array<RowVM | LinkVM> = [];
-  let group: RowVM[] = []; let key: string | null = null;
-  const stamp = (r: RowVM): number => arrivals.at[r.sessionId]?.n ?? 0;
-  const flush = (): void => {
-    out.push(...(key === 'parked' ? group : group.sort((a, b) => stamp(b) - stamp(a))));
-    group = [];
-  };
-  for (const r of rows) {
-    if (r.kind === 'link') { flush(); key = null; out.push(r); continue; }
-    const k = orderGroup(r);
-    if (k !== key) { flush(); key = k; }
-    group.push(r);
-  }
-  flush();
-  return out;
 }
 
 /**

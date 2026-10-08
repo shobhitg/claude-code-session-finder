@@ -1,4 +1,4 @@
-export const INDEX_VERSION = 2;
+export const INDEX_VERSION = 3;
 
 /** 'u' your prompt · 'a' Claude prose · 't' session title · 'sub' subagent prose */
 export type Role = 'u' | 'a' | 't' | 'sub';
@@ -23,6 +23,8 @@ export interface SessionMeta {
   /** From message timestamps, not file mtime. */
   firstTs: number;
   lastTs: number;
+  /** When you last did something to it (core/acts.ts) — 0 if you never did. The sidebar's order (D14). */
+  lastActTs: number;
   msgCount: number;
   mtimeMs: number;
   size: number;

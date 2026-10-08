@@ -1,11 +1,12 @@
 import type { ProseMsg, SessionMeta, Role } from './types.js';
 import type { SourceFile } from './discover.js';
+import { actClock, type ActRec } from './acts.js';
 
 export type BareProse = Omit<ProseMsg, 's'>;
 export type BareMeta = Omit<SessionMeta, 'cwdExists' | 'extraFiles'>;
 
 interface Part { type?: string; text?: string }
-interface Line {
+interface Line extends ActRec {
   type?: string; cwd?: string; gitBranch?: string; timestamp?: string;
   isSidechain?: boolean; aiTitle?: string; customTitle?: string; prNumber?: number;
   message?: { content?: string | Part[] };
@@ -33,10 +34,12 @@ export function extractSession(file: SourceFile, text: string): { meta: BareMeta
   let aiTitle: string | null = null;
   let customTitle: string | null = null;      // L12: written by "Rename Session Tab"; beats every ai-title
   let firstTs = 0, lastTs = 0, msgCount = 0;
+  const acts = actClock();
 
   for (const raw of text.split('\n')) {
     const d = parse(raw);
     if (!d) continue;
+    acts.see(d);
 
     if (typeof d.cwd === 'string' && d.cwd) cwd = d.cwd;            // LAST wins (F6)
     if (typeof d.gitBranch === 'string' && d.gitBranch) branches.add(d.gitBranch);
@@ -64,7 +67,7 @@ export function extractSession(file: SourceFile, text: string): { meta: BareMeta
     meta: {
       sessionId: file.sessionId, file: file.path, projectDir: file.projectDir,
       cwd, title: customTitle ?? aiTitle, branches: [...branches], prLinks: [...prLinks],
-      firstTs, lastTs, msgCount, mtimeMs: file.mtimeMs, size: file.size,
+      firstTs, lastTs, lastActTs: acts.last ?? 0, msgCount, mtimeMs: file.mtimeMs, size: file.size,
     },
     prose,
   };

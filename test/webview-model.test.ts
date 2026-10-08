@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, stableOrder, noteArrivals, heatOf, fmtWindow, ageTag, type Arrivals } from '../src/webview/model.js';
+import { fmtDuration, timeLabel, historyLabel, metaLabel, iconClass, viewModel, resultsModel, heatOf, fmtWindow, ageTag } from '../src/webview/model.js';
 import type { Snapshot, LiveRow, HistoryRow, SearchRow } from '../src/core/rows.js';
 
 const S = 1_000, M = 60 * S, H = 60 * M;
@@ -10,7 +10,7 @@ const live = (o: Partial<LiveRow>): LiveRow => ({
 });
 const hist = (o: Partial<HistoryRow>): HistoryRow => ({
   sessionId: 'h', title: 'Old', project: 'aida', branch: null, pr: null, cwdExists: true,
-  lastTs: new Date(2026, 8, 15, 12).getTime(), msgCount: 31, ...o,
+  lastTs: new Date(2026, 8, 15, 12).getTime(), msgCount: 31, touchedTs: new Date(2026, 8, 15, 11).getTime(), ...o,
 });
 
 describe('fmtDuration', () => {
@@ -44,6 +44,9 @@ describe('timeLabel (spec §10 table)', () => {
 describe('historyLabel / metaLabel / iconClass', () => {
   it('history shows the local date and message count', () => {
     expect(historyLabel(hist({}))).toBe('Sep 15 · 31 msgs');
+  });
+  it('the date is the day you last touched the session — CLOSED\'s order — not Claude\'s last write', () => {
+    expect(historyLabel(hist({ touchedTs: new Date(2026, 8, 14, 23, 50).getTime(), lastTs: new Date(2026, 8, 15, 0, 30).getTime() }))).toBe('Sep 14 · 31 msgs');
   });
   it('meta joins project, branch and PR with middots, skipping blanks', () => {
     expect(metaLabel(live({}))).toBe('aida · shobhit/ledger · PR #20231');
@@ -129,82 +132,17 @@ describe('the bell on a row', () => {
   });
 });
 
-describe('stableOrder + noteArrivals: rows stay put, and enter their group at the top', () => {
+describe('ACTIVE keeps the host order (D14: the host orders by your last act, which Claude never moves)', () => {
   const opts = { activeWindowLabel: '4h', activeWindowMs: 4 * H, searchKey: 'Ctrl+Alt+S' };
-  const snap: Snapshot = {
-    active: [
-      live({ sessionId: 'p', state: 'attention', reason: 'tool-or-permission' }),
-      live({ sessionId: 'r1', lastWriteMs: now - 1 * S }),          // host: most recently written running first
-      live({ sessionId: 'r2', lastWriteMs: now - 5 * S }),
-      live({ sessionId: 'r3', lastWriteMs: now - 9 * S }),
-    ],
-    history: [], totalSessions: 4, indexing: false, scope: 'all',
-  };
-  const ids = (rows: ReturnType<typeof stableOrder>) => rows.map(r => r.kind === 'link' ? r.action : r.sessionId);
-  /** One render, as the webview does it: stamp the arrivals, then order the ACTIVE section. */
-  const render = (prev: Arrivals | undefined, active: LiveRow[]) => {
-    const arrivals = noteArrivals(prev, active);
-    const rows = viewModel({ ...snap, active, totalSessions: active.length }, now, opts).sections[0]!.rows;
-    return { arrivals, ids: ids(stableOrder(rows, arrivals)) };
-  };
-
-  it('reorders within a state group by arrival, newest first, and never across groups', () => {
-    const rows = viewModel(snap, now, opts).sections[0]!.rows;
-    // r1 arrived first, r3 most recently — the newest arrival goes on top, whatever the host's write order says
-    const arrivals: Arrivals = { n: 9, at: { r3: { n: 3, group: 'running/' }, r2: { n: 2, group: 'running/' }, r1: { n: 1, group: 'running/' }, p: { n: 9, group: 'attention/tool-or-permission' } } };
-    expect(ids(stableOrder(rows, arrivals))).toEqual(['p', 'r3', 'r2', 'r1']);
-  });
-  it('on first sight the rows take the host order', () => {
-    expect(render(undefined, snap.active).ids).toEqual(['p', 'r1', 'r2', 'r3']);
-  });
-  it('a session that just wrote does not jump: it keeps its stamp while it stays in its group', () => {
-    const first = render(undefined, snap.active);
-    const swapped = [snap.active[0]!, { ...snap.active[3]!, lastWriteMs: now }, snap.active[1]!, snap.active[2]!];
-    const next = render(first.arrivals, swapped);
-    expect(next.ids).toEqual(first.ids);
-    expect(next.arrivals).toEqual(first.arrivals);
-  });
-  it('a session that changes state enters its new group at the top, and again when it comes back', () => {
-    const a = render(undefined, snap.active);
-    const r3 = snap.active[3]!;
-    // host order: r3 joins p's group, and was written more recently than p
-    const b = render(a.arrivals, [{ ...r3, state: 'attention', reason: 'tool-or-permission' }, snap.active[0]!, snap.active[1]!, snap.active[2]!]);
-    expect(b.ids).toEqual(['r3', 'p', 'r1', 'r2']);
-    const c = render(b.arrivals, snap.active);
-    expect(c.ids).toEqual(['p', 'r3', 'r1', 'r2']);
-  });
-  it('a session that leaves ACTIVE and comes back enters at the top, not at its old place', () => {
-    const a = render(undefined, snap.active);
-    expect(a.ids).toEqual(['p', 'r1', 'r2', 'r3']);
-    const b = render(a.arrivals, [snap.active[0]!, snap.active[1]!, snap.active[2]!]);
-    expect(b.arrivals.at).not.toHaveProperty('r3');
-    expect(render(b.arrivals, snap.active).ids).toEqual(['p', 'r3', 'r1', 'r2']);
-  });
-  it('parked rows keep the host order — youngest first — whatever their stamps', () => {
-    const parked = (id: string, ageH: number): LiveRow => live({ sessionId: id, state: 'attention', reason: 'your-turn', lastWriteMs: now - ageH * H, parked: true });
-    const rows = [parked('p6', 6), parked('p20', 20), parked('p50', 50)];
-    const arrivals: Arrivals = { n: 3, at: { p50: { n: 3, group: 'parked' }, p6: { n: 1, group: 'parked' }, p20: { n: 2, group: 'parked' } } };
-    expect(ids(stableOrder(viewModel({ ...snap, active: rows }, now, opts).sections[0]!.rows, arrivals))).toEqual(['p6', 'p20', 'p50']);
-  });
-  it('regression: a new or resumed session is not listed under the tab-parked ones, and lands on top when it finishes', () => {
-    const turn = { state: 'attention' as const, reason: 'your-turn' as const };
-    const parked = (id: string, ageH: number): LiveRow => live({ sessionId: id, ...turn, lastWriteMs: now - ageH * H, parked: true });
-    const running = (id: string): LiveRow => live({ sessionId: id, state: 'running', lastWriteMs: now });
-    const done = (id: string, agoS: number): LiveRow => live({ sessionId: id, ...turn, lastWriteMs: now - agoS * S });
-    // host order (buildSnapshot): fresh urgency groups, then parked youngest first
-    const a = render(undefined, [parked('spreadsheet', 6), parked('stampd', 20), parked('pr', 50)]);
-    const b = render(a.arrivals, [running('chrome'), parked('spreadsheet', 6), parked('stampd', 20), parked('pr', 50)]);
-    expect(b.ids).toEqual(['chrome', 'spreadsheet', 'stampd', 'pr']);
-    const c = render(b.arrivals, [running('stampd'), running('chrome'), parked('spreadsheet', 6), parked('pr', 50)]);
-    expect(c.ids).toEqual(['stampd', 'chrome', 'spreadsheet', 'pr']);            // resumed after chrome started → above it
-    const d = render(c.arrivals, [done('chrome', 5), running('stampd'), parked('spreadsheet', 6), parked('pr', 50)]);
-    expect(d.ids).toEqual(['chrome', 'stampd', 'spreadsheet', 'pr']);
-    const e = render(d.arrivals, [done('stampd', 1), done('chrome', 9), parked('spreadsheet', 6), parked('pr', 50)]);
-    expect(e.ids).toEqual(['stampd', 'chrome', 'spreadsheet', 'pr']);            // finished last → on top
-  });
-  it('leaves link rows in place and keeps groups contiguous', () => {
-    const rows = viewModel({ ...snap, history: [hist({ sessionId: 'h' })] }, now, opts).sections[1]!.rows;
-    expect(ids(stableOrder(rows, noteArrivals(undefined, [])))).toEqual(['h', 'search', 'scope']);
+  it('renders the rows as the host sent them, whatever their state or age', () => {
+    const active = [
+      live({ sessionId: 'new', state: 'running' }),
+      live({ sessionId: 'done', state: 'attention', reason: 'your-turn', lastWriteMs: now - 48 * S }),
+      live({ sessionId: 'asks', state: 'attention', reason: 'question', lastWriteMs: now - 5 * M }),
+      live({ sessionId: 'old', state: 'attention', reason: 'your-turn', lastWriteMs: now - 13 * H }),
+    ];
+    const rows = viewModel({ active, history: [], totalSessions: 4, indexing: false, scope: 'all' }, now, opts).sections[0]!.rows;
+    expect(rows.map(r => r.kind === 'session' ? r.sessionId : r.action)).toEqual(['new', 'done', 'asks', 'old']);
   });
 });
 

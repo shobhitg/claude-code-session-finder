@@ -201,6 +201,7 @@ saving. Not doing it.
 | D12 | **An open Claude Code tab pins its session ACTIVE** past `activeWindow` (`LivenessTracker.setPinned`, fed by the sidebar's tab → session resolution), and such a row wears a standing "> N hours old" tag; only tabless sessions age out. | With the × closing tabs, a session listed under Closed while its tab was open contradicted itself. The user closes old tabs on purpose; the list does not decide for them. |
 | D13 | **The bell rings while the ball is in your court and you have not seen it there** (`core/looks.ts`). A question — `AskUserQuestion`, or a plan waiting for approval (`ExitPlanMode`) — rings until Claude moves again. Your turn, an interruption and a quiet tool call ring until you *look*: the session's Claude Code tab is the visible tab of an editor group, or its Session View is visible, in a focused window, while it waits on you. Running and stalled never ring. The status bar counts ringing sessions only; a ringing row wears the needs-you look (accent bar, semibold). Looks live in `globalStorage/looks.json`, shared by every window: merged on write, and re-read before every snapshot in the focused window (the only one that records looks); a first run starts them "now". Two windows writing in the same instant can overwrite each other's newest look; the loser rewrites it with its next save. | 0.7.0 kept every open tab ACTIVE, and they all counted as "need you": the count stood at nine with nothing waiting. What needs you is what you have not acknowledged — except a question, which is not answered by being read. A permission prompt cannot be told from a long command (L4), so a quiet tool call clears on a look rather than staying sticky: a long build rings at most once. |
 | D11 | **HISTORY is labelled "Closed", and an ACTIVE row can be closed** (§9.1): a marker keeps the session out of liveness until its transcript is written again after the close, and its Claude Code tab is closed with it. | Resuming writes the transcript, so one click under HISTORY promoted a finished session to ACTIVE with no way back. Closing the tab is what "done with this" means, and Claude Code's own vocabulary is "closed session"; "Archive" would imply deliberate filing for rows that merely aged out. |
+| D14 | **Both lists are ordered by when you last touched a session, newest first** (`core/acts.ts`, `touchedMs`): a prompt (typed, or queued while Claude works), a slash command, `Esc`, an answer to `AskUserQuestion` or `ExitPlanMode`. Claude's replies and tool calls, task notifications, other sessions' messages, compaction and a shutdown are not you; a record that says who wrote it (`origin.kind`, else `turnOrigin`) is taken at its word, so a scripted (`sdk`) prompt is not you either. A session never acted on sorts by when it began. CLOSED shows the day of that same moment. ACTIVE keeps room for ten rows. | Until 0.9.0 ACTIVE was ordered by urgency (questions … running … stalled, then tab-parked), and the webview held rows still within a group (`stableOrder`). A session you had just started was *running*, so it was listed under every finished one — and it jumped when Claude finished, a move nobody asked for. Since the bell (D13) marks what needs you, position no longer has to; ordering by your own acts is the one rule under which a row moves only when you move it. Approving a permission prompt leaves no record of its own and does not count. The reserved height keeps CLOSED from sliding as sessions start and close. |
 
 ## 5. Architecture
 
@@ -281,6 +282,8 @@ export interface Liveness {
   state: LiveState;
   /** max mtime over the main copy(ies) AND subagent files (L7) */
   lastWriteMs: number;
+  /** when you last did something to it, from the tail (core/acts.ts) — the order (D14) */
+  lastActMs?: number;
 }
 ```
 
@@ -291,29 +294,26 @@ export interface LiveRow {
   cwdExists: boolean;
   state: 'running' | 'attention'; reason?: AttentionReason;
   lastWriteMs: number;              // the view renders "quiet 2m" from this and its own clock
-  parked?: true;                    // quiet past the window, ACTIVE only because its tab is open (D12)
   ringing?: true;                   // the bell (D13): the ball is in your court and you have not seen it
 }
 export interface HistoryRow {
   sessionId: string; title: string; project: string; branch: string | null; pr: number | null;
   cwdExists: boolean; lastTs: number; msgCount: number;
+  touchedTs: number;                // when you last touched it (D14): CLOSED's order, and the date it shows
 }
 export interface Snapshot { active: LiveRow[]; history: HistoryRow[]; totalSessions: number; indexing: boolean }
 ```
 
-Ordering inside ACTIVE (D5 rationale: things that need you first, then things that are
-working, then things that are probably dead): `attention/question` → `attention/tool-or-permission` →
-`attention/your-turn` → `attention/interrupted` → `running` → `attention/stalled` → **parked**; within
-a group, `lastWriteMs` descending. Parked (0.8.0) is every session quiet past the window and kept only
-by its tab, whatever its state: before it had its own group, a tab left open since yesterday ranked as
-"your turn" above every running session, so a session you had just started or resumed was listed under
-a wall of day-old ones. HISTORY: `lastTs` descending, excluding ACTIVE session ids, first 50.
-
-The webview then keeps rows still (`stableOrder`): within a group they are ordered by **arrival in that
-group**, newest on top (`noteArrivals` stamps a row when it is new to ACTIVE, back in it, or in a new
-state), so a row never moves because it wrote, and a session you just started, resumed, or that just
-finished is the first of its kind. Parked rows keep the host's order — nothing in there writes. Until
-0.8.0 the stamp was first sight only, so a resumed session went back to the slot it had days before.
+Ordering (D14): ACTIVE and HISTORY alike by `touchedMs` descending — when you last touched the
+session. The index carries it as `SessionMeta.lastActTs` (`extractSession`, the whole file; 0 when
+you never acted), the tail as `TailInfo.lastActTs` → `Liveness.lastActMs` (`readTailInfo`, the last
+64 KB; the tracker keeps the newest it has seen, so a long reply pushing your prompt out of the tail
+does not move the row back); an ACTIVE row takes the newer of the two, so a prompt reorders the list
+on the next tick, before the index has seen it. Never acted on: `firstTs`. Ties: `lastWriteMs`.
+HISTORY: excluding ACTIVE session ids, first 50; its date label is `touchedTs` so the dates read in
+order. The webview renders the host's order as it comes — nothing Claude writes changes it — and only
+holds a reorder while the pointer is over the list (§9.1). Until 0.9.0 ACTIVE was ordered by urgency
+and kept still within each urgency group by arrival (`stableOrder`, `noteArrivals`); both are gone.
 
 `Baton` gains `where?: 'tab' | 'right'` so a cross-window hand-off preserves the requested
 target. Absent means `'tab'`; a baton written by v0.1 still parses.
@@ -452,7 +452,7 @@ forgotten with it. Our own Session View panels are not session tabs.
 **Pinned by a tab (D12).** `pinnedSessions` maps the open Claude Code tabs to sessions with the same
 candidate rules (an ambiguous label → the most recently written candidate) and the host hands the set to
 the tracker, whose sweep keeps a pinned session whatever its age. The row is an ordinary live row —
-verdict, glyph, time label — marked `parked` by the tracker, which sorts it below everything live (§6),
+verdict, glyph, time label, ordered like any other by when you last touched it (§6) —
 plus an age tag (`ageTag`, model.ts) once `now − lastWriteMs` exceeds the
 window: "> 19h" (whole hours, then days and hours: "> 2d 1h"), a filled orange pill, red after a day, at the right end of
 line 2 just before the cost meter, standing in for the time label it would duplicate (the tooltip keeps
@@ -607,8 +607,11 @@ shows its own warning and opens in the activity-bar sidebar instead; nothing to 
   changed files (assert on the fake's read count); a threshold crossing with no I/O fires
   `onChange`; identical recomputation does **not** fire; `stop()` cancels timers.
 - `closed.test.ts` — the close marker (D11): holds through the grace, expires on a later write, pruned past the window.
-- `rows.test.ts` — ordering, HISTORY exclusion of active ids, the 50 cap, id-prefix title for
-  an unindexed session, `indexing` flag.
+- `acts.test.ts` — what is you (D14): prompts, queued prompts, slash commands, `Esc`, answers to
+  a question or a plan; not Claude, notifications, peers, compaction, a shutdown, an `sdk` prompt.
+- `rows.test.ts` — ordering by your last act (tail or index, whichever is newer; never acted on →
+  `firstTs`), HISTORY exclusion of active ids, the 50 cap, id-prefix title for an unindexed
+  session, `indexing` flag.
 - `open-args.test.ts` — the exact command/argument arrays for `tab` and `right` (L10): the
   sixth argument is present, `prompt` is `undefined` (F3).
 - `extract.test.ts` — `custom-title` beats `ai-title`; latest `custom-title` wins.

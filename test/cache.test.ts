@@ -119,6 +119,7 @@ describe('refreshIndex', () => {
     expect(dup[0]!.cwd).toBe('/w/new');                           // the LATER copy's cwd wins
     expect(dup[0]!.lastTs).toBe(Date.parse('2026-08-05T00:00:00Z'));
     expect(dup[0]!.firstTs).toBe(Date.parse('2026-08-01T00:00:00Z'));
+    expect(dup[0]!.lastActTs).toBe(Date.parse('2026-08-05T00:00:00Z'));
     expect(dup[0]!.msgCount).toBe(2);                             // both files counted
     expect(dup[0]!.extraFiles).toContain(join(root, 'projects', '-w-old', 'dup.jsonl'));
 

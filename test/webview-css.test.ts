@@ -38,6 +38,11 @@ describe('webview stylesheets (spec §10, D7)', () => {
     expect(style).not.toMatch(/\.row\[data-reason="[a-z-]+"\]::before/);
     expect(style).not.toMatch(/\.row\[data-reason="[a-z-]+"\] \.row__title/);
   });
+  it('ACTIVE keeps room for ten rows whether or not they are there; collapsed, it takes none', () => {
+    const style = sheets[1]![1];
+    expect(style).toMatch(/\.section\[data-id="active"\] \.section__body \{ min-height: calc\(10 \* var\(--row\)\); \}/);
+    expect(style).toMatch(/\.section\[data-collapsed="true"\] \.section__body \{ display: none; \}/);
+  });
   it('styles every state the models can emit', () => {
     const style = sheets[1]![1], session = sheets[2]![1];
     for (const sel of ['[data-state="running"]', '[data-reason="tool-or-permission"]', '[data-reason="your-turn"]', '[data-reason="stalled"]', '[data-reason="question"]', '[data-reason="interrupted"]', '[data-state="history"]', '[aria-selected="true"]', '[data-ringing="true"]', '[data-heat="low"]', '[data-heat="mid"]', '[data-heat="warm"]', '[data-heat="high"]', '[data-heat="full"]', '.tip']) expect(style, sel).toContain(sel);

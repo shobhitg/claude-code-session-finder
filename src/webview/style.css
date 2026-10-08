@@ -44,6 +44,8 @@ main:focus-visible { outline: none; }
 .section__chevron { transition: transform var(--dur) var(--ease); }
 .section[data-collapsed="true"] .section__chevron { transform: rotate(-90deg); }
 .section[data-collapsed="true"] .section__body { display: none; }
+/* ACTIVE keeps room for ten rows, empty below the last one, so CLOSED stays where it is as sessions come and go */
+.section[data-id="active"] .section__body { min-height: calc(10 * var(--row)); }
 .section__count {
   margin-left: auto; min-width: 18px; padding: 0 6px; border-radius: 9px; text-align: center;
   background: var(--s-badge-bg); color: var(--s-badge-fg);

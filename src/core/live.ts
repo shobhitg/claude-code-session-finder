@@ -33,13 +33,16 @@ interface Tracked {
 }
 
 const toInfo = (v: TailVerdict | TailInfo): TailInfo => typeof v === 'string' ? { verdict: v } : v;
+/** Your last act never goes back: once a long reply pushes your prompt out of the tail, the act already seen stands. */
+const keepAct = (prev: TailInfo | undefined, next: TailInfo): TailInfo =>
+  prev?.lastActTs !== undefined && (next.lastActTs ?? 0) < prev.lastActTs ? { ...next, lastActTs: prev.lastActTs } : next;
 const keyOf = (f: { mtimeMs: number; size: number }) => `${f.mtimeMs}:${f.size}`;
 
 /**
  * Spec §8. Two phases over an in-memory picture of the ACTIVE set:
  *   sweep  — discover() everything (readdir + stat), recompute membership, read tails of NEW members
  *   tick   — re-stat ACTIVE files, re-read only tails whose (mtime, size) changed, re-resolve all
- * Publishes only when the resulting map differs (membership, verdict, state, reason, lastWriteMs).
+ * Publishes only when the resulting map differs (membership, verdict, state, reason, lastWriteMs, your last act).
  * No `vscode`, no real clock: everything comes through `deps`, so tests drive it deterministically.
  */
 export class LivenessTracker {
@@ -98,7 +101,7 @@ export class LivenessTracker {
       const prev = this.tracked.get(sessionId);
       const info = prev && prev.key === key && prev.main.path === main.path
         ? prev.info
-        : toInfo(await this.deps.readVerdict(main.path, main.size));
+        : keepAct(prev?.info, toInfo(await this.deps.readVerdict(main.path, main.size)));
       next.set(sessionId, { sessionId, files: group, main, key, info });
     }
     this.tracked = next;
@@ -117,7 +120,7 @@ export class LivenessTracker {
       t.files = fresh;
       const key = keyOf(main);
       if (key !== t.key || main.path !== t.main.path) {                              // changed → one tail read
-        t.info = toInfo(await this.deps.readVerdict(main.path, main.size));
+        t.info = keepAct(t.info, toInfo(await this.deps.readVerdict(main.path, main.size)));
         t.key = key;
         t.main = main;
       }
@@ -141,9 +144,8 @@ export class LivenessTracker {
   /**
    * The ACTIVE set is judged twice: the sweep by file mtime (cheap, before any tail is read), and here
    * by when the conversation last moved — a resume appends sidecars and touches the file, and that is
-   * not activity. A pinned session (its tab is open) is ACTIVE whatever its age, and parked once past the
-   * window. Membership change is read off the emitted set, so a session aging out on a tick is one too;
-   * a pinned one crossing the window on a tick is a change, not a membership change.
+   * not activity. A pinned session (its tab is open) is ACTIVE whatever its age. Membership change is read
+   * off the emitted set, so a session aging out on a tick is one too.
    */
   private publish(): void {
     const now = this.deps.now();
@@ -154,7 +156,7 @@ export class LivenessTracker {
       if (pastWindow && !this.pinned.has(t.sessionId)) continue;
       const state = resolveState(t.info.verdict, now - lastWriteMs, this.thresholds);
       const l: Liveness = { sessionId: t.sessionId, verdict: t.info.verdict, state, lastWriteMs };
-      if (pastWindow) l.parked = true;
+      if (t.info.lastActTs !== undefined) l.lastActMs = t.info.lastActTs;
       if (t.info.contextTokens !== undefined) l.contextTokens = t.info.contextTokens;
       if (t.info.model !== undefined) l.model = t.info.model;
       next.set(t.sessionId, l);
@@ -184,7 +186,7 @@ function sameLiveness(a: ReadonlyMap<string, Liveness>, b: ReadonlyMap<string, L
   if (a.size !== b.size) return false;
   for (const [k, x] of a) {
     const y = b.get(k);
-    if (!y || x.verdict !== y.verdict || x.lastWriteMs !== y.lastWriteMs || x.state.kind !== y.state.kind || x.contextTokens !== y.contextTokens || x.parked !== y.parked) return false;
+    if (!y || x.verdict !== y.verdict || x.lastWriteMs !== y.lastWriteMs || x.state.kind !== y.state.kind || x.contextTokens !== y.contextTokens || x.lastActMs !== y.lastActMs) return false;
     if (x.state.kind === 'attention' && y.state.kind === 'attention' && x.state.reason !== y.state.reason) return false;
   }
   return true;

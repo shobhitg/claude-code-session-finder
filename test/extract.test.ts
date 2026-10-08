@@ -107,6 +107,17 @@ describe('titles (spec L12)', () => {
     expect(meta.title).toBe('My better name');
     expect(prose.filter(p => p.r === 't').map(p => p.x)).toEqual(['My name', 'Auto name', 'My better name']);
   });
+  it('records when you last acted (D14): your prompt, not Claude\'s reply or a notification after it; 0 if never', () => {
+    const text = [
+      line({ type: 'user', timestamp: '2026-08-01T00:00:00Z', message: { content: 'first ask' } }),
+      line({ type: 'user', timestamp: '2026-08-01T01:00:00Z', message: { content: 'second ask' }, origin: { kind: 'human' } }),
+      line({ type: 'assistant', timestamp: '2026-08-01T02:00:00Z', message: { content: [{ type: 'text', text: 'done' }] } }),
+      line({ type: 'user', timestamp: '2026-08-01T03:00:00Z', message: { content: '<task-notification>…</task-notification>' }, origin: { kind: 'task-notification' } }),
+    ].join('\n');
+    expect(extractSession(f(), text).meta).toMatchObject({ lastActTs: Date.parse('2026-08-01T01:00:00Z'), lastTs: Date.parse('2026-08-01T03:00:00Z') });
+    const scripted = line({ type: 'user', timestamp: '2026-08-01T00:00:00Z', message: { content: 'Make one promo video' }, turnOrigin: 'sdk' });
+    expect(extractSession(f(), scripted).meta.lastActTs).toBe(0);
+  });
   it('falls back to the latest ai-title when there is no custom-title', () => {
     const text = [line({ type: 'ai-title', aiTitle: 'First' }), line({ type: 'ai-title', aiTitle: 'Second' })].join('\n');
     expect(extractSession(f(), text).meta.title).toBe('Second');

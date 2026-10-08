@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.0
+
+**Only you move a row.** Both lists are ordered by when you last touched a
+session — a prompt (typed, or queued while Claude works), a slash command,
+`Esc`, an answer to a question or a plan — newest on top. Active used to be
+ordered by how much a session needed you, so a session you had just started
+was *running* and listed under every finished one, and then jumped when
+Claude finished. Now Claude replying, finishing or asking never reorders the
+list; the bell already marks what needs you. A session you start goes on top,
+and so does one you resume once you send it something. Claude Code's own
+records are not you: background-task notifications, other sessions' messages,
+compaction, a shutdown, and prompts sent by a script. Approving a permission
+prompt leaves no record of its own and does not count.
+
+**Closed follows the same rule**, and its date is the day you last touched the
+session, so the dates read in order.
+
+**Active keeps room for ten rows.** With three or four sessions the rest of the
+space stays empty, so Closed no longer slides up and down as sessions start and
+close.
+
+The index is rebuilt once on the first start, to record when you last acted in
+every session.
+
 ## 0.8.0
 
 **The bell rings only while the ball is in your court.** The `🔔` count in the

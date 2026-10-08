@@ -7,7 +7,7 @@
 // the hover state under the pointer — the list flickered. Rows are keyed by session id and updated
 // in place; only a row that is new fades in; a row that changes position slides (FLIP); and while
 // the pointer is over the list the order is held until it leaves.
-import { viewModel, resultsModel, stableOrder, noteArrivals, timeLabel, ageTag, type Arrivals, type ViewModel, type ViewOpts, type SectionVM, type RowVM, type LinkVM, type AgeTag } from './model.js';
+import { viewModel, resultsModel, timeLabel, ageTag, type ViewModel, type ViewOpts, type SectionVM, type RowVM, type LinkVM, type AgeTag } from './model.js';
 import type { Snapshot, SearchRow } from '../core/rows.js';
 
 declare function acquireVsCodeApi(): {
@@ -22,7 +22,7 @@ type Inbound =
   | { type: 'results'; q: string; deep: boolean; rows: SearchRow[]; now: number; indexing: boolean }
   | { type: 'active'; sessionId: string | null }
   | { type: 'focusFilter'; q?: string };
-interface UiState { collapsed: Record<string, boolean>; filter?: string; arrivals?: Arrivals }
+interface UiState { collapsed: Record<string, boolean>; filter?: string }
 
 let snapshot: Snapshot | null = null;
 let results: { q: string; deep: boolean; rows: SearchRow[] } | null = null;
@@ -34,7 +34,7 @@ let activeWindowMs = 4 * 3_600_000;
 let contextBudget = 1_000_000;
 let orderPending = false;                  // a reorder arrived while the pointer was over the list
 const ui: UiState = (api.getState() as UiState | undefined) ?? { collapsed: {} };
-for (const k of ['seen', 'seenN']) delete (ui as unknown as Record<string, unknown>)[k];   // 0.7.x's first-seen order; 0.8.0 keeps arrivals
+for (const k of ['seen', 'seenN', 'arrivals']) delete (ui as unknown as Record<string, unknown>)[k];   // the order the webview kept until 0.9.0; the host's order is stable now (D14)
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const searchKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘⌥S' : 'Ctrl+Alt+S';
 const root = document.getElementById('app') as HTMLElement;
@@ -272,13 +272,6 @@ function reconcileSection(s: SectionVM, hold: boolean): { el: HTMLElement; defer
 const hostNow = (): number => Date.now() + clockOffset;
 const viewOpts = (): ViewOpts => ({ activeWindowLabel: activeWindow, activeWindowMs, searchKey, reducedMotion, activeId, contextBudget });
 
-/** Arrival order of ACTIVE sessions (noteArrivals), persisted with the webview so a reload keeps the list as it was. */
-function stampArrivals(s: Snapshot): Arrivals {
-  ui.arrivals = noteArrivals(ui.arrivals, s.active);
-  api.setState(ui);
-  return ui.arrivals;
-}
-
 /** `force`: a user action (filter, collapse, mode switch) — never hold the order for those. */
 function render(force = false): void {
   if (!snapshot) return;
@@ -288,10 +281,6 @@ function render(force = false): void {
   const vm: ViewModel = filtering()
     ? resultsModel(results && results.q === q ? results.rows : null, q, results?.deep ?? false, hostNow(), opts)
     : viewModel(snapshot, hostNow(), opts);
-  if (!filtering()) {
-    const arrivals = stampArrivals(snapshot);
-    for (const s of vm.sections) if (s.id === 'active') s.rows = stableOrder(s.rows, arrivals);
-  }
   const hold = !force && sectionsEl.matches(':hover');
   let deferred = false;
   const els = vm.sections.map(s => { const r = reconcileSection(s, hold); deferred = deferred || r.deferred; return r.el; });
