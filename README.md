@@ -140,8 +140,8 @@ when the worktree's folder name says something the branch does not, struck
 through once the folder is gone. A session from another project names its
 project. Then every PR the session linked, newest first, and every Slack thread
 you pasted into it — buttons: hover for the details, click to open. A PR's icon
-is its state on GitHub — open (green), merged (the merge icon, in the text
-colour), closed (red) or draft — and its tooltip carries its title; see
+is its state on GitHub — open (green), merged (a soft violet), closed (red) or
+draft (a dashed, muted green) — and its tooltip carries its title; see
 [Privacy](#privacy). Every PR shown keeps its number: the three newest show,
 with the newest Slack thread, and the rest fold into `+N` at the end, whose
 tooltip counts them ("6 more PRs (5 merged, 1 closed) and 1 Slack thread") and

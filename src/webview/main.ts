@@ -260,7 +260,7 @@ function drawWhere(li: HTMLElement, r: RowVM): void {
     ...(w.project ? [whereItem('where__project', 'repo', w.project)] : []),
     ...(w.branch ? [whereItem(`where__branch${w.branch.quiet ? ' where__branch--quiet' : ''}`, 'git-branch', w.branch)] : []),
     ...(w.worktree ? [whereItem(`where__worktree${w.worktree.gone ? ' where__worktree--gone' : ''}`, 'worktree', w.worktree)] : []),
-    ...(r.missing ? [h('span', { class: 'row__missing' }, '⚠ folder missing')] : []));
+    ...(r.missing ? [h('span', { class: 'row__missing' }, h('i', { class: 'codicon codicon-warning', 'aria-hidden': 'true' }), 'folder missing')] : []));
   const links = li.querySelector<HTMLElement>('.links')!;
   const prs = r.links.filter(c => c.kind === 'pr'), slack = r.links.filter(c => c.kind === 'slack');
   const more = h('button', { class: 'link link--more tip tip--left', hidden: '' }, '');

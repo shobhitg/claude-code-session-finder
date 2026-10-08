@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.2
+
+- **Merged PRs are a soft violet** instead of grey, and **drafts a dashed, muted
+  green** — a list of merged PRs no longer reads all grey. The violet is mixed
+  from your theme's purple and blue, so it stays distinct from a headless run's
+  purple ghost.
+- **"folder missing"** now shows in the warning colour, with a warning icon.
+
 ## 0.10.1
 
 **More colour, and the room goes to the titles.**

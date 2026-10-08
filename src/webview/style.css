@@ -123,7 +123,9 @@ body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .filter__input 
 .where__item--icon { flex: none; min-width: 0; }
 .where__item--icon .where__txt { display: none; }
 .row__fill { flex: 1 1 0; min-width: 0; }
-.row__missing { flex: none; white-space: nowrap; }
+/* a folder that is gone, in the warning colour (D21; muted grey until 0.10.2) */
+.row__missing { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; color: var(--tx-stalled); }
+.row__missing > .codicon { font-size: 12px; }
 
 /* ─── the links: PRs newest first, then the Slack threads you pasted — each a button that opens it ── */
 .row__line--links[hidden], .links[hidden] { display: none; }
@@ -150,20 +152,21 @@ body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .filter__input 
 .where__item.tip::after, .link.tip::after, .row__line--where .row__time.tip::after, .row__title.tip::after { left: 0; right: auto; max-width: min(260px, 100%); white-space: pre-line; }
 /* A PR's icon is its state on GitHub: open, merged, closed or draft; unknown stays in the text colour. */
 [data-state="open"] > .codicon-git-pull-request { color: var(--st-pr-open); }
-[data-state="merged"] > .codicon-git-merge { color: var(--st-pr-merged); }
+[data-state="merged"] > .codicon-git-merge { color: var(--pr-merged); }
 [data-state="closed"] > .codicon-git-pull-request-closed { color: var(--st-pr-closed); }
-[data-state="draft"] > .codicon-git-pull-request-draft { color: var(--st-pr-draft); }
-/* …and its chip is a pill tinted with that state (D18): green open, red closed, grey draft, neutral merged. */
+[data-state="draft"] > .codicon-git-pull-request-draft { color: var(--pr-draft); }
+/* …and its chip is a pill tinted with that state (D18, D21): green open, red closed, soft violet merged, muted green draft (dashed). */
 .link--pr[data-state="open"] { --pr: var(--st-pr-open); }
-.link--pr[data-state="merged"] { --pr: var(--st-pr-merged); }
+.link--pr[data-state="merged"] { --pr: var(--pr-merged); }
 .link--pr[data-state="closed"] { --pr: var(--st-pr-closed); }
-.link--pr[data-state="draft"] { --pr: var(--st-pr-draft); }
+.link--pr[data-state="draft"] { --pr: var(--pr-draft); }
 .link--pr[data-state] {
   padding: 0 5px 0 3px; color: color-mix(in oklab, var(--pr) 60%, var(--s-fg));
   /* glossy: a top light over the tint, and a hairline of the state's colour (D19) */
   background-color: color-mix(in srgb, var(--pr) 14%, transparent); background-image: linear-gradient(180deg, var(--gloss), transparent 75%);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pr) 30%, transparent);
 }
+.link--pr[data-state="draft"] { box-shadow: none; outline: 1px dashed color-mix(in srgb, var(--pr) 45%, transparent); outline-offset: -1px; }
 .link--pr[data-state]:hover { background-color: color-mix(in srgb, var(--pr) 26%, transparent); }
 .slack-mark { width: 14px; height: 14px; display: block; }
 /* high contrast: the Slack mark in the text colour, like every other icon */

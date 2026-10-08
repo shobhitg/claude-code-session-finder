@@ -41,13 +41,12 @@
   --st-full:     var(--vscode-charts-red);
   /* a headless run (D15): purple, which nothing else in these views uses, so it can only mean "a machine started this" */
   --st-headless: var(--vscode-charts-purple);
-  /* A PR's state on GitHub (open · merged · closed · draft). Open and closed wear GitHub's green and red; merged
-     is settled — nothing left to do — so it is the text colour and its icon (the merge) says which state it is.
-     Not GitHub's purple: on a row that is the headless ghost's, and a purple #12 beside a ghost read as one thing. */
+  /* A PR's state on GitHub (open · merged · closed · draft): open and closed wear GitHub's green and red. Merged
+     is a soft violet — GitHub's purple mixed toward the theme's blue (--pr-merged, below), dimmer and bluer than
+     the headless ghost's full purple, which stays the ghost's alone; a draft a muted green: open, not yet ready
+     (D21). Until 0.10.2 merged was the text colour and draft grey, and a list of merged PRs read all grey. */
   --st-pr-open:   var(--vscode-charts-green);
-  --st-pr-merged: var(--vscode-foreground);
   --st-pr-closed: var(--vscode-charts-red);
-  --st-pr-draft:  var(--vscode-descriptionForeground);
   /* high-contrast themes outline what they draw; elsewhere this is transparent */
   --s-contrast:  var(--vscode-contrastBorder, transparent);
   /* the cost meter's own hue below 80% of the budget: cyan, which no state uses (D18) */
@@ -77,6 +76,9 @@
   /* the shimmer's bright band on running words, and the top light on a glossy pill (D19) */
   --tx-sheen:   color-mix(in oklab, var(--tx-running) 40%, var(--s-fg));
   --gloss:      color-mix(in srgb, var(--vscode-foreground) 13%, transparent);
+  /* merged and draft PRs (D21): mixes of theme colours, so not --st- aliases */
+  --pr-merged:  color-mix(in oklab, var(--vscode-charts-purple) 55%, var(--vscode-charts-blue));
+  --pr-draft:   color-mix(in oklab, var(--vscode-charts-green) 45%, var(--vscode-descriptionForeground));
 
   /* type — the IDE's */
   --font:      var(--vscode-font-family);

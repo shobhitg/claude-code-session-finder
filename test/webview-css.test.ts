@@ -63,6 +63,12 @@ describe('webview stylesheets (spec §10, D7)', () => {
     expect(tx[5]![2]).toMatch(/^color-mix\(in oklab, var\(--tx-running\) \d+%, var\(--s-fg\)\)$/);   // the shimmer's band: still the running hue
     for (const tone of ['running', 'needs', 'done', 'stalled', 'failed']) expect(style, tone).toMatch(new RegExp(`\\.row\\[data-tone="${tone}"\\] \\.row__time \\{ color: var\\(--tx-`));
   });
+  it('a draft PR is a dashed muted-green pill, and a folder that is gone says so in the warning colour (D21)', () => {
+    const style = sheets[1]![1];
+    expect(tokens).toMatch(/--pr-draft:\s*color-mix\(in oklab, var\(--vscode-charts-green\) \d+%, var\(--vscode-descriptionForeground\)\);/);
+    expect(style).toMatch(/\.link--pr\[data-state="draft"\] \{ box-shadow: none; outline: 1px dashed/);
+    expect(style).toMatch(/\.row__missing \{[^}]*color: var\(--tx-stalled\)/);
+  });
   it('the Slack mark falls back to the text colour in high-contrast themes', () => {
     expect(sheets[1]![1]).toMatch(/body\.vscode-high-contrast \.slack-mark path, body\.vscode-high-contrast-light \.slack-mark path \{ fill: currentColor; \}/);
   });
@@ -101,9 +107,10 @@ describe('webview stylesheets (spec §10, D7)', () => {
   it('a headless run (D15) wears its own colour, purple, which nothing else uses — and a dot for every status the model emits', () => {
     const style = sheets[1]![1];
     expect(tokens).toMatch(/--st-headless:\s*var\(--vscode-charts-purple\)/);
-    // purple means "a machine started this" and nothing else — not a state, and not a merged PR (GitHub's purple, in the 0.10.0 previews)
+    // full purple means "a machine started this" and nothing else; a merged PR is a soft violet — purple mixed with blue (D21)
     expect(tokens.match(/--(?:s|st)-(?!headless)[a-z-]+:\s*var\(--vscode-charts-purple\)/)).toBeNull();
-    for (const [name, css] of sheets) expect(css.replace(/--st-headless:[^;]*;/, ''), name).not.toMatch(/charts-purple/);
+    expect(tokens).toMatch(/--pr-merged:\s*color-mix\(in oklab, var\(--vscode-charts-purple\) \d+%, var\(--vscode-charts-blue\)\);/);
+    for (const [name, css] of sheets) expect(css.replace(/--st-headless:[^;]*;/, '').replace(/--pr-merged:[^;]*;/, ''), name).not.toMatch(/charts-purple/);
     for (const g of ['running', 'done', 'failed', 'waiting', 'stalled', 'closed']) expect(style, g).toContain(`.ghost__dot[data-ghost="${g}"]`);
     expect(style).toMatch(/\.ghost__dot\[data-ghost="running"\] \{[^}]*animation: ghost-pulse/);
   });
