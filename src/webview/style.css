@@ -83,8 +83,10 @@ main:focus-visible { outline: none; }
 .row__lines { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .row__line { display: flex; align-items: center; gap: var(--sp-2); height: 22px; min-width: 0; }
 .row__title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-/* line 1, right end: the time (empty on an old row — the age tag on line 2 stands in for it). */
+/* line 1, right end: the time (empty on an old row — the age tag on line 2 stands in for it). In a narrow sidebar
+   fit() moves it to the start of line 2, so the title has line 1 to itself; empty, it takes no room there. */
 .row__end { flex: none; display: flex; align-items: center; gap: var(--sp-1); }
+.row__line--where > .row__end:has(> .row__time:empty) { display: none; }
 /* line 2, just before the cost meter: how long an old session has been quiet */
 .row__age {
   flex: none; font-size: var(--size-meta); font-weight: 600; line-height: 15px; padding: 0 6px; border-radius: 8px; white-space: nowrap;
@@ -132,8 +134,8 @@ main:focus-visible { outline: none; }
 .links__sep[hidden] { display: none; }
 /* Line 2's and the links' tooltips open under the row's text and no wider than it, so one near the right edge cannot widen the view. */
 .row__lines { position: relative; }
-.where__item.tip, .link.tip { position: static; }
-.where__item.tip::after, .link.tip::after { left: 0; right: auto; max-width: min(260px, 100%); white-space: pre-line; }
+.where__item.tip, .link.tip, .row__line--where .row__time.tip { position: static; }
+.where__item.tip::after, .link.tip::after, .row__line--where .row__time.tip::after { left: 0; right: auto; max-width: min(260px, 100%); white-space: pre-line; }
 /* A PR's icon is its state on GitHub: open, merged, closed or draft; unknown stays in the text colour. */
 [data-state="open"] > .codicon-git-pull-request { color: var(--st-pr-open); }
 [data-state="merged"] > .codicon-git-merge { color: var(--st-pr-merged); }
@@ -160,7 +162,9 @@ body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .sla
 .links-list__main { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .links-list__sub { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--s-muted); }
 
-/* ─── cost meter: context size against the model's window — line 2, right end ── */
+/* ─── cost meter: context size against the budget — line 2, right end. Below 80% it is a measurement, not an
+   alarm: the text colour, quiet, so the state words lead the row and its colours stay the states' own (D17).
+   Then amber as compaction nears, and red past the budget: compact or start a new session. ── */
 .row__heat {
   flex: none; display: flex; align-items: center; gap: var(--sp-1);
   font-family: var(--mono); font-size: var(--size-meta); font-variant-numeric: tabular-nums; color: var(--s-muted); white-space: nowrap;
@@ -169,12 +173,9 @@ body.vscode-high-contrast .slack-mark path, body.vscode-high-contrast-light .sla
 /* High contrast paints the badge black on black: outline the track so how full it is still reads */
 body.vscode-high-contrast .heat__track, body.vscode-high-contrast-light .heat__track { outline: 1px solid var(--s-contrast); outline-offset: 1px; }
 .heat__fill { display: block; height: 100%; border-radius: 2px; transform-origin: left; transition: transform var(--dur) var(--ease); }
-.row[data-heat="low"] .heat__fill { background: var(--st-ok); }
-.row[data-heat="mid"] .heat__fill { background: var(--st-needs); }
-.row[data-heat="warm"] .heat__fill { background: var(--st-warm); }
-.row[data-heat="warm"] .row__heat { color: var(--st-warm); }
-.row[data-heat="high"] .heat__fill { background: var(--st-error); }
-.row[data-heat="high"] .row__heat { color: var(--st-error); }
+.row[data-heat="low"] .heat__fill, .row[data-heat="mid"] .heat__fill, .row[data-heat="warm"] .heat__fill { background: var(--s-fg); opacity: .55; }
+.row[data-heat="high"] .heat__fill { background: var(--st-warm); }
+.row[data-heat="high"] .row__heat { color: var(--st-warm); }
 .row[data-heat="full"] .heat__fill { background: var(--st-full); }
 .row[data-heat="full"] .heat__track { box-shadow: 0 0 0 1px var(--st-full); }
 .row[data-heat="full"] .row__heat { color: var(--st-full); font-weight: 700; }

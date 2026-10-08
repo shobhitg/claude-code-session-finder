@@ -48,6 +48,13 @@ describe('webview stylesheets (spec §10, D7)', () => {
     expect(style).not.toMatch(/\.section\[data-id="active"\] \.section__body \{[^}]*min-height/);
     expect(style).toMatch(/\.section\[data-collapsed="true"\] \.section__body \{ display: none; \}/);
   });
+  it('the cost meter is a measurement below 80% — the text colour, no state colour — then amber, then red (D17)', () => {
+    const style = sheets[1]![1];
+    expect(style).toMatch(/\.row\[data-heat="low"\] \.heat__fill, \.row\[data-heat="mid"\] \.heat__fill, \.row\[data-heat="warm"\] \.heat__fill \{ background: var\(--s-fg\)/);
+    for (const rule of style.match(/\.row\[data-heat="(?:low|mid|warm)"\][^{]*\{[^}]*\}/g) ?? []) expect(rule, rule).not.toMatch(/--st-/);
+    expect(style).toMatch(/\.row\[data-heat="high"\] \.heat__fill \{ background: var\(--st-warm\); \}/);
+    expect(style).toMatch(/\.row\[data-heat="full"\] \.heat__fill \{ background: var\(--st-full\); \}/);
+  });
   it('high contrast outlines the cost meter\'s track, which it would paint black on black', () => {
     expect(sheets[1]![1]).toMatch(/body\.vscode-high-contrast \.heat__track, body\.vscode-high-contrast-light \.heat__track \{[^}]*outline: 1px solid var\(--s-contrast\)/);
     expect(tokens).toMatch(/--s-contrast:\s*var\(--vscode-contrastBorder/);

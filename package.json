@@ -133,7 +133,7 @@
           "type": "number",
           "default": 1000000,
           "minimum": 1000,
-          "description": "Tokens of context at which a session's cost meter reads full (deep red). Set it to where Claude Code compacts for your models; the meter ramps green → yellow → orange → red toward it."
+          "description": "Tokens of context at which a session's cost meter reads full (deep red). Set it to where Claude Code compacts for your models; the meter stays in the text colour until 80% of it, then turns amber, and red past it."
         },
         "sessionFinder.activeWindow": {
           "type": "string",

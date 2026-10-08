@@ -216,9 +216,9 @@ export const DEFAULT_CONTEXT_BUDGET = 1_000_000;
 
 /**
  * Cost meter for a row, on ONE absolute scale for every session: a 420k context is a 420k context
- * whichever model holds it. `budget` is where compaction lands (a setting; 1M by default). The ramp
- * is green → yellow → orange → red, and past the budget the bar is pinned full in deep red: the
- * message is "compact or start a new session", and it stays on until you do.
+ * whichever model holds it. `budget` is where compaction lands (a setting; 1M by default). Below 80%
+ * the bar is in the text colour — a measurement, not an alarm (D17) — then amber, and past the budget
+ * it is pinned full in red: the message is "compact or start a new session", and it stays on until you do.
  */
 export function heatOf(tokens: number, budget = DEFAULT_CONTEXT_BUDGET): Heat {
   const b = Math.max(1, budget);

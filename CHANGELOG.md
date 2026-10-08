@@ -20,14 +20,19 @@
   right panel, the Session View, copy a link, the transcript file, close. They
   are also new palette commands, **Claude: Copy Session Link** and **Claude:
   Open Session Transcript File**.
-- **A narrow sidebar keeps the state words on hover.** Below 380 px the row's
-  buttons now sit over the line under the title instead of replacing
-  `interrupted · 3m`.
-- **No more empty space under Active.** It keeps the room it has needed since
-  the view opened, plus a row, instead of ten rows from the start — Closed still
-  stays put as sessions come and go.
+- **A narrow sidebar gives the title its line.** Below 380 px the title has the
+  first line to itself — it was cut to about 17 characters — and the state
+  words start the second. The row's buttons sit over the second line's right
+  end on hover, so they no longer hide `interrupted · 3m`.
+- **No more empty space under Active.** It keeps the room it has needed, plus a
+  row, instead of ten rows from the start, and measures again when you resize
+  the sidebar — Closed still stays put as sessions come and go.
+- **The cost meter stays quiet until it matters.** Below 80% of the budget it
+  is in the text colour, not green or yellow; amber from there, red past it.
+  The state colours are left to the states.
 - **Accessibility.** The rows are a list, so screen readers reach the buttons
-  inside them; the session in the active tab is marked current. In
+  inside them; the session in the active tab is marked current. `↑` `↓` from a
+  button inside a row now move from that row, not back to the first one. In
   high-contrast themes the cost meter's track is outlined.
 - **The view's title** is just "Claude Code Sessions", not "Claude Code
   Sessions: Sessions".

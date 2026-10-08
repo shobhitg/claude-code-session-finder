@@ -248,11 +248,18 @@ function drawWhere(li: HTMLElement, r: RowVM): void {
  * its list names every link. Past that, on a very narrow view, the Slack thread folds too; the newest PR never does.
  */
 const MAX_PRS = 3;
+/** style.css's narrow-sidebar width (its @container query): below it the title has line 1 to itself. */
+const NARROW = 380;
 const fitsIn = (el: HTMLElement, box: HTMLElement): boolean => el.offsetWidth <= box.clientWidth + 0.5;
 const cut = (t: HTMLElement): boolean => t.scrollWidth > t.clientWidth + 1;
 function fit(li: HTMLElement): void {
   const line2 = li.querySelector<HTMLElement>('.row__line--where')!, line3 = li.querySelector<HTMLElement>('.row__line--links')!;
   const links = li.querySelector<HTMLElement>('.links')!, more = links.querySelector<HTMLElement>('.link--more');
+  // A narrow sidebar gives line 1 to the title alone — it is what names the session, and the state words took a
+  // third of it — and the state words lead line 2 instead (D17). Wider, they sit at line 1's right end.
+  const line1 = li.querySelector<HTMLElement>('.row__line')!, end = li.querySelector<HTMLElement>('.row__end')!;
+  if (root.clientWidth <= NARROW) { if (end.parentElement !== line2) line2.prepend(end); }
+  else if (end.parentElement !== line1) line1.querySelector('.row__title')!.after(end);
   for (const it of Array.from(line2.querySelectorAll('.where__item--icon'))) it.classList.remove('where__item--icon');
   if (!links.hidden && more) {
     const prs = Array.from(links.querySelectorAll<HTMLElement>('.link--pr')), slack = Array.from(links.querySelectorAll<HTMLElement>('.link--slack'));
@@ -295,16 +302,21 @@ function fitSoon(): void {
       if (fitted.get(li) === width || !li.offsetParent) continue;   // done, or in a collapsed section
       fit(li); fitted.set(li, width);
     }
-    holdActive();   // a row that took a third line made ACTIVE taller
+    holdActive(width);   // rows refitted: a third line made ACTIVE taller, or a new width re-wrapped them all
   });
 }
 
-/** ACTIVE's height only grows while the view is open (activeReserve); a section rebuilt after the filter gets it back. */
-let activeHeld = 0;
-function holdActive(): void {
+/**
+ * ACTIVE's height only grows while the view keeps its width (activeReserve); a section rebuilt after the filter gets
+ * it back. A new width re-measures from the rows as they now wrap — else a sidebar widened from 290 px kept the
+ * height of three-line rows over two-line ones. `width` comes only from fitSoon, after the rows are refitted.
+ */
+let activeHeld = 0, heldWidth = -1;
+function holdActive(width?: number): void {
   const body = sectionsEl.querySelector<HTMLElement>('section[data-id="active"]:not([data-collapsed="true"]) .section__body');
   const content = body?.firstElementChild as HTMLElement | null | undefined;
   if (!body || !content) return;
+  if (width !== undefined && width !== heldWidth) { heldWidth = width; activeHeld = 0; }
   activeHeld = activeReserve(activeHeld, content.offsetHeight, parseFloat(getComputedStyle(root).getPropertyValue('--row')) || 44);
   if (body.style.minHeight !== `${activeHeld}px`) body.style.minHeight = `${activeHeld}px`;
 }
@@ -542,7 +554,8 @@ root.addEventListener('keydown', e => {
   if (e.target === filterInput || e.metaKey || e.ctrlKey || e.altKey) return;   // typing, or a chord for VS Code (Cmd+V is not V)
   if (e.target instanceof HTMLButtonElement && (e.key === 'Enter' || e.key === ' ')) return;   // a focused link or action does its own
   const rows = Array.from(sectionsEl.querySelectorAll<HTMLElement>('.row'));   // not [...], which needs lib dom.iterable
-  const current = document.activeElement as HTMLElement | null;
+  // the row, also when focus is on one of its buttons (an action, a link): ↓ from there is the next row, not the first
+  const current = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.row') ?? null;
   const i = current ? rows.indexOf(current) : -1;
   const focus = (j: number) => rows[Math.max(0, Math.min(rows.length - 1, j))]?.focus();
   const id = current?.dataset.id;
@@ -560,7 +573,7 @@ root.addEventListener('keydown', e => {
     case 'v': case 'V': if (id) post({ type: 'view', sessionId: id }); break;
     case 'Delete': case 'Backspace': if (id) { e.preventDefault(); post({ type: 'close', sessionId: id }); } break;   // the host ignores a closed row
     case '/': e.preventDefault(); focusFilter(); break;
-    case 'Escape': if (filtering()) setFilter(''); else current?.blur(); break;
+    case 'Escape': if (filtering()) setFilter(''); else (document.activeElement as HTMLElement | null)?.blur(); break;
   }
 });
 // Tab lands on <main>; hand focus to the first row so the roving list takes over.
