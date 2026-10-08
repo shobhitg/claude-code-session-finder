@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.10.1 (unreleased)
+
+**A design review of the Sessions view.**
+
+- **Purple means headless, and nothing else.** A merged PR is now its merge
+  icon in the text colour, not GitHub's purple: beside a headless run's ghost
+  the two read as one thing. Open stays green, closed red, draft muted.
+- **Every PR on a row shows its number.** At most three PRs show, newest first,
+  with the newest Slack thread; the rest fold into `+N` at the end, whose
+  tooltip says what is behind it ("6 more PRs (5 merged, 1 closed) and 1 Slack
+  thread") and whose list names every link. No more bare PR icons, and no more
+  identical Slack marks side by side.
+- **The time says what the session is doing.** `quiet 3m` is gone: a running
+  session reads `working · 3m`, a quiet tool call `may need you · 3m` (a
+  permission prompt or a long command; a headless run's is `working`), a stall
+  `stalled · 2h`. Hover the time for what the number measures.
+- **Right-click a row** for all of its actions as a menu: open in a tab or the
+  right panel, the Session View, copy a link, the transcript file, close. They
+  are also new palette commands, **Claude: Copy Session Link** and **Claude:
+  Open Session Transcript File**.
+- **A narrow sidebar keeps the state words on hover.** Below 380 px the row's
+  buttons now sit over the line under the title instead of replacing
+  `interrupted · 3m`.
+- **No more empty space under Active.** It keeps the room it has needed since
+  the view opened, plus a row, instead of ten rows from the start — Closed still
+  stays put as sessions come and go.
+- **Accessibility.** The rows are a list, so screen readers reach the buttons
+  inside them; the session in the active tab is marked current. In
+  high-contrast themes the cost meter's track is outlined.
+- **The view's title** is just "Claude Code Sessions", not "Claude Code
+  Sessions: Sessions".
+- **Session View.** The header keeps the session's title readable before its
+  details, and in a narrow pane a background agent's message is no longer
+  squeezed to one word per line.
+
 ## 0.10.0
 
 **Headless runs wear a ghost.** A session started without a UI — `claude -p`,

@@ -64,7 +64,7 @@ function renderHeader(): HTMLElement {
     h('i', { class: `header__icon ${iconClasses(statusIcon(n.kind, n.status, reducedMotion))}`, 'aria-hidden': 'true' }),
     h('span', { class: 'header__title', title }, title),
     h('span', { class: 'header__meta' }, meta));
-  if (live) el.append(h('span', { class: 'header__live' }, '● live'));
+  if (live) el.append(h('span', { class: 'header__live' }, h('i', { class: 'codicon codicon-circle-filled', 'aria-hidden': 'true' }), 'live'));
   el.append(h('span', { class: 'header__actions' },
     action('window', 'Open session in a tab', () => post({ type: 'open', where: 'tab' })),
     action('layout-sidebar-right', 'Open session in the right panel', () => post({ type: 'open', where: 'right' })),

@@ -11,11 +11,13 @@ main:focus-visible { outline: none; }
 /* ─── header ─────────────────────────────────────────────────────────────────── */
 .header { grid-column: 1 / span 2; display: flex; align-items: center; gap: var(--sp-2); min-height: 36px;
   padding: 0 var(--sp-3); border-bottom: 1px solid var(--s-border); }
-.header__icon { font-size: 16px; }
-.header__title { font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.header__meta { color: var(--s-muted); font-size: var(--size-meta); white-space: nowrap; }
-.header__live { color: var(--st-running); font-size: var(--size-meta); }
-.header__actions { margin-left: auto; display: flex; gap: 2px; }
+.header__icon { flex: none; font-size: 16px; }
+/* Squeezed, the meta gives way long before the title does: the title is what names the session */
+.header__title { flex: 0 1 auto; min-width: 6em; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.header__meta { flex: 0 1000 auto; min-width: 0; color: var(--s-muted); font-size: var(--size-meta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header__live { flex: none; display: inline-flex; align-items: center; gap: 3px; color: var(--st-running); font-size: var(--size-meta); white-space: nowrap; }
+.header__live .codicon { font-size: 8px; }
+.header__actions { flex: none; margin-left: auto; display: flex; gap: 2px; }
 .action { width: 26px; height: 26px; border-radius: var(--radius); display: inline-flex; align-items: center; justify-content: center; }
 .action:hover { background: var(--s-toolbar); }
 .action:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
@@ -65,7 +67,7 @@ main:focus-visible { outline: none; }
 .tree__row[data-kind="failed-spawn"] { opacity: .75; }
 
 /* ─── reader ─────────────────────────────────────────────────────────────────── */
-.reader { grid-column: 2; overflow: auto; padding: 0 var(--sp-4) var(--sp-6); }
+.reader { grid-column: 2; overflow: auto; padding: 0 var(--sp-4) var(--sp-6); container-type: inline-size; }
 .reader__head { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: var(--sp-2);
   padding: var(--sp-2) 0; background: var(--s-bg-editor); border-bottom: 1px solid var(--s-border); }
 .reader__title { font-weight: 600; }
@@ -87,6 +89,13 @@ main:focus-visible { outline: none; }
 .turn__prompt-text p { margin: 0; white-space: pre-wrap; word-break: break-word; font-weight: 500; }
 .turn--meta .turn__prompt-text p { color: var(--s-muted); font-weight: 400; }
 .turn__meta { grid-column: 3; color: var(--s-muted); font-family: var(--mono); font-size: var(--size-meta); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* A narrow reader cannot give who and when a column each beside the prompt — "BACKGROUND AGENT" and the
+   time left it a word wide. There they share a line above it, and the prompt takes the full width. */
+@container (max-width: 600px) {
+  .turn__prompt { grid-template-columns: auto minmax(0, 1fr); row-gap: 2px; }
+  .turn__prompt-text { grid-column: 1 / -1; grid-row: 2; }
+  .turn__meta { grid-column: 2; grid-row: 1; justify-self: end; }
+}
 
 .item { margin-top: var(--sp-2); }
 .item--text p { margin: 0 0 var(--sp-2); white-space: pre-wrap; word-break: break-word; }

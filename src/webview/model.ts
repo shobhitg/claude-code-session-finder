@@ -3,6 +3,8 @@ import { isDefaultBranch, sameAsBranch } from '../core/links.js';
 
 export interface RowVM {
   kind: 'session'; sessionId: string; title: string; time: string; iconClass: string;
+  /** what the time measures, for its tooltip — none on a closed row */
+  timeTip?: string;
   state: 'running' | 'attention' | 'history'; reason?: string;
   /** its folder is gone, and no worktree says so */
   missing: boolean;
@@ -74,16 +76,39 @@ export function fmtDuration(ms: number): string {
 }
 const pair = (a: number, au: string, b: number, bu: string): string => b ? `${a}${au} ${b}${bu}` : `${a}${au}`;
 
-/** Spec §10 table, "Time label" column. */
-export function timeLabel(row: Pick<LiveRow, 'state' | 'reason' | 'lastWriteMs'>, now: number): string {
+type TimedRow = Pick<LiveRow, 'state' | 'reason' | 'lastWriteMs' | 'headless'>;
+
+/**
+ * Spec §10 table, "Time label" column: what the session is doing, in the words you would use, then how long
+ * since it last wrote. "quiet 5m" (until 0.10.1) answered neither "is it working?" nor "does it need me?".
+ * A tool call quiet past toolQuietSeconds is a permission prompt or a long command, which nothing on disk
+ * tells apart (L4) — so it *may* need you; a headless run cannot stop for a prompt, so it is working (D15).
+ */
+export function timeLabel(row: TimedRow, now: number): string {
   const quiet = now - row.lastWriteMs;
-  if (row.state === 'running') return quiet < 45_000 ? 'just now' : `quiet ${fmtDuration(quiet)}`;
+  const working = quiet < 45_000 ? 'working' : `working · ${fmtDuration(quiet)}`;
+  if (row.state === 'running') return working;
   switch (row.reason) {
-    case 'tool-or-permission': return `quiet ${fmtDuration(quiet)}`;
+    case 'tool-or-permission': return row.headless ? working : `may need you · ${fmtDuration(quiet)}`;
     case 'question': return `asks you · ${fmtDuration(quiet)}`;
     case 'your-turn': return `done · ${fmtDuration(quiet)} ago`;
     case 'interrupted': return `interrupted · ${fmtDuration(quiet)}`;
-    default: return fmtDuration(quiet);
+    default: return `stalled · ${fmtDuration(quiet)}`;
+  }
+}
+
+/** The time label's tooltip: what its number measures, which the label is too short to say. */
+export function timeTip(row: TimedRow, now: number): string {
+  const d = fmtDuration(now - row.lastWriteMs);
+  if (row.state === 'running') return `Claude is working — last wrote ${d} ago`;
+  switch (row.reason) {
+    case 'tool-or-permission': return row.headless
+      ? `In a tool call for ${d} — a headless run cannot stop for a permission prompt, so it is still working`
+      : `In a tool call for ${d}: a permission prompt waiting on you, or a long command still running`;
+    case 'question': return `Claude asked ${d} ago and is waiting for your answer`;
+    case 'your-turn': return `Claude finished ${d} ago — your turn`;
+    case 'interrupted': return `Interrupted ${d} ago — waiting for you`;
+    default: return `Nothing written for ${d} — it may have died`;
   }
 }
 
@@ -102,7 +127,7 @@ export function fmtWindow(spec: string): string {
  * time it would duplicate (the tooltip keeps that label), orange, and red once it is a day old. The user
  * closes it on purpose.
  */
-export function ageTag(row: Pick<LiveRow, 'state' | 'reason' | 'lastWriteMs'>, now: number, opts: ViewOpts): AgeTag | undefined {
+export function ageTag(row: TimedRow, now: number, opts: ViewOpts): AgeTag | undefined {
   const quiet = now - row.lastWriteMs;
   if (!opts.activeWindowMs || quiet <= opts.activeWindowMs) return undefined;
   const hours = Math.floor(quiet / 3_600_000);
@@ -162,6 +187,23 @@ export function linksVM(r: Pick<RowWhere, 'prs' | 'slack'>): ChipVM[] {
   return [...prs, ...slack];
 }
 
+/**
+ * The +N at the end of a row's links: how many folded, and — in its tooltip — what they are, so a row with
+ * nine PRs says "6 more PRs (5 merged, 1 closed)" without a click. Nothing folded, no +N.
+ */
+export function moreLabel(folded: Array<{ kind: 'pr' | 'slack'; state?: string }>): { text: string; tip: string } | undefined {
+  if (!folded.length) return undefined;
+  const prs = folded.filter(f => f.kind === 'pr'), threads = folded.length - prs.length;
+  const states = (['open', 'draft', 'merged', 'closed'] as const)
+    .map(s => [s, prs.filter(p => p.state === s).length] as const).filter(([, n]) => n > 0);
+  const known = states.reduce((t, [, n]) => t + n, 0);
+  const breakdown = states.length === 1 && known === prs.length ? states[0]![0]      // all one state: "(merged)"
+    : states.map(([s, n]) => `${n} ${s}`).join(', ');                                 // else each known state, counted
+  const prPart = prs.length ? `${prs.length} more PR${prs.length === 1 ? '' : 's'}${breakdown ? ` (${breakdown})` : ''}` : '';
+  const slackPart = threads ? `${threads}${prs.length ? '' : ' more'} Slack thread${threads === 1 ? '' : 's'}` : '';
+  return { text: `+${folded.length}`, tip: `${[prPart, slackPart].filter(Boolean).join(' and ')} — click to list every link` };
+}
+
 /** Line 2, the links, and whether the folder is gone with nothing else to say so. */
 function whereAndLinks(r: RowWhere & { cwdExists: boolean }): Pick<RowVM, 'where' | 'links' | 'missing'> {
   const where = whereVM(r);
@@ -188,6 +230,15 @@ export function heatOf(tokens: number, budget = DEFAULT_CONTEXT_BUDGET): Heat {
     : tier === 'warm' ? ' — getting heavy' : '';
   return { tokens, budget: b, pct, tier, label: fmtTokens(tokens),
            title: `Context ${fmtTokens(tokens)} of a ${fmtTokens(b)} budget (${pct}%): the tokens re-sent on every turn${advice}` };
+}
+
+/**
+ * How tall ACTIVE stands, in px (D14): the most it has held since the view opened, plus a row of room. A session
+ * that starts fills the room, one that closes leaves its space, so CLOSED stays where it is as they come and go —
+ * without the ten empty rows ACTIVE kept from the start until 0.10.1, a gap that read as a list still loading.
+ */
+export function activeReserve(heldPx: number, contentPx: number, rowPx: number): number {
+  return Math.max(heldPx, Math.ceil(contentPx + rowPx));
 }
 
 // Under reduced motion the spinner becomes a static dot in the running colour (spec §10).
@@ -217,7 +268,7 @@ const ghostLabel = (g: GhostStatus): string => `Headless run (claude -p) — ${G
 
 function liveRow(r: LiveRow, now: number, opts: ViewOpts): RowVM {
   const vm: RowVM = {
-    kind: 'session', sessionId: r.sessionId, title: r.title, time: timeLabel(r, now), ...whereAndLinks(r),
+    kind: 'session', sessionId: r.sessionId, title: r.title, time: timeLabel(r, now), timeTip: timeTip(r, now), ...whereAndLinks(r),
     iconClass: iconClass(r.state === 'running' ? runningIcon(opts.reducedMotion) : stateIcon(r)), state: r.state,
     selected: r.sessionId === opts.activeId, stateLabel: stateLabel(r),
   };

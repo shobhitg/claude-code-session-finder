@@ -74,19 +74,33 @@
       },
       {
         "command": "sessionFinder.openInTab",
-        "title": "Claude: Open Session in Tab"
+        "category": "Claude",
+        "title": "Open Session in Tab"
       },
       {
         "command": "sessionFinder.openInRightPanel",
-        "title": "Claude: Open Session in Right Panel"
+        "category": "Claude",
+        "title": "Open Session in Right Panel"
       },
       {
         "command": "sessionFinder.openSessionView",
-        "title": "Claude: Open Session View"
+        "category": "Claude",
+        "title": "Open Session View"
+      },
+      {
+        "command": "sessionFinder.copyLink",
+        "category": "Claude",
+        "title": "Copy Session Link"
+      },
+      {
+        "command": "sessionFinder.openTranscript",
+        "category": "Claude",
+        "title": "Open Session Transcript File"
       },
       {
         "command": "sessionFinder.closeSession",
-        "title": "Claude: Close Session"
+        "category": "Claude",
+        "title": "Close Session"
       }
     ],
     "configuration": {
@@ -160,7 +174,7 @@
         {
           "type": "webview",
           "id": "sessionFinder.live",
-          "name": "Sessions",
+          "name": "Claude Code Sessions",
           "contextualTitle": "Claude Code Sessions",
           "icon": "resources/sessions.svg"
         }
@@ -197,6 +211,38 @@
           "command": "sessionFinder.refresh",
           "when": "view == sessionFinder.live",
           "group": "navigation@4"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "sessionFinder.openInTab",
+          "when": "webviewId == 'sessionFinder.live' && webviewSection == 'session' && !headless",
+          "group": "1_open@1"
+        },
+        {
+          "command": "sessionFinder.openSessionView",
+          "when": "webviewId == 'sessionFinder.live' && webviewSection == 'session'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "sessionFinder.openInRightPanel",
+          "when": "webviewId == 'sessionFinder.live' && webviewSection == 'session'",
+          "group": "1_open@3"
+        },
+        {
+          "command": "sessionFinder.copyLink",
+          "when": "webviewId == 'sessionFinder.live' && webviewSection == 'session'",
+          "group": "2_session@1"
+        },
+        {
+          "command": "sessionFinder.openTranscript",
+          "when": "webviewId == 'sessionFinder.live' && webviewSection == 'session'",
+          "group": "2_session@2"
+        },
+        {
+          "command": "sessionFinder.closeSession",
+          "when": "webviewId == 'sessionFinder.live' && webviewSection == 'session' && !closed",
+          "group": "3_close@1"
         }
       ]
     },

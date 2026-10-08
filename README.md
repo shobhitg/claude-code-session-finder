@@ -45,7 +45,7 @@ Sessions view and in search results:
 |---|---|---|
 | `⟳` spinning | running | the model is working — including long answers, which write nothing for a while |
 | `?` | asks you | Claude asked a question (`AskUserQuestion`) or has a plan for you to approve, and is waiting for the answer |
-| `🔔` | needs you | waiting on a tool call for a while: usually a **permission prompt**, sometimes a slow tool |
+| `🔔` | may need you | waiting on a tool call for a while: usually a **permission prompt**, sometimes a slow tool |
 | `💬` | done | Claude finished its turn and is waiting for you |
 | `⊘` | interrupted | you stopped it (`Esc`); nothing is running until you type again |
 | `⚠` | stalled | nothing written for 15+ minutes mid-turn; probably abandoned |
@@ -60,12 +60,12 @@ Looking in one window quiets the bell in all of them. A session running in a
 terminal, or in Claude Code's side panel, has no tab to look at: it rings until
 you reply or close it.
 
-Hover a glyph for the sentence behind it. Rows are ordered by when you last touched them — a prompt (typed, or queued while Claude works), a slash command, `Esc`, an answer to a question or a plan — newest on top. A row moves only because of something you did: Claude replying, finishing or asking never reorders the list, so nothing shuffles under your pointer, and the bell marks what needs you. A session you start goes on top; a session you resume goes on top when you send it something. Active keeps room for ten rows, so Closed stays where it is as sessions come and go.
+Hover a glyph for the sentence behind it. Rows are ordered by when you last touched them — a prompt (typed, or queued while Claude works), a slash command, `Esc`, an answer to a question or a plan — newest on top. A row moves only because of something you did: Claude replying, finishing or asking never reorders the list, so nothing shuffles under your pointer, and the bell marks what needs you. A session you start goes on top; a session you resume goes on top when you send it something. Active keeps the room it has needed since the view opened, plus a row, so Closed stays where it is as sessions come and go.
 
 **Cost meter.** Each active row carries a small bar with its context size: the tokens the model was given on its last turn, and therefore what every further turn costs. One absolute scale for every session, ramping green → yellow → orange → red toward `sessionFinder.contextBudget` (1M by default, where compaction lands), and pinned full in deep red past it: compact or start a new session. Hover the bar for the numbers.
 
 **Headless runs.** A session started without a UI — `claude -p`, the Agent SDK, a daemon — wears a purple
-**ghost** in place of the state glyph, with a dot on its corner for how the run is doing: blue and pulsing
+**ghost** (purple means nothing else in the view) in place of the state glyph, with a dot on its corner for how the run is doing: blue and pulsing
 while it works, green when it finished, red when it stopped before finishing. Claude Code's own tab shows
 these sessions blank, so clicking one reads it in the Session View; the right-panel button still resumes it
 in Claude Code. The ghost button in the view's title bar hides them (per workspace; a "N headless runs hidden
@@ -90,8 +90,10 @@ you as you switch between Claude Code tabs and Session Views.
 
 - **Active** — sessions written in the last `activeWindow`, or open in a
   Claude Code tab in this window, the one you touched last on top. The time
-  label says how long a session has been quiet — the time of the last prompt or
-  reply, not of the file, so looking at a session does not count. One kept here
+  label says what the session is doing — `working · 3m`, `may need you · 3m`,
+  `asks you · 1m`, `done · 6m ago`, `interrupted · 2m`, `stalled · 2h` — and how
+  long since it last wrote: the last prompt or reply, not the file, so looking
+  at a session does not count. Hover it for what the number measures. One kept here
   only by its tab, past the window, wears an orange `> 19h` or `> 2d 1h` tag
   instead (red after a day): close it when you mean to, and not before.
 - **Closed** — the 50 sessions you touched most recently that are not active,
@@ -121,7 +123,9 @@ a tab, read another in the Session View, come back, refine, and `Esc` or the
 `↑` `↓` move · `Enter` opens in a tab · `Shift+Enter` opens in the right panel ·
 `V` opens the Session View · `T` opens the raw transcript · `Delete` closes the
 session · `/` filters. Hover or focus a row for the same actions as buttons,
-plus a copyable deep link.
+plus a copyable deep link — beside the title, or over the line below it in a
+narrow sidebar, so the state words stay in sight — and right-click a row for
+all of them as a menu.
 
 Opening in the right panel uses Claude Code's own "Open in Side Bar", which also
 makes that the default for new sessions until you run **Claude Code: Open in New
@@ -134,11 +138,13 @@ when the worktree's folder name says something the branch does not, struck
 through once the folder is gone. A session from another project names its
 project. Then every PR the session linked, newest first, and every Slack thread
 you pasted into it — buttons: hover for the details, click to open. A PR's icon
-is its state on GitHub (open, merged, closed or draft) and its tooltip carries
-its title; see [Privacy](#privacy). The links sit beside the branch while there
-is room and take a line of their own when there is not. There the oldest PRs
-drop their numbers first, then fold into `+N`, which lists them all; Slack
-threads never fold.
+is its state on GitHub — open (green), merged (the merge icon, in the text
+colour), closed (red) or draft — and its tooltip carries its title; see
+[Privacy](#privacy). Every PR shown keeps its number: the three newest show,
+with the newest Slack thread, and the rest fold into `+N` at the end, whose
+tooltip counts them ("6 more PRs (5 merged, 1 closed) and 1 Slack thread") and
+which lists every link. They sit beside the branch while there is room and take
+a line of their own when there is not, folding further there if they must.
 
 ## Search inside sessions
 
@@ -198,6 +204,7 @@ agents pill shows the same tree live; this view is for the ones you don't.
 | **Claude: Sessions — Hide Headless Runs** / **Show Headless Runs** | the ghost button: toggle headless runs in the sidebar for this workspace |
 | **Claude: Open Session View** | read the current or a chosen session |
 | **Claude: Open Session in Tab** / **in Right Panel** | resume a session where you want it |
+| **Claude: Copy Session Link** / **Open Session Transcript File** / **Close Session** | also on a row's right-click menu |
 | **Claude: Refresh Sessions** | re-scan now |
 
 | Setting | Default | |

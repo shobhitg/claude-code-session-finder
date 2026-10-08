@@ -309,7 +309,11 @@ export class LiveViewProvider implements vscode.WebviewViewProvider {
     void this.view.webview.postMessage({ type: 'results', q, deep: parsed.deep, rows, now: Date.now(), indexing: !index });
   }
 
-  private async onMessage(raw: unknown): Promise<void> {    if (!isInbound(raw)) return;
+  /** Do what a message from the view asks — also how the row's right-click menu commands act (extension.ts). */
+  run(msg: unknown): Promise<void> { return this.onMessage(msg); }
+
+  private async onMessage(raw: unknown): Promise<void> {
+    if (!isInbound(raw)) return;
     try {
       if (raw.type === 'ready') {
         this.post(this.host.snapshot);

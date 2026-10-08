@@ -7,7 +7,7 @@
 // the hover state under the pointer — the list flickered. Rows are keyed by session id and updated
 // in place; only a row that is new fades in; a row that changes position slides (FLIP); and while
 // the pointer is over the list the order is held until it leaves.
-import { viewModel, resultsModel, timeLabel, ageTag, type ViewModel, type ViewOpts, type SectionVM, type RowVM, type LinkVM, type AgeTag, type ChipVM, type WhereVM } from './model.js';
+import { viewModel, resultsModel, timeLabel, timeTip, ageTag, moreLabel, activeReserve, type ViewModel, type ViewOpts, type SectionVM, type RowVM, type LinkVM, type AgeTag, type ChipVM, type WhereVM } from './model.js';
 import type { Snapshot, SearchRow } from '../core/rows.js';
 
 declare function acquireVsCodeApi(): {
@@ -145,13 +145,17 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
   if (r.ringing) li.dataset.ringing = 'true'; else delete li.dataset.ringing;
   if (r.ghost) li.dataset.ghost = r.ghost; else delete li.dataset.ghost;
   li.title = r.title;
-  li.setAttribute('aria-selected', String(r.selected));
+  if (r.selected) li.setAttribute('aria-current', 'true'); else li.removeAttribute('aria-current');
   li.querySelector<HTMLElement>('.action--close')!.hidden = r.state === 'history';   // nothing to close on a closed row
+  // The right-click menu (package.json, webview/context): VS Code reads this, offers the row's commands and passes it to them.
+  const menu = JSON.stringify({ webviewSection: 'session', sessionId: r.sessionId, closed: r.state === 'history', headless: !!r.ghost, preventDefaultContextMenuItems: true });
+  if (li.dataset.vscodeContext !== menu) li.dataset.vscodeContext = menu;
   const icon = li.querySelector<HTMLElement>('.row__icon')!;
   // a ghost row draws its own glyph: the state's codicon would paint over it
   icon.className = `row__icon tip tip--left${r.ghost ? '' : ` ${r.iconClass}`}`; icon.dataset.tip = r.stateLabel; icon.setAttribute('aria-label', r.stateLabel);
   setGhost(icon, r.ghost);
-  text('.row__title', r.title); text('.row__time', r.age ? '' : r.time);   // the age tag stands in for the time
+  text('.row__title', r.title);
+  setTime(li.querySelector<HTMLElement>('.row__time')!, r.age ? '' : r.time, r.timeTip);   // the age tag stands in for the time
   const where = JSON.stringify([r.where, r.links, r.missing]);
   if (drawn.get(li) !== where) { drawn.set(li, where); drawWhere(li, r); fitted.delete(li); fitSoon(); }
   // the age tag and the meter share line 2 with the links: a change of their width is a refit
@@ -162,7 +166,7 @@ function updateRow(li: HTMLLIElement, r: RowVM | LinkVM): void {
     li.dataset.heat = r.heat.tier;
     if (!heat.firstChild) heat.append(h('span', { class: 'heat__track' }, h('span', { class: 'heat__fill' })), h('span', { class: 'heat__label' }));
     heat.dataset.tip = r.heat.title; heat.setAttribute('aria-label', r.heat.title);
-    heat.querySelector<HTMLElement>('.heat__fill')!.style.width = `${r.heat.pct}%`;
+    heat.querySelector<HTMLElement>('.heat__fill')!.style.transform = `scaleX(${r.heat.pct / 100})`;
     const label = heat.querySelector<HTMLElement>('.heat__label')!;
     if (label.textContent !== r.heat.label) label.textContent = r.heat.label;
   } else if (heat.firstChild) { heat.replaceChildren(); delete heat.dataset.tip; heat.removeAttribute('aria-label'); delete li.dataset.heat; }
@@ -228,21 +232,22 @@ function drawWhere(li: HTMLElement, r: RowVM): void {
     ...(r.missing ? [h('span', { class: 'row__missing' }, '⚠ folder missing')] : []));
   const links = li.querySelector<HTMLElement>('.links')!;
   const prs = r.links.filter(c => c.kind === 'pr'), slack = r.links.filter(c => c.kind === 'slack');
-  const more = h('button', { class: 'link link--more tip tip--left', 'data-tip': 'Every PR and Slack thread of this session', hidden: '' }, '');
+  const more = h('button', { class: 'link link--more tip tip--left', hidden: '' }, '');
   more.addEventListener('click', e => { e.stopPropagation(); openList(more, r.sessionId, r.links); });
-  links.replaceChildren(...prs.map(c => chipEl(r.sessionId, c)), more,
+  links.replaceChildren(...prs.map(c => chipEl(r.sessionId, c)),
     ...(prs.length && slack.length ? [h('span', { class: 'links__sep', 'aria-hidden': 'true' })] : []),
-    ...slack.map(c => chipEl(r.sessionId, c)));
+    ...slack.map(c => chipEl(r.sessionId, c)), more);
   links.hidden = r.links.length === 0;
 }
 
 /**
- * Where the links go, and how much of each PR shows (the 0.10.0 row): beside the branch on line 2 while the
- * branch and worktree still show whole; else on a line of their own. There, when the numbers do not fit, the
- * oldest PRs drop their numbers first; when the icons do not fit either — or there are more than MAX_PRS —
- * the oldest fold into +N, which lists them all. The newest PR keeps its number longest; Slack threads never fold.
+ * Where the links go, and how many show (D16): beside the branch on line 2 while the branch and worktree still
+ * show whole; else on a line of their own. A PR that shows keeps its number — an icon alone names nothing — and
+ * at most MAX_PRS show, newest first, with one Slack thread, the newest: two identical marks side by side cannot
+ * be told apart. What is left, or does not fit, folds into +N at the end; its tooltip says what is behind it and
+ * its list names every link. Past that, on a very narrow view, the Slack thread folds too; the newest PR never does.
  */
-const MAX_PRS = 8;
+const MAX_PRS = 3;
 const fitsIn = (el: HTMLElement, box: HTMLElement): boolean => el.offsetWidth <= box.clientWidth + 0.5;
 const cut = (t: HTMLElement): boolean => t.scrollWidth > t.clientWidth + 1;
 function fit(li: HTMLElement): void {
@@ -250,18 +255,24 @@ function fit(li: HTMLElement): void {
   const links = li.querySelector<HTMLElement>('.links')!, more = links.querySelector<HTMLElement>('.link--more');
   for (const it of Array.from(line2.querySelectorAll('.where__item--icon'))) it.classList.remove('where__item--icon');
   if (!links.hidden && more) {
-    for (const c of Array.from(links.querySelectorAll<HTMLElement>('.link'))) { c.hidden = false; c.classList.remove('link--bare'); }
-    more.hidden = true;
+    const prs = Array.from(links.querySelectorAll<HTMLElement>('.link--pr')), slack = Array.from(links.querySelectorAll<HTMLElement>('.link--slack'));
+    const sep = links.querySelector<HTMLElement>('.links__sep');
+    const folded: HTMLElement[] = [];
+    const show = (): void => {
+      const label = moreLabel(folded.map(c => ({ kind: c.classList.contains('link--slack') ? 'slack' : 'pr', state: c.dataset.state })));
+      more.hidden = !label;
+      if (label) { more.textContent = label.text; more.dataset.tip = label.tip; more.setAttribute('aria-label', label.tip); }
+      if (sep) sep.hidden = !(prs.some(c => !c.hidden) && slack.some(c => !c.hidden));
+    };
+    const fold = (c: HTMLElement): void => { c.hidden = true; folded.push(c); };
+    for (const c of [...prs, ...slack]) c.hidden = false;
+    prs.slice(MAX_PRS).forEach(fold); slack.slice(1).forEach(fold);
+    show();
     line2.querySelector('.row__fill')!.before(links); line3.hidden = true;
     if (Array.from(line2.querySelectorAll<HTMLElement>('.where__txt')).some(cut)) {
       line3.hidden = false; line3.append(links);
-      const prs = Array.from(links.querySelectorAll<HTMLElement>('.link--pr'));
-      let folded = 0;
-      const fold = (i: number): void => { prs[i]!.hidden = true; folded++; more.hidden = false; more.textContent = `+${folded}`; };
-      for (let i = prs.length - 1; i >= 1 && !fitsIn(links, line3); i--) prs[i]!.classList.add('link--bare');
-      for (let i = prs.length - 1; i >= MAX_PRS; i--) fold(i);
-      for (let i = Math.min(prs.length, MAX_PRS) - 1; i >= 1 && !fitsIn(links, line3); i--) fold(i);
-      if (prs[0] && !fitsIn(links, line3)) prs[0].classList.add('link--bare');
+      for (let i = Math.min(prs.length, MAX_PRS) - 1; i >= 1 && !fitsIn(links, line3); i--) { fold(prs[i]!); show(); }
+      if (prs.length && slack[0] && !slack[0].hidden && !fitsIn(links, line3)) { fold(slack[0]); show(); }
     }
   } else line3.hidden = true;
   // A worktree or project squeezed past a readable name keeps only its icon; hovering still names it.
@@ -284,7 +295,18 @@ function fitSoon(): void {
       if (fitted.get(li) === width || !li.offsetParent) continue;   // done, or in a collapsed section
       fit(li); fitted.set(li, width);
     }
+    holdActive();   // a row that took a third line made ACTIVE taller
   });
+}
+
+/** ACTIVE's height only grows while the view is open (activeReserve); a section rebuilt after the filter gets it back. */
+let activeHeld = 0;
+function holdActive(): void {
+  const body = sectionsEl.querySelector<HTMLElement>('section[data-id="active"]:not([data-collapsed="true"]) .section__body');
+  const content = body?.firstElementChild as HTMLElement | null | undefined;
+  if (!body || !content) return;
+  activeHeld = activeReserve(activeHeld, content.offsetHeight, parseFloat(getComputedStyle(root).getPropertyValue('--row')) || 44);
+  if (body.style.minHeight !== `${activeHeld}px`) body.style.minHeight = `${activeHeld}px`;
 }
 new ResizeObserver(fitSoon).observe(sectionsEl);
 void document.fonts?.ready.then(() => { for (const li of Array.from(sectionsEl.querySelectorAll<HTMLElement>('.row[data-id]'))) fitted.delete(li); fitSoon(); });
@@ -323,6 +345,14 @@ window.addEventListener('blur', closeList);
 sectionsEl.addEventListener('scroll', closeList, { passive: true });
 window.addEventListener('scroll', closeList, { passive: true });
 
+/** The time and its tooltip, which says what the number measures — or neither, on an old row whose age tag stands in for it. */
+function setTime(el: HTMLElement, label: string, tip: string | undefined): void {
+  if (el.textContent !== label) el.textContent = label;
+  const shown = label && tip ? tip : '';
+  el.classList.toggle('tip', !!shown);
+  if (shown) { if (el.dataset.tip !== shown) el.dataset.tip = shown; } else delete el.dataset.tip;
+}
+
 /** The age tag: text when the session is past the window, empty (and hidden by CSS) otherwise. */
 function setAge(el: HTMLElement, age: AgeTag | undefined): void {
   if (!age) { if (el.textContent) { el.textContent = ''; delete el.dataset.tip; delete el.dataset.tier; el.removeAttribute('aria-label'); } return; }
@@ -332,7 +362,7 @@ function setAge(el: HTMLElement, age: AgeTag | undefined): void {
 
 function rowEl(r: RowVM | LinkVM): HTMLLIElement {
   if (r.kind === 'link') {
-    const li = h('li', { class: 'row row--link', role: 'option', tabindex: '-1', 'data-action': r.action, 'data-key': keyOf(r) },
+    const li = h('li', { class: 'row row--link', tabindex: '-1', 'data-action': r.action, 'data-key': keyOf(r) },
       h('i', { class: `row__icon ${r.iconClass}`, 'aria-hidden': 'true' }),
       h('span', { class: 'row__lines' }, h('span', { class: 'row__line' },
         h('span', { class: 'row__title' }, r.title),
@@ -342,7 +372,7 @@ function rowEl(r: RowVM | LinkVM): HTMLLIElement {
     return li;
   }
   const id = r.sessionId;
-  const li = h('li', { class: 'row', role: 'option', tabindex: '-1', 'data-id': id, 'data-key': keyOf(r) });
+  const li = h('li', { class: 'row', tabindex: '-1', 'data-id': id, 'data-key': keyOf(r) });
   // Click resumes in a tab — or, for a headless run, reads it here (D15, decided by the host) — so no button
   // repeats that. Four that look, each saying what, then the one that closes.
   const close = actionButton('close', 'Close: move to Closed and close its tab (Delete)', () => post({ type: 'close', sessionId: id }));
@@ -454,7 +484,9 @@ function reconcileSection(s: SectionVM, hold: boolean): { el: HTMLElement; defer
   if (s.skeleton) { if (!body.querySelector('.skeleton')) body.replaceChildren(...skeletonEl()); return { el, deferred: false }; }
   if (s.empty) { const cur = body.querySelector('.empty'); if (!cur || cur.textContent !== s.empty) body.replaceChildren(h('div', { class: 'empty' }, s.empty)); return { el, deferred: false }; }
   let ul = body.querySelector<HTMLUListElement>('ul.list');
-  if (!ul) { ul = h('ul', { class: 'list', role: 'listbox', 'aria-label': s.label }); body.replaceChildren(ul); }
+  // A list, not a listbox: a row holds buttons (its actions, its links), and an option's content is presentational —
+  // a screen reader would flatten them. The session behind the active tab is aria-current, not "selected".
+  if (!ul) { ul = h('ul', { class: 'list', 'aria-label': s.label }); body.replaceChildren(ul); }
   return { el, deferred: reconcileList(ul, s.rows, hold) };
 }
 
@@ -477,10 +509,11 @@ function render(force = false): void {
   for (const el of Array.from(sectionsEl.querySelectorAll<HTMLElement>('section[data-id]'))) if (!wanted.has(el.dataset.id as SectionVM['id'])) el.remove();
   els.forEach((el, i) => { if (sectionsEl.children[i] !== el) sectionsEl.insertBefore(el, sectionsEl.children[i] ?? null); });
   orderPending = deferred;
+  holdActive();
   if (focusedId) sectionsEl.querySelector<HTMLElement>(`[data-id="${focusedId}"]`)?.focus();
   // Follow the active tab into view once per change — not on every snapshot, which would fight the user's scrolling.
   if (activeId && activeId !== scrolledTo) {
-    const sel = sectionsEl.querySelector<HTMLElement>('.row[aria-selected="true"]');
+    const sel = sectionsEl.querySelector<HTMLElement>('.row[aria-current="true"]');
     if (sel) { sel.scrollIntoView({ block: 'nearest' }); scrolledTo = activeId; }
   }
 }
@@ -490,14 +523,15 @@ sectionsEl.addEventListener('mouseleave', () => { if (orderPending) render(true)
 function refreshTimes(): void {
   if (!snapshot) return;
   const now = hostNow(); const opts = viewOpts();
-  const rows = filtering() ? (results?.rows ?? []).flatMap(r => r.live ? [{ sessionId: r.sessionId, ...r.live }] : []) : snapshot.active;
+  const rows = filtering()
+    ? (results?.rows ?? []).flatMap(r => r.live ? [{ sessionId: r.sessionId, ...(r.headless ? { headless: true as const } : {}), ...r.live }] : [])
+    : snapshot.active;
   for (const r of rows) {
     const li = sectionsEl.querySelector<HTMLElement>(`.row[data-id="${r.sessionId}"]`);
     if (!li) continue;
     const age = ageTag(r, now, opts);
     const el = li.querySelector<HTMLElement>('.row__time');
-    const label = age ? '' : timeLabel(r, now);
-    if (el && el.textContent !== label) el.textContent = label;
+    if (el) setTime(el, age ? '' : timeLabel(r, now), timeTip(r, now));
     const ageEl = li.querySelector<HTMLElement>('.row__age');
     if (ageEl) { const was = ageEl.textContent; setAge(ageEl, age); if (ageEl.textContent !== was) { fitted.delete(li); fitSoon(); } }
   }

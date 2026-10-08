@@ -62,11 +62,27 @@ export function activate(ctx: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand(SHOW_SESSIONS, () => vscode.commands.executeCommand(`${VIEW_ID}.focus`)),
     vscode.commands.registerCommand('sessionFinder.refresh', () => Promise.all([host.sweepNow(), host.refreshIndex()])),
-    vscode.commands.registerCommand('sessionFinder.openInTab', (id?: string) => openFromPalette(ctx, host, id, 'tab')),
-    vscode.commands.registerCommand('sessionFinder.openInRightPanel', (id?: string) => openFromPalette(ctx, host, id, 'right')),
-    vscode.commands.registerCommand('sessionFinder.closeSession', async (id?: string) => {
-      const sessionId = id ?? await pickActive(host, 'Close which session?');
+    // A row's right-click menu (webview/context) passes the row (onRow); its open goes the way a click does, so a
+    // headless run reads in the Session View (D15). Code and the palette pass an id, or nothing and get a picker.
+    vscode.commands.registerCommand('sessionFinder.openInTab', (a?: unknown) => {
+      const row = onRow(a);
+      return row ? live.run({ type: 'open', sessionId: row, where: 'tab' }) : openFromPalette(ctx, host, sessionArg(a), 'tab');
+    }),
+    vscode.commands.registerCommand('sessionFinder.openInRightPanel', (a?: unknown) => {
+      const row = onRow(a);
+      return row ? live.run({ type: 'open', sessionId: row, where: 'right' }) : openFromPalette(ctx, host, sessionArg(a), 'right');
+    }),
+    vscode.commands.registerCommand('sessionFinder.closeSession', async (a?: unknown) => {
+      const sessionId = sessionArg(a) ?? await pickActive(host, 'Close which session?');
       if (sessionId) await live.closeSession(sessionId);
+    }),
+    vscode.commands.registerCommand('sessionFinder.copyLink', async (a?: unknown) => {
+      const sessionId = sessionArg(a) ?? await pickSessionId(host, 'Copy a link to which session?');
+      if (sessionId) await live.run({ type: 'copyLink', sessionId });
+    }),
+    vscode.commands.registerCommand('sessionFinder.openTranscript', async (a?: unknown) => {
+      const sessionId = sessionArg(a) ?? await pickSessionId(host, 'Open the transcript file of…');
+      if (sessionId) await live.run({ type: 'transcript', sessionId });
     }),
   );
   ctx.subscriptions.push(
@@ -74,8 +90,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
   );
 
   // Opened from a Sessions row, a Quick Pick button, or the palette.
-  ctx.subscriptions.push(vscode.commands.registerCommand('sessionFinder.openSessionView', async (id?: string) => {
-    const sessionId = id ?? await pickSessionId(host);
+  ctx.subscriptions.push(vscode.commands.registerCommand('sessionFinder.openSessionView', async (a?: unknown) => {
+    const sessionId = sessionArg(a) ?? await pickSessionId(host);
     if (sessionId) await sessions.open(sessionId);
   }));
   // A session opened from here is active again whatever its closed marker said (live-host.ts reopen).
@@ -108,6 +124,17 @@ export function activate(ctx: vscode.ExtensionContext): void {
 
 export function deactivate(): void { /* nothing to tear down */ }
 
+/** A command's session: an id passed by code, or the row a Sessions right-click menu was opened on. */
+function sessionArg(a: unknown): string | undefined {
+  if (typeof a === 'string') return a;
+  const id = a && typeof a === 'object' ? (a as { sessionId?: unknown }).sessionId : undefined;
+  return typeof id === 'string' ? id : undefined;
+}
+/** The session of the Sessions row this command was invoked on from its right-click menu, if it was. */
+function onRow(a: unknown): string | undefined {
+  return a && typeof a === 'object' && (a as { webview?: unknown }).webview === VIEW_ID ? sessionArg(a) : undefined;
+}
+
 /** A Quick Pick over the ACTIVE sessions, for the palette commands. */
 async function pickActive(host: LiveHost, placeHolder: string): Promise<string | undefined> {
   const rows = host.snapshot.active;
@@ -128,13 +155,13 @@ async function openFromPalette(ctx: vscode.ExtensionContext, host: LiveHost, ses
   await executePlan(planOpen(m, folders), ctx, where);
 }
 
-/** Palette entry for the Session View: any ACTIVE or recent session. */
-async function pickSessionId(host: LiveHost): Promise<string | undefined> {
+/** Palette entry for the Session View and the other per-session commands: any ACTIVE or recent session. */
+async function pickSessionId(host: LiveHost, placeHolder = 'Open the Session View for…'): Promise<string | undefined> {
   const { active, history } = host.snapshot;
   const rows = [
     ...active.map(r => ({ label: `$(${stateIcon(r)}) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '), id: r.sessionId, alwaysShow: true })),
     ...history.map(r => ({ label: `$(history) ${r.title}`, description: [r.project, r.branch].filter(Boolean).join(' · '), id: r.sessionId, alwaysShow: true })),
   ];
-  const picked = await vscode.window.showQuickPick(rows, { placeHolder: rows.length ? 'Open the Session View for…' : 'No sessions indexed yet' });
+  const picked = await vscode.window.showQuickPick(rows, { placeHolder: rows.length ? placeHolder : 'No sessions indexed yet' });
   return picked?.id;
 }

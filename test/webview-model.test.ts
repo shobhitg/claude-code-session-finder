@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, timeLabel, historyLabel, whereVM, linksVM, iconClass, viewModel, resultsModel, heatOf, fmtWindow, ageTag } from '../src/webview/model.js';
+import { fmtDuration, timeLabel, timeTip, historyLabel, whereVM, linksVM, moreLabel, activeReserve, iconClass, viewModel, resultsModel, heatOf, fmtWindow, ageTag } from '../src/webview/model.js';
 import type { Snapshot, LiveRow, HistoryRow, SearchRow, RowPr } from '../src/core/rows.js';
 
 const S = 1_000, M = 60 * S, H = 60 * M;
@@ -29,16 +29,31 @@ describe('fmtDuration', () => {
 });
 
 describe('timeLabel (spec §10 table)', () => {
-  it('running: just now, then quiet N', () => {
-    expect(timeLabel(live({ lastWriteMs: now - 10 * S }), now)).toBe('just now');
-    expect(timeLabel(live({ lastWriteMs: now - 2 * M }), now)).toBe('quiet 2m');
+  it('running says it is working, then how long since it last wrote', () => {
+    expect(timeLabel(live({ lastWriteMs: now - 10 * S }), now)).toBe('working');
+    expect(timeLabel(live({ lastWriteMs: now - 2 * M }), now)).toBe('working · 2m');
   });
-  it('tool-or-permission says quiet; your-turn says done; a question asks; an interruption says so; stalled is bare', () => {
-    expect(timeLabel(live({ state: 'attention', reason: 'tool-or-permission', lastWriteMs: now - 3 * M }), now)).toBe('quiet 3m');
+  it('a quiet tool call may need you; your-turn says done; a question asks; an interruption and a stall say so', () => {
+    expect(timeLabel(live({ state: 'attention', reason: 'tool-or-permission', lastWriteMs: now - 3 * M }), now)).toBe('may need you · 3m');
     expect(timeLabel(live({ state: 'attention', reason: 'your-turn', lastWriteMs: now - 3 * M }), now)).toBe('done · 3m ago');
     expect(timeLabel(live({ state: 'attention', reason: 'question', lastWriteMs: now - 40 * S }), now)).toBe('asks you · 40s');
     expect(timeLabel(live({ state: 'attention', reason: 'interrupted', lastWriteMs: now - 2 * M }), now)).toBe('interrupted · 2m');
-    expect(timeLabel(live({ state: 'attention', reason: 'stalled', lastWriteMs: now - 2.1 * H }), now)).toBe('2h 6m');
+    expect(timeLabel(live({ state: 'attention', reason: 'stalled', lastWriteMs: now - 2.1 * H }), now)).toBe('stalled · 2h 6m');
+  });
+  it('a headless run in a long tool call is working: it cannot stop for a permission prompt (D15)', () => {
+    expect(timeLabel(live({ state: 'attention', reason: 'tool-or-permission', headless: true, lastWriteMs: now - 3 * M }), now)).toBe('working · 3m');
+    expect(timeTip(live({ state: 'attention', reason: 'tool-or-permission', headless: true, lastWriteMs: now - 3 * M }), now)).toMatch(/^In a tool call for 3m — a headless run cannot stop/);
+  });
+  it('the tooltip says what the number measures', () => {
+    expect(timeTip(live({ lastWriteMs: now - 2 * M }), now)).toBe('Claude is working — last wrote 2m ago');
+    expect(timeTip(live({ state: 'attention', reason: 'tool-or-permission', lastWriteMs: now - 3 * M }), now))
+      .toBe('In a tool call for 3m: a permission prompt waiting on you, or a long command still running');
+    expect(timeTip(live({ state: 'attention', reason: 'stalled', lastWriteMs: now - 2.1 * H }), now)).toBe('Nothing written for 2h 6m — it may have died');
+  });
+  it('rides on a live row, not on a closed one', () => {
+    const vm = viewModel({ active: [live({})], history: [hist({})], totalSessions: 2, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, { activeWindowLabel: '4h', searchKey: 'k' });
+    expect(vm.sections[0]!.rows[0]).toMatchObject({ time: 'working', timeTip: 'Claude is working — last wrote 10s ago' });
+    expect(vm.sections[1]!.rows[0]).not.toHaveProperty('timeTip');
   });
 });
 
@@ -111,11 +126,31 @@ describe('the links: PRs newest first, then Slack threads', () => {
     expect(links[2]!.detail).toBe('pasted Oct 8, 01:00');
   });
 
+  it('+N counts what folded, and its tooltip says what: PRs by state, then Slack threads', () => {
+    expect(moreLabel([])).toBeUndefined();
+    expect(moreLabel([{ kind: 'pr', state: 'merged' }, { kind: 'pr', state: 'merged' }]))
+      .toEqual({ text: '+2', tip: '2 more PRs (merged) — click to list every link' });
+    expect(moreLabel([{ kind: 'pr', state: 'merged' }, { kind: 'pr', state: 'closed' }, { kind: 'pr', state: 'open' }, { kind: 'slack' }])!.tip)
+      .toBe('3 more PRs (1 open, 1 merged, 1 closed) and 1 Slack thread — click to list every link');
+    expect(moreLabel([{ kind: 'pr', state: 'merged' }, { kind: 'pr' }])!.tip).toBe('2 more PRs (1 merged) — click to list every link');   // GitHub not asked about one
+    expect(moreLabel([{ kind: 'pr' }])!.tip).toBe('1 more PR — click to list every link');
+    expect(moreLabel([{ kind: 'slack' }, { kind: 'slack' }])).toEqual({ text: '+2', tip: '2 more Slack threads — click to list every link' });
+  });
+
   it('ride on every row the list and the filter show', () => {
     const vm = viewModel({ active: [live({})], history: [hist({ prs: [pr({})] })], totalSessions: 2, indexing: false, scope: 'all', hiddenHeadless: 0 }, now, { activeWindowLabel: '4h', searchKey: 'k' });
     expect(vm.sections.map(s => s.rows[0]!.kind === 'session' ? s.rows[0]!.links.map(c => c.label) : [])).toEqual([['#20231'], ['#21264']]);
     expect(resultsModel([{ ...hist({ prs: [pr({})] }), snippet: null, matches: 1 }], 'x', false, now, { activeWindowLabel: '4h', searchKey: 'k' })
       .sections[0]!.rows[0]).toMatchObject({ links: [{ label: '#21264' }], where: {} });
+  });
+});
+
+describe('activeReserve (D14)', () => {
+  it('ACTIVE stands as tall as the most it has held, plus a row of room — never less', () => {
+    expect(activeReserve(0, 132, 44)).toBe(176);          // three rows: a fourth fits without moving CLOSED
+    expect(activeReserve(176, 88, 44)).toBe(176);          // one closed: its space stays
+    expect(activeReserve(176, 220, 44)).toBe(264);         // past the room: it grows
+    expect(activeReserve(0, 131.5, 44)).toBe(176);         // whole pixels
   });
 });
 
@@ -168,7 +203,7 @@ describe('resultsModel (the inline filter)', () => {
       row({ sessionId: 'r2' }),
     ], 'paste', false, now, opts);
     expect(vm.sections.map(s => [s.id, s.count])).toEqual([['results', 2]]);
-    expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'r1', state: 'running', time: 'just now', snippet: '…paste the image…', selected: false });
+    expect(vm.sections[0]!.rows[0]).toMatchObject({ sessionId: 'r1', state: 'running', time: 'working', snippet: '…paste the image…', selected: false });
     expect(vm.sections[0]!.rows[1]).toMatchObject({ sessionId: 'r2', state: 'history', selected: true });
     expect(vm.sections[0]!.rows[1]).not.toHaveProperty('snippet');
   });
