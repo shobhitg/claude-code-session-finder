@@ -1,27 +1,36 @@
 # Claude Code Sessions & Agents
 
-See what every Claude Code session is doing, find any past conversation by what
-was said in it, and read a session's full story — agents included — without
-resuming it.
+**Never lose a Claude Code session again.** See what every session is doing, find any past conversation by what was *said* in it, and read a session's whole story — agents, thoughts and files included — without resuming it.
 
-![The Sessions view beside a Session View: a running session with two agents, one asking a question, one waiting on a permission prompt, one that is your turn, one interrupted, and the closed sessions below](docs/images/hero.png)
+[![Watch the 48-second tour: 96 invented sessions, one sidebar](docs/images/teaser.gif)](https://github.com/shobhitg/claude-code-session-finder/raw/main/docs/video/claude-code-sessions-tour.mp4)
 
-> Formerly **Claude Code Session Finder**. Same extension id, so an existing
-> install updates in place; the commands, settings and keybinding are unchanged.
-> Inside VS Code the view is simply **Claude Code Sessions**.
+<sub>▶ Click to play the full 48-second tour (1080p, 60 fps, with narration). Everything in it is invented demo data — no real sessions.</sub>
 
-## What is a session?
+## Why this exists
 
-Every conversation you have with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) —
-in the VS Code extension or the terminal — is a **session**. Claude Code writes
-each one to disk as it goes, under `~/.claude/projects/`, as a transcript of
-your prompts, Claude's replies, every tool call and its result, and one file
-per **subagent** the session spawned. That is the complete record of the work,
-and it outlives the chat window.
+I use Claude Code all day. In six weeks that was **96 sessions**, and most of their titles sounded the same: *Fix flaky cart test*, *Fix flaky login test*, *Fix flaky webhook test*. I kept getting lost. Which one fixed the Stripe bug? Which one is waiting on me? Which one finished an hour ago?
 
-Claude Code shows you the session you have open. This extension shows you
-**all of them**: which are still running, which are waiting on you, what
-happened inside each, and how to get back to any of them.
+Claude Code shows you the session you have open. This extension shows you **all of them**: which are running, which are waiting on you, what happened inside each, and how to get back to any of them.
+
+<table>
+<tr>
+<td width="33%"><b>See what is running</b><br>A live list of every session — working, asking you something, waiting on a permission, done — with a status-bar count and a bell that rings only while the ball is in your court.</td>
+<td width="33%"><b>Find anything</b><br>Search what was actually said, not just titles: <code>"retry storm"</code>, <code>pr:482</code>, <code>is:headless</code>. One keystroke: <code>Ctrl+Alt+S</code>.</td>
+<td width="33%"><b>Read any session</b><br>A threaded timeline of every agent, their tasks and results, and a readable transcript — thoughts, JSON, file previews — all without resuming the session.</td>
+</tr>
+</table>
+
+![The Sessions view beside a Session View: ten active sessions in every state above eighty-six closed ones, each with its branch, PRs, Slack threads and context meter](docs/images/hero.png)
+
+Everything is read from Claude Code's own transcript files. Nothing is installed into Claude Code, and nothing leaves your machine (see [Privacy](#privacy)).
+
+## Quick start
+
+1. Install **Claude Code Sessions & Agents** from the Marketplace. The official [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) comes with it as a dependency.
+2. Click the sessions icon in the activity bar. Your sessions are already there.
+3. Press `Ctrl+Alt+S` (`Cmd+Alt+S` on macOS) and type a few words you remember from a conversation.
+
+> Formerly **Claude Code Session Finder**. Same extension id, so an existing install updates in place; the commands, settings and keybinding are unchanged. Inside VS Code the view is simply **Claude Code Sessions**.
 
 ## Three ways in
 
@@ -31,15 +40,15 @@ happened inside each, and how to get back to any of them.
 | **Search picker** | `Ctrl+Alt+S` (`Cmd+Alt+S` on macOS) or **Claude: Search Sessions** | the same search as a Quick Pick, when you know you want to jump to exactly one session |
 | **Session View** | `V` on a row, the tree icon on a search result, or **Claude: Open Session View** | reading a session: agents, timeline, transcript |
 
-Everything is read from the transcript files. Nothing is installed into Claude
-Code, and nothing leaves your machine (see [Privacy](#privacy)).
+## What is a session?
+
+Every conversation you have with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — in the VS Code extension or the terminal — is a **session**. Claude Code writes each one to disk as it goes, under `~/.claude/projects/`, as a transcript of your prompts, Claude's replies, every tool call and its result, and one file per **subagent** the session spawned. That is the complete record of the work, and it outlives the chat window.
+
+---
 
 ## See what is running
 
-The status bar shows `⟳ 2  🔔 3`: two sessions working, and three where the ball
-is in your court and you have not looked yet. Hover for the list, ringing ones
-first; click to open the Sessions view. The same glyphs mark rows in the
-Sessions view and in search results:
+The status bar shows `⟳ 2  🔔 3`: two sessions working, and three where the ball is in your court and you have not looked yet. Hover for the list, ringing ones first; click to open the Sessions view. The same glyphs mark rows in the Sessions view and in search results:
 
 | Glyph | State | Meaning |
 |---|---|---|
@@ -50,109 +59,40 @@ Sessions view and in search results:
 | `⊘` | interrupted | you stopped it (`Esc`); nothing is running until you type again |
 | `⚠` | stalled | nothing written for 15+ minutes mid-turn; probably abandoned |
 
-**The bell** rings while the ball is in your court and you have not seen it
-there. A finished turn, an interruption or a quiet tool call stops ringing once
-you look at the session — its Claude Code tab or its Session View on screen in a
-focused window, in any editor group — and a reply that lands while you watch
-never rings. A question or a plan to approve keeps ringing until you answer it.
-A ringing row has the accent bar and a bold title; one you have seen is plain.
-Looking in one window quiets the bell in all of them. A session running in a
-terminal, or in Claude Code's side panel, has no tab to look at: it rings until
-you reply or close it.
+**The bell** rings while the ball is in your court and you have not seen it there. A finished turn, an interruption or a quiet tool call stops ringing once you look at the session — its Claude Code tab or its Session View on screen in a focused window, in any editor group — and a reply that lands while you watch never rings. A question or a plan to approve keeps ringing until you answer it. A ringing row has the accent bar and a bold title; one you have seen is plain. Looking in one window quiets the bell in all of them. A session running in a terminal, or in Claude Code's side panel, has no tab to look at: it rings until you reply or close it.
 
-A working session's words shimmer and its glyph is a breathing sparkle; a session that just finished throws a small burst of sparks; with reduced motion on, nothing moves. Hover a glyph for the sentence behind it. Rows are ordered by when you last touched them — a prompt (typed, or queued while Claude works), a slash command, `Esc`, an answer to a question or a plan — newest on top. A row moves only because of something you did: Claude replying, finishing or asking never reorders the list, so nothing shuffles under your pointer, and the bell marks what needs you. A session you start goes on top; a session you resume goes on top when you send it something. Active keeps the room it has needed since the view opened, plus a row, so Closed stays where it is as sessions come and go.
+**It feels alive.** A working session's words shimmer and its glyph is a breathing sparkle; a session that just finished throws a small burst of sparks; with reduced motion on, nothing moves. Hover a glyph for the sentence behind it.
+
+**Rows stay put.** Rows are ordered by when you last touched them — a prompt (typed, or queued while Claude works), a slash command, `Esc`, an answer to a question or a plan — newest on top. A row moves only because of something you did: Claude replying, finishing or asking never reorders the list, so nothing shuffles under your pointer, and the bell marks what needs you. A session you start goes on top; a session you resume goes on top when you send it something. Active keeps the room it has needed since the view opened, plus a row, so Closed stays where it is as sessions come and go.
 
 **Cost meter.** Each active row carries a small bar with its context size: the tokens the model was given on its last turn, and therefore what every further turn costs. One absolute scale for every session toward `sessionFinder.contextBudget` (1M by default, where compaction lands): cyan until 80% of it, amber from there, and pinned full in red past it: compact or start a new session. Hover the bar for the numbers.
 
-**Headless runs.** A session started without a UI — `claude -p`, the Agent SDK, a daemon — wears a purple
-**ghost** (purple means nothing else in the view) in place of the state glyph, with a dot on its corner for how the run is doing: blue and pulsing
-while it works, green when it finished, red when it stopped before finishing. Claude Code's own tab shows
-these sessions blank, so clicking one reads it in the Session View; the right-panel button still resumes it
-in Claude Code. The ghost button in the view's title bar hides them (per workspace; a "N headless runs hidden
-· show" link brings them back), and `is:headless` in the filter finds them either way.
+**Headless runs.** A session started without a UI — `claude -p`, the Agent SDK, a daemon — wears a purple **ghost** (purple means nothing else in the view) in place of the state glyph, with a dot on its corner for how the run is doing: blue and pulsing while it works, green when it finished, red when it stopped before finishing. Claude Code's own tab shows these sessions blank, so clicking one reads it in the Session View; the right-panel button still resumes it in Claude Code. The ghost button in the view's title bar hides them (per workspace; a "N headless runs hidden · show" link brings them back), and `is:headless` in the filter finds them either way.
 
-State is derived from the last conversational record of each recently written
-transcript, so a session in another window, another worktree, or a terminal
-shows up too. Sessions written within `sessionFinder.activeWindow`
-(default 4 h), or open in a Claude Code tab in this window, carry a state; `sessionFinder.toolQuietSeconds` (60) and
-`sessionFinder.stalledMinutes` (15) tune the two thresholds.
+State is derived from the last conversational record of each recently written transcript, so a session in another window, another worktree, or a terminal shows up too. Sessions written within `sessionFinder.activeWindow` (default 4 h), or open in a Claude Code tab in this window, carry a state; `sessionFinder.toolQuietSeconds` (60) and `sessionFinder.stalledMinutes` (15) tune the two thresholds.
 
 ## Browse sessions
 
-The **Sessions** view lists what is live and what is closed **for this
-workspace**: sessions from its folders, their git repository and every worktree
-of it. Sessions from other projects stay out until you press the filter button
-in the view title (or `sessionFinder.sidebarScope`). The status bar and the
-search picker always cover every project.
+The **Sessions** view lists what is live and what is closed **for this workspace**: sessions from its folders, their git repository and every worktree of it. Sessions from other projects stay out until you press the filter button in the view title (or `sessionFinder.sidebarScope`). The status bar and the search picker always cover every project.
 
-The row for the session in your active editor tab is highlighted, and follows
-you as you switch between Claude Code tabs and Session Views.
+The row for the session in your active editor tab is highlighted, and follows you as you switch between Claude Code tabs and Session Views.
 
-- **Active** — sessions written in the last `activeWindow`, or open in a
-  Claude Code tab in this window, the one you touched last on top. The time
-  label says what the session is doing — `working · 3m`, `may need you · 3m`,
-  `asks you · 1m`, `done · 6m ago`, `interrupted · 2m`, `stalled · 2h` — and how
-  long since it last wrote: the last prompt or reply, not the file, so looking
-  at a session does not count. Hover it for what the number measures. One kept here
-  only by its tab, past the window, wears an orange `> 19h` or `> 2d 1h` tag
-  instead (red after a day): close it when you mean to, and not before.
-- **Closed** — the 50 sessions you touched most recently that are not active,
-  with the day you last touched each, its branch, PRs and Slack threads, and
-  **Search all…** for everything older. Clicking one resumes it, which makes it
-  active.
+- **Active** — sessions written in the last `activeWindow`, or open in a Claude Code tab in this window, the one you touched last on top. The time label says what the session is doing — `working · 3m`, `may need you · 3m`, `asks you · 1m`, `done · 6m ago`, `interrupted · 2m`, `stalled · 2h` — and how long since it last wrote: the last prompt or reply, not the file, so looking at a session does not count. Hover it for what the number measures. One kept here only by its tab, past the window, wears an orange `> 19h` or `> 2d 1h` tag instead (red after a day): close it when you mean to, and not before.
+- **Closed** — the 50 sessions you touched most recently that are not active, with the day you last touched each, its branch, PRs and Slack threads, and **Search all…** for everything older. Clicking one resumes it, which makes it active.
 
-**Closing a session.** Resuming a session writes its transcript, so one
-accidental click under Closed promotes a finished session to Active for the
-whole `activeWindow`. The `×` at the end of an active row's actions (or
-`Delete` on the focused row, or **Claude: Close Session** from the palette)
-puts it back under Closed at once and closes its Claude Code tab. Closing the
-tab stops the session, so if Claude is still working in it you are asked
-first. A tab that cannot be told apart from another session's (Claude Code
-labels tabs with the first 24 characters of the title) is left open, and a
-message says so. It works the other way too: closing a Claude Code tab
-yourself moves its session under Closed. A closed session stays closed until
-its transcript is written again after the close — you resumed it and sent a
-message — or you open it from the view.
+**Under each title: where the work is, and what it links to.** The branch the session last worked on comes first: not the `main` or detached `HEAD` it went back to after opening a PR (hover it to see where it is now). Then its worktree, when the worktree's folder name says something the branch does not, struck through once the folder is gone. A session from another project names its project. Then every PR the session linked, newest first, and every Slack thread you pasted into it — buttons: hover for the details, click to open. A PR's icon is its state on GitHub — open (green), merged (the merge icon, in the text colour), closed (red) or draft — and its tooltip carries its title; see [Privacy](#privacy). Every PR shown keeps its number: the three newest show, with the newest Slack thread, and the rest fold into `+N` at the end, whose tooltip counts them ("6 more PRs (5 merged, 1 closed) and 1 Slack thread") and which lists every link. They sit beside the branch while there is room and take a line of their own when there is not, folding further there if they must.
 
-**Filter box.** Type at the top of the view (or press `/`) to search inside the
-listed sessions with the same syntax as the picker below — words, `"phrase"`,
-`pr:123`, `since:all`. Results replace the list and stay on screen: open one in
-a tab, read another in the Session View, come back, refine, and `Esc` or the
-`×` restores Active and Closed. Deep `!` searches stay in the picker.
+**Keyboard.** `↑` `↓` move · `Enter` opens in a tab · `Shift+Enter` opens in the right panel · `V` opens the Session View · `T` opens the raw transcript · `Delete` closes the session · `/` filters. Hover or focus a row for the same actions as buttons, plus a copyable deep link — laid over the line below the title, so nothing moves and the title keeps its width — and right-click a row for all of them as a menu. In a narrow sidebar (under 380 px) the title has the first line to itself and the state words start the second.
 
-`↑` `↓` move · `Enter` opens in a tab · `Shift+Enter` opens in the right panel ·
-`V` opens the Session View · `T` opens the raw transcript · `Delete` closes the
-session · `/` filters. Hover or focus a row for the same actions as buttons,
-plus a copyable deep link — laid over the line below the title, so nothing
-moves and the title keeps its width — and right-click a row for all of them as
-a menu. In a narrow
-sidebar (under 380 px) the title has the first line to itself and the state
-words start the second.
+Opening in the right panel uses Claude Code's own "Open in Side Bar", which also makes that the default for new sessions until you run **Claude Code: Open in New Tab**; the first time, a notice says so.
 
-Opening in the right panel uses Claude Code's own "Open in Side Bar", which also
-makes that the default for new sessions until you run **Claude Code: Open in New
-Tab**; the first time, a notice says so.
-
-**Under each title: where the work is, and what it links to.** The branch the
-session last worked on comes first: not the `main` or detached `HEAD` it went
-back to after opening a PR (hover it to see where it is now). Then its worktree,
-when the worktree's folder name says something the branch does not, struck
-through once the folder is gone. A session from another project names its
-project. Then every PR the session linked, newest first, and every Slack thread
-you pasted into it — buttons: hover for the details, click to open. A PR's icon
-is its state on GitHub — open (green), merged (a soft violet), closed (red) or
-draft (a dashed, muted green) — and its tooltip carries its title; see
-[Privacy](#privacy). Every PR shown keeps its number: the three newest show,
-with the newest Slack thread, and the rest fold into `+N` at the end, whose
-tooltip counts them ("6 more PRs (5 merged, 1 closed) and 1 Slack thread") and
-which lists every link. They sit beside the branch while there is room and take
-a line of their own when there is not, folding further there if they must.
+**Closing a session.** Resuming a session writes its transcript, so one accidental click under Closed promotes a finished session to Active for the whole `activeWindow`. The `×` at the end of an active row's actions (or `Delete` on the focused row, or **Claude: Close Session** from the palette) puts it back under Closed at once and closes its Claude Code tab. Closing the tab stops the session, so if Claude is still working in it you are asked first. A tab that cannot be told apart from another session's (Claude Code labels tabs with the first 24 characters of the title) is left open, and a message says so. It works the other way too: closing a Claude Code tab yourself moves its session under Closed. A closed session stays closed until its transcript is written again after the close — you resumed it and sent a message — or you open it from the view.
 
 ## Search inside sessions
 
-Claude Code's own picker matches session *titles*. Once a title stops reminding
-you what happened, that session is lost. Search here — in the sidebar's filter
-box or the `Ctrl+Alt+S` picker — matches what you and Claude actually **said**:
+Claude Code's own picker matches session *titles*. Once a title stops reminding you what happened, that session is lost. Search here — in the sidebar's filter box (type, or press `/`) or the `Ctrl+Alt+S` picker — matches what you and Claude actually **said**:
+
+![The search picker after typing "retry storm": two sessions, each with the sentence that matched](docs/images/search.png)
 
 | Type | To find |
 |---|---|
@@ -163,8 +103,9 @@ box or the `Ctrl+Alt+S` picker — matches what you and Claude actually **said**
 | `is:headless`, `-is:headless` | only headless runs (`claude -p` and kin), or everything but them — on its own, every run in the window |
 | `!"npm run build"` | also search tool calls and results, including subagents — slower |
 
-A `!` search matches whole transcripts, so quote a phrase unless you really do
-want every session that mentions all those words anywhere.
+A `!` search matches whole transcripts, so quote a phrase unless you really do want every session that mentions all those words anywhere.
+
+In the sidebar, results replace the list and stay on screen: open one in a tab, read another in the Session View, come back, refine, and `Esc` or the `×` restores Active and Closed. Deep `!` searches stay in the picker.
 
 | Row action | Behavior |
 |---|---|
@@ -176,40 +117,19 @@ want every session that mentions all those words anywhere.
 
 ## Read a session
 
-The **Session View** opens a session in an editor tab straight from its
-transcript — running, finished, or from a worktree that no longer exists — and
-keeps up with the files while the session is active.
+The **Session View** opens a session in an editor tab straight from its transcript — running, finished, or from a worktree that no longer exists — and keeps up with the files while the session is active.
 
-- **Timeline** — every agent is a thread that branches off the lane of
-  whoever started it, at the moment it did; a running one glows at its open
-  end. Stretches nobody was working (over 20 minutes) fold into a marked gap —
-  "3h 36m idle" — so a two-day session's bursts are not slivers. Click a lane.
-- **Agents** — the session, then everything it started: a workflow is a group
-  with a strip of its agents' outcomes; each agent shows its model (a cyan
-  chip, deeper for bigger models), when in the session it ran, and — while it
-  runs — the call it is in right now ("Bash · npm run bench · 42s").
-- **Overview** of the selected agent — where it sits (session › workflow ›
-  agent), the task it was given, what it is doing now and the last thing it
-  said, every step it took with timings, and its result.
-- **Transcript** — prompts and replies laid out as Markdown (headings, lists,
-  tables, code; a `<context>` section as a labelled box; the ★ Insight block
-  as a callout), each tool call a row that expands to its input and output.
-  Every thought whose text Claude Code kept is shown — about a quarter of
-  Opus's, none of Sonnet's — and the rest are counted ("2 thoughts not kept").
-  JSON opens **Formatted** when it is a shape we know (a review's verdict and
-  findings, as cards), else **Pretty**; the **Dump** is a click away, and
-  your choice sticks for that tool. Every block has a copy button in its
-  corner, and inline code copies on a click.
-- **File names** anywhere — absolute, relative, `path:line` — are live: hover
-  for a card with the file's size, lines, when it changed and a preview (the
-  image itself, or the lines around the one named), click to open it beside
-  the view. A relative name is found where the agent was working (its
-  worktree), then up the tree; a file in a worktree that has since been
-  removed is found at the same path in the main checkout, and the card says so.
+![The Session View: a threaded timeline of the session and its agents, the agent list, and the selected agent's task, current step and result](docs/images/session-view.png)
 
-"Raw transcript" in the header opens the underlying `.jsonl` for anything the
-reader summarises. For a session you already have open, Claude Code's own
-agents pill shows the same tree live; this view is for the ones you don't.
+- **Timeline** — every agent is a thread that branches off the lane of whoever started it, at the moment it did; a running one glows at its open end. Stretches nobody was working (over 20 minutes) fold into a marked gap — "3h 36m idle" — so a two-day session's bursts are not slivers. Click a lane.
+- **Agents** — the session, then everything it started: a workflow is a group with a strip of its agents' outcomes; each agent shows its model (a cyan chip, deeper for bigger models), when in the session it ran, and — while it runs — the call it is in right now ("Bash · npm run bench · 42s").
+- **Overview** of the selected agent — where it sits (session › workflow › agent), the task it was given, what it is doing now and the last thing it said, every step it took with timings, and its result.
+- **Transcript** — prompts and replies laid out as Markdown (headings, lists, tables, code; a `<context>` section as a labelled box; the ★ Insight block as a callout), each tool call a row that expands to its input and output. Every thought whose text Claude Code kept is shown — about a quarter of Opus's, none of Sonnet's — and the rest are counted ("2 thoughts not kept"). JSON opens **Formatted** when it is a shape we know (a review's verdict and findings, as cards), else **Pretty**; the **Dump** is a click away, and your choice sticks for that tool. Every block has a copy button in its corner, and inline code copies on a click.
+- **File names** anywhere — absolute, relative, `path:line` — are live: hover for a card with the file's size, lines, when it changed and a preview (the image itself, or the lines around the one named), click to open it beside the view. A relative name is found where the agent was working (its worktree), then up the tree; a file in a worktree that has since been removed is found at the same path in the main checkout, and the card says so.
+
+![The transcript: a prompt, a thought, tool rows that open to their JSON, and the reply with an Insight callout](docs/images/transcript.png)
+
+"Raw transcript" in the header opens the underlying `.jsonl` for anything the reader summarises. For a session you already have open, Claude Code's own agents pill shows the same tree live; this view is for the ones you don't.
 
 ## Commands and settings
 
@@ -237,32 +157,20 @@ agents pill shows the same tree live; this view is for the ones you don't.
 
 ## Privacy
 
-This extension reads your Claude Code transcripts from `~/.claude/projects`,
-extracts the conversational text, and stores an index in VS Code's local
-extension storage on your machine. **Nothing is uploaded or shared with anyone,
-including the author.** There is no telemetry and no analytics of any kind.
+This extension reads your Claude Code transcripts from `~/.claude/projects`, extracts the conversational text, and stores an index in VS Code's local extension storage on your machine. **Nothing is uploaded or shared with anyone, including the author.** There is no telemetry and no analytics of any kind.
 
-One network request is made, and you can turn it off: to colour each PR on a
-row by its state and show its title, the extension asks GitHub about those PRs —
-their repository and number, nothing else — through your own GitHub CLI (`gh`),
-signed in as you, when it is installed. A merged or closed PR is asked about
-once; an open one again after ten minutes, while it is on screen. Set
-`sessionFinder.prStates` to `false` and the extension makes no network request
-at all.
+One network request is made, and you can turn it off: to colour each PR on a row by its state and show its title, the extension asks GitHub about those PRs — their repository and number, nothing else — through your own GitHub CLI (`gh`), signed in as you, when it is installed. A merged or closed PR is asked about once; an open one again after ten minutes, while it is on screen. Set `sessionFinder.prStates` to `false` and the extension makes no network request at all.
 
 ## Requirements
 
-The official [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code),
-installed automatically as a dependency.
+The official [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code), installed automatically as a dependency.
 
-## Why it activates at startup
+<details>
+<summary>For contributors: why it activates at startup</summary>
 
-`activationEvents` is `["onStartupFinished"]` on purpose — **do not change it to `[]`.**
-When you open a session that belongs to a different folder, this extension writes a
-single-use hand-off file and asks VS Code to open that folder. The window that ends up
-on the target folder has to notice that file, and a lazily-activated extension in a
-window nobody has invoked a command in never would. Startup activation is what makes the
-hand-off arrive. It is also what lets the status bar show live state before you ask.
+`activationEvents` is `["onStartupFinished"]` on purpose — **do not change it to `[]`.** When you open a session that belongs to a different folder, this extension writes a single-use hand-off file and asks VS Code to open that folder. The window that ends up on the target folder has to notice that file, and a lazily-activated extension in a window nobody has invoked a command in never would. Startup activation is what makes the hand-off arrive. It is also what lets the status bar show live state before you ask.
+
+</details>
 
 ## License
 
