@@ -2,7 +2,7 @@
 
 **Never lose a Claude Code session again.** See what every session is doing, find any past conversation by what was *said* in it, and read a session's whole story — agents, thoughts and files included — without resuming it.
 
-[![Watch the 48-second tour: 96 invented sessions, one sidebar](docs/images/teaser.gif)](https://github.com/shobhitg/claude-code-session-finder/raw/main/docs/video/claude-code-sessions-tour.mp4)
+[![Watch the 48-second tour: 96 invented sessions, one sidebar](docs/images/teaser.gif)](https://cdn.jsdelivr.net/gh/shobhitg/claude-code-session-finder@3b6ba21ce15367f61db6a8a3c8a70b6193215444/docs/video/claude-code-sessions-tour.mp4)
 
 <sub>▶ Click to play the full 48-second tour (1080p, 60 fps, with narration). Everything in it is invented demo data — no real sessions. Narration voiced with ElevenLabs.</sub>
 
