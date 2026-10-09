@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.3
+
+**The Marketplace page tells the story.** The README now opens with why this
+exists — 96 sessions that all sound alike, and no way to tell which was which —
+and a 48-second narrated tour: click the teaser to play it in 1080p at 60 fps.
+The screenshots are new, recorded from this version, and the reference sections
+follow the order you meet the features in. No code changed.
+
 ## 0.10.2
 
 - **Merged PRs are a soft violet** instead of grey, and **drafts a dashed, muted

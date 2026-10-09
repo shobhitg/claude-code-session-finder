@@ -4,7 +4,7 @@
 
 [![Watch the 48-second tour: 96 invented sessions, one sidebar](docs/images/teaser.gif)](https://github.com/shobhitg/claude-code-session-finder/raw/main/docs/video/claude-code-sessions-tour.mp4)
 
-<sub>▶ Click to play the full 48-second tour (1080p, 60 fps, with narration). Everything in it is invented demo data — no real sessions.</sub>
+<sub>▶ Click to play the full 48-second tour (1080p, 60 fps, with narration). Everything in it is invented demo data — no real sessions. Narration voiced with ElevenLabs.</sub>
 
 ## Why this exists
 
