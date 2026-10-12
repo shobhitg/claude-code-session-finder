@@ -117,7 +117,7 @@ main:focus-visible { outline: none; }
 .nowcard::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; pointer-events: none;
   background: linear-gradient(90deg, transparent, var(--st-running), transparent) 0 0 / 35% 100% no-repeat; animation: sweep 1.9s ease-in-out infinite; }
 .nowcard__head { display: flex; gap: var(--sp-2); align-items: center; min-width: 0; }
-.nowcard__head .codicon { color: var(--st-running); flex: none; }
+.nowcard__head .codicon, .nowcard__head .spark { color: var(--st-running); flex: none; }
 .nowcard__what { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--mono); font-size: calc(var(--size) - 1px); }
 .nowcard__since { margin-left: auto; flex: none; font: var(--size-meta) var(--mono); color: var(--tx-running); }
 .nowcard__said { display: grid; gap: 4px; font-size: calc(var(--size) - 0.5px); }

@@ -126,3 +126,11 @@ describe('webview stylesheets (spec §10, D7)', () => {
     for (const sel of ['.st-running', '.st-launched', '.st-completed', '.st-failed', '.st-stopped', '.tool--error', '.tool--pending', '.turn--notification', '.turn--command', '.fp--gone', '.fp--missing', '.finding--major', '.finding--minor', '.grp--closed', '.cp--done', '.json__note', '.nokept', '.think']) expect(session, sel).toContain(sel);
   });
 });
+
+describe('Session View glyphs', () => {
+  it('a spark carries its own size — an SVG with only a viewBox fills its container, and in the Now card it was 860 px tall (a class may still resize it: CSS beats the attribute)', () => {
+    const src = readFileSync(join(dir, 'session/main.ts'), 'utf8');
+    const body = /function spark\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(src)?.[1] ?? '';
+    expect(body).toMatch(/'svg', \{[^}]*\bwidth: 16\b[^}]*\bheight: 16\b/);
+  });
+});

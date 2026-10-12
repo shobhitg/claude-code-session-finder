@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **The "working" sparkle is a sparkle again, not a screen-filling shape.** In a running
+  session's Overview, the Now card drew its sparkle with no size, so it grew to the card's whole
+  width — 860 px tall — whenever no tool call was in flight.
+- **A live update no longer throws you to the top of the Overview.** That giant sparkle made
+  the page 750 px taller or shorter each time a tool call started or ended, which clamped your
+  scroll position to the top and never gave it back. And "Show all" on the first prompt folded
+  itself shut at every update, moving everything below it. Both hold now.
+
 ## 0.10.3
 
 **The Marketplace page tells the story.** The README now opens with why this

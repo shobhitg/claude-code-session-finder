@@ -33,6 +33,7 @@ let clockOffset = 0;
 let selected = 'session';
 let page: Page | null = null;
 let jsonViews: Record<string, JsonView> = {};
+const taskOpen = new Set<string>();                               // nodes whose task is shown in full — a rebuild must not fold it back
 const ui: UiState = { tab: 'overview', closed: [], ...(api.getState() as Partial<UiState> | undefined) };
 const save = (): void => api.setState(ui);
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -55,9 +56,9 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string,
   return el;
 }
 const icon = (name: string, cls = ''): HTMLElement => h('i', { class: `${iconClasses(name)}${cls ? ` ${cls}` : ''}`, 'aria-hidden': 'true' });
-/** The running glyph: the sidebar's breathing sparkle (D19), drawn. */
+/** The running glyph: the sidebar's breathing sparkle (D19), drawn. A viewBox alone gives an SVG no size — it fills its container — so it carries 16 px; a class may still resize it. */
 function spark(cls = 'spark'): SVGSVGElement {
-  const s = svg('svg', { class: cls, viewBox: '0 0 16 16', 'aria-hidden': 'true' });
+  const s = svg('svg', { class: cls, viewBox: '0 0 16 16', width: 16, height: 16, 'aria-hidden': 'true' });
   s.append(svg('path', { fill: 'currentColor', d: 'M8 1.6c.45 3.1 1.55 4.5 4.6 6.4-3.05 1.9-4.15 3.3-4.6 6.4-.45-3.1-1.55-4.5-4.6-6.4 3.05-1.9 4.15-3.3 4.6-6.4z' }));
   return s;
 }
@@ -440,7 +441,13 @@ function renderOverview(n: GraphNode): HTMLElement {
     return box;
   }
   if (!o) { box.append(h('div', { class: 'empty' }, 'Loading…')); return box; }
-  if (o.task) { const task = markdown(o.task, n.cwd, 'task'); task.classList.add('clamp'); const more = h('button', { class: 'more more--inline' }, 'Show all'); more.addEventListener('click', () => { task.classList.toggle('clamp'); more.textContent = task.classList.contains('clamp') ? 'Show all' : 'Show less'; }); box.append(section(n.kind === 'session' ? 'First prompt' : 'Task', task, o.task.split('\n').length > 6 || o.task.length > 600 ? more : null)); }
+  if (o.task) {
+    const task = markdown(o.task, n.cwd, 'task'); const more = h('button', { class: 'more more--inline' });
+    const show = (): void => { const all = taskOpen.has(n.id); task.classList.toggle('clamp', !all); more.textContent = all ? 'Show less' : 'Show all'; };
+    more.addEventListener('click', () => { if (!taskOpen.delete(n.id)) taskOpen.add(n.id); show(); });
+    show();
+    box.append(section(n.kind === 'session' ? 'First prompt' : 'Task', task, o.task.split('\n').length > 6 || o.task.length > 600 ? more : null));
+  }
   if (isLive(n.status)) {
     const step = n.now ?? (o.running ? { tool: o.running.tool, summary: o.running.summary, since: o.running.ts } : undefined);
     const card = h('div', { class: 'nowcard' });
