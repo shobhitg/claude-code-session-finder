@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.4
 
 - **The "working" sparkle is a sparkle again, not a screen-filling shape.** In a running
   session's Overview, the Now card drew its sparkle with no size, so it grew to the card's whole
