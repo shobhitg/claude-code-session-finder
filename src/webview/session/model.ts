@@ -4,6 +4,7 @@
  */
 import type { GraphNode, NodeKind, NodeStatus, SessionGraph } from '../../core/agents.js';
 import { IDLE_MS } from '../../core/agents.js';
+import type { NowStep, Overview } from '../../core/transcript.js';
 import { fmtDuration } from '../model.js';
 
 export function statusIcon(kind: NodeKind, status: NodeStatus, reducedMotion = false): string {
@@ -311,6 +312,18 @@ export function parseMarkdown(src: string, depth = 0): MdBlock[] {
   }
   return out;
 }
+
+// ---------------------------------------------------------------- the Now strip
+
+/** The call in flight — the node's own, else the one its transcript still has open: what the Now card and the Now strip both show. */
+export function nowStep(n: Pick<GraphNode, 'now'>, o: Pick<Overview, 'running'>): NowStep | undefined {
+  return n.now ?? (o.running ? { tool: o.running.tool, summary: o.running.summary, since: o.running.ts } : undefined);
+}
+const flatten = (c: Inline[]): string => c.map(i => i.t === 'text' || i.t === 'code' ? i.v : i.t === 'path' ? i.label : flatten(i.c)).join('');
+const plainBlocks = (bs: MdBlock[]): string[] =>
+  bs.flatMap(b => b.t === 'p' || b.t === 'h' ? [flatten(b.c)] : b.t === 'list' ? b.items.map(flatten) : b.t === 'quote' || b.t === 'tag' || b.t === 'insight' ? plainBlocks(b.c) : []);
+/** Markdown as one plain line of its prose — a code block or table is left out — for a strip that shows a single ellipsized line. */
+export const plainLine = (md: string): string => plainBlocks(parseMarkdown(md)).join(' ').replace(/\s+/g, ' ').trim();
 
 // ---------------------------------------------------------------- JSON views
 

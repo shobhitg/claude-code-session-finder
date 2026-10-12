@@ -9,6 +9,9 @@
   the page 750 px taller or shorter each time a tool call started or ended, which clamped your
   scroll position to the top and never gave it back. And "Show all" on the first prompt folded
   itself shut at every update, moving everything below it. Both hold now.
+- **The Now card stays with you.** Scroll an Overview down and, once the card is out of view,
+  a two-line strip slides in at the top: the call in flight (or "working") and the latest words.
+  It adds no height, ignores the pointer, and slides away when you scroll back up to the card.
 
 ## 0.10.3
 

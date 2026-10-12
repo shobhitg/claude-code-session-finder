@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { statusIcon, iconClasses, fmtTokens, nodeMeta, toolIcon, modelChip, listModel, threadLayout, findPaths, pathOfCode,
-         parseInline, parseMarkdown, looksJson, recognise, defaultView, JSON_BIG } from '../src/webview/session/model.js';
+         parseInline, parseMarkdown, looksJson, recognise, defaultView, JSON_BIG, nowStep, plainLine } from '../src/webview/session/model.js';
 import type { GraphNode, SessionGraph } from '../src/core/agents.js';
 
 const T0 = Date.parse('2026-10-08T09:14:00');
@@ -133,5 +133,22 @@ describe('JSON views (D20)', () => {
     expect(defaultView(500, false, 'raw')).toBe('raw');
     expect(defaultView(500, false, 'formatted')).toBe('pretty');           // a choice this value cannot honour
     expect(defaultView(JSON_BIG + 1, true, 'formatted')).toBe('raw');
+  });
+});
+
+describe('the Now strip: the card, kept in view while the card is scrolled off', () => {
+  const running = { ts: 5_000, tool: 'Bash', summary: 'Run the tests', status: 'running' as const };
+  it('shows the call in flight the card shows: the node\'s own first, else the one the transcript still has open', () => {
+    const own = { tool: 'Read', summary: 'handler.ts', since: 9_000 };
+    expect(nowStep({ now: own }, { running })).toEqual(own);
+    expect(nowStep({}, { running })).toEqual({ tool: 'Bash', summary: 'Run the tests', since: 5_000 });
+    expect(nowStep({}, {})).toBeUndefined();                       // working: no tool in flight
+  });
+  it('says the latest words on one plain line: Markdown unwrapped, files and links by name, code blocks and tables left out', () => {
+    expect(plainLine('Still rate-limited. **The hook** also says `src/a.ts` changed — see [the docs](https://x.dev/d).'))
+      .toBe('Still rate-limited. The hook also says src/a.ts changed — see the docs.');
+    expect(plainLine('## Plan\n\n- read the file\n- run the tests\n\n```sh\nnpm test\n```\n\nThen report.')).toBe('Plan read the file run the tests Then report.');
+    expect(plainLine('> quoted\n\n| a | b |\n| --- | --- |\n| 1 | 2 |')).toBe('quoted');
+    expect(plainLine('  \n\n ')).toBe('');
   });
 });

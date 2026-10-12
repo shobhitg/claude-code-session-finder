@@ -122,6 +122,16 @@ main:focus-visible { outline: none; }
 .nowcard__since { margin-left: auto; flex: none; font: var(--size-meta) var(--mono); color: var(--tx-running); }
 .nowcard__said { display: grid; gap: 4px; font-size: calc(var(--size) - 0.5px); }
 .nowcard__label { font-size: var(--size-meta); color: var(--s-muted); }
+/* The Now strip: the card, kept in view. It slides down from above the pane's top edge as the Now card scrolls off — opaque all the way, so nothing
+   shows through it — by a scroll-driven animation, so it adds no height, needs no script and survives every rebuild. Click-through, and hidden from screen readers (it only repeats the card). */
+.overview { timeline-scope: --now; }
+.nowcard { view-timeline: --now block; }
+.nowpin { --pad: var(--sp-4); position: sticky; top: calc(-1 * var(--pad)); height: 0; margin-bottom: calc(-1 * var(--sp-4)); z-index: 3; pointer-events: none; }
+.nowpin__in { position: absolute; top: 0; left: calc(-1 * var(--pad)); right: calc(-1 * var(--pad)); display: grid; gap: 1px; padding: var(--sp-2) var(--pad);
+  background: color-mix(in srgb, var(--st-running) 10%, var(--s-bg-editor)); border-bottom: 1px solid var(--s-border);
+  transform: translateY(-100%); visibility: hidden; animation: nowpin-in linear both; animation-timeline: --now; animation-range: exit 65% exit 100%; }
+.nowpin__said { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--size-meta); color: var(--s-muted); }
+@keyframes nowpin-in { from { transform: translateY(-100%); visibility: hidden; } to { transform: none; visibility: visible; } }
 .steps { list-style: none; margin: 0; padding: 0; display: grid; }
 .step { position: relative; display: grid; grid-template-columns: 42px 18px minmax(0, 1fr) auto; gap: var(--sp-2); align-items: center; padding: 3px 0; font-size: calc(var(--size) - 0.5px); }
 .step::before { content: ""; position: absolute; left: 58px; top: 0; bottom: 0; width: 1px; background: var(--s-border); }
@@ -285,4 +295,5 @@ body.vscode-high-contrast .row__icon, body.vscode-high-contrast .pane__icon { fi
   .body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 38%) minmax(0, 1fr); }
   .list { border-right: 0; border-bottom: 1px solid var(--s-border); }
   .pane__body { padding: var(--sp-3); }
+  .nowpin { --pad: var(--sp-3); }                              /* the pane's own padding, so the strip meets its edges */
 }

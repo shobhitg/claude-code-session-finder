@@ -134,3 +134,20 @@ describe('Session View glyphs', () => {
     expect(body).toMatch(/'svg', \{[^}]*\bwidth: 16\b[^}]*\bheight: 16\b/);
   });
 });
+
+describe('the Now strip — the card, kept in view while it is scrolled off', () => {
+  const css = sheets[2]![1];
+  it('adds no height and never takes the pointer, so nothing moves under the reader when it appears', () => {
+    expect(css).toMatch(/\.nowpin \{[^}]*position: sticky;[^}]*height: 0;[^}]*pointer-events: none;/);
+  });
+  it('appears by a scroll-driven animation off the Now card — no script, so a rebuild cannot reset it', () => {
+    expect(css).toMatch(/\.overview \{[^}]*timeline-scope: --now;/);
+    expect(css).toMatch(/\.nowcard \{[^}]*view-timeline: --now block;/);
+    expect(css).toMatch(/\.nowpin__in \{[^}]*animation-timeline: --now;/);
+  });
+  it('is not stilled by reduced motion — that rule would leave it hidden for good', () => {
+    const reduced = /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/.exec(css)?.[0] ?? '';
+    expect(reduced).toContain('.spark');                          // the block was found
+    expect(reduced).not.toContain('.nowpin');
+  });
+});

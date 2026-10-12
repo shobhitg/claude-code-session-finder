@@ -4,9 +4,9 @@
 // messages. A live session is re-sent every 2 s: the view is rebuilt but keeps what you had open, where you
 // had scrolled and which tab you were on; between snapshots only the elapsed times tick.
 import type { SessionGraph, GraphNode, NodeStatus } from '../../core/agents.js';
-import type { Turn, Item, ToolCall, Overview, Step } from '../../core/transcript.js';
+import type { Turn, Item, ToolCall, Overview, Step, NowStep } from '../../core/transcript.js';
 import { fmtDuration } from '../model.js';
-import { iconClasses, statusIcon, fmtClock, fmtTokens, toolIcon, modelChip, listModel, threadLayout, nodeMeta, isLive,
+import { iconClasses, statusIcon, fmtClock, fmtTokens, toolIcon, modelChip, listModel, threadLayout, nodeMeta, isLive, nowStep, plainLine,
          parseMarkdown, parseInline, findPaths, looksJson, recognise, defaultView,
          type MdBlock, type Inline, type JsonView, type Findings } from './model.js';
 
@@ -431,6 +431,17 @@ function stepRow(s: Step, cwd: string | undefined): HTMLElement {
     h('span', { class: 'step__dur' }, s.status === 'running' ? since(s.ts) : s.ms !== undefined ? fmtDuration(s.ms) : ''));
 }
 function section(title: string, ...body: Array<Node | null>): HTMLElement { return h('section', { class: 'sec' }, h('h3', { class: 'sec__h' }, title), ...body.filter((x): x is Node => !!x)); }
+/** The Now card's first line: the call in flight, or the sparkle while the model is between calls. */
+function nowHead(step: NowStep | undefined, summary: (text: string) => Array<Node | string>): HTMLElement {
+  return h('div', { class: 'nowcard__head' }, ...(step
+    ? [icon(toolIcon(step.tool)), h('b', {}, step.tool), h('span', { class: 'nowcard__what' }, ...summary(step.summary)), since(step.since, '', 'nowcard__since')]
+    : [spark('spark'), h('span', { class: 'shim' }, 'working')]));
+}
+/** The card again, kept in view: the CSS slides it in once the card has scrolled off the top. A line for the call, a line for the latest words. */
+function nowStrip(step: NowStep | undefined, lastText: string | undefined): HTMLElement {
+  const said = lastText ? plainLine(lastText) : '';
+  return h('div', { class: 'nowpin', 'aria-hidden': 'true' }, h('div', { class: 'nowpin__in' }, nowHead(step, text => [text]), said ? h('div', { class: 'nowpin__said' }, said) : null));
+}
 function renderOverview(n: GraphNode): HTMLElement {
   const box = h('div', { class: 'overview' });
   const o = page?.overview;
@@ -449,12 +460,11 @@ function renderOverview(n: GraphNode): HTMLElement {
     box.append(section(n.kind === 'session' ? 'First prompt' : 'Task', task, o.task.split('\n').length > 6 || o.task.length > 600 ? more : null));
   }
   if (isLive(n.status)) {
-    const step = n.now ?? (o.running ? { tool: o.running.tool, summary: o.running.summary, since: o.running.ts } : undefined);
-    const card = h('div', { class: 'nowcard' });
-    if (step) card.append(h('div', { class: 'nowcard__head' }, icon(toolIcon(step.tool)), h('b', {}, step.tool), h('span', { class: 'nowcard__what' }, ...textWithFiles(step.summary, n.cwd)), since(step.since, '', 'nowcard__since')));
-    else card.append(h('div', { class: 'nowcard__head' }, spark('spark'), h('span', { class: 'shim' }, 'working')));
+    const step = nowStep(n, o);
+    const card = h('div', { class: 'nowcard' }, nowHead(step, s => textWithFiles(s, n.cwd)));
     if (o.lastText) card.append(h('div', { class: 'nowcard__said' }, h('span', { class: 'nowcard__label' }, 'Latest'), ...blocks(parseMarkdown(o.lastText.length > 600 ? `${o.lastText.slice(0, 600)}…` : o.lastText), n.cwd)));
     box.append(section('Now', card));
+    box.prepend(nowStrip(step, o.lastText));
   }
   if (o.steps.length) {
     const ul = h('ul', { class: 'steps' }, ...o.steps.map(s => stepRow(s, n.cwd)));
