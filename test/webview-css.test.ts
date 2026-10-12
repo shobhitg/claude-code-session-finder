@@ -151,3 +151,9 @@ describe('the Now strip — the card, kept in view while it is scrolled off', ()
     expect(reduced).not.toContain('.nowpin');
   });
 });
+
+describe('Session View layout', () => {
+  it('is one column that cannot outgrow the window — a long session title (a first prompt) ellipsizes instead of stretching the header, timeline and pane past the edge', () => {
+    expect(sheets[2]![1]).toMatch(/\.app \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+  });
+});

@@ -9,7 +9,7 @@ main:focus-visible { outline: none; }
 .st-running, .st-launched { --c: var(--st-running); } .st-completed { --c: var(--st-ok); } .st-failed { --c: var(--st-error); }
 .st-stopped { --c: var(--st-stalled); } .st-unknown { --c: var(--st-idle); }
 
-.app { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100vh; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); height: 100vh; }
 
 /* ─── header ─── */
 .header { display: flex; align-items: center; gap: var(--sp-2); min-height: 38px; padding: 0 var(--sp-3); border-bottom: 1px solid var(--s-border); }

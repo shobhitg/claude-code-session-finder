@@ -12,6 +12,9 @@
 - **The Now card stays with you.** Scroll an Overview down and, once the card is out of view,
   a two-line strip slides in at the top: the call in flight (or "working") and the latest words.
   It adds no height, ignores the pointer, and slides away when you scroll back up to the card.
+- **A long session title no longer stretches the Session View.** A session without a title is
+  named after its first prompt, and a long one made the header, timeline and pane wider than the
+  window, with the right side cut off. The title now ends in an ellipsis and everything fits.
 
 ## 0.10.3
 
