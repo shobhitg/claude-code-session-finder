@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRecords, buildTranscript, toolSummary, resultText, parseNotification, firstPrompt, RESULT_CAP, currentStep, overview, parseHarnessFrame, taskExcerpt } from '../src/core/transcript.js';
+import { parseRecords, buildTranscript, toolSummary, resultText, parseNotification, firstPrompt, RESULT_CAP, currentStep, overview, parseHarnessFrame, taskExcerpt, toolPath } from '../src/core/transcript.js';
 
 const T0 = Date.parse('2026-09-17T00:00:00Z');
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
@@ -220,5 +220,16 @@ describe('thoughts, folders, the step in flight and the overview (D20)', () => {
     expect(o.steps.map(s => [s.tool, s.status, s.ms])).toEqual([['Bash', 'error', 1000], ['Bash', 'running', undefined]]);
     expect(o.lastText).toBe('Benchmarking now.');
     expect(o.running).toMatchObject({ tool: 'Bash', summary: 'npm run bench' });
+  });
+});
+
+describe('toolPath: a file tool\'s step links to its file, not just its base name', () => {
+  it('gives the full path for Read, Edit, Write, MultiEdit and NotebookEdit, and nothing for other tools', () => {
+    expect(toolSummary('Read', { file_path: '/w/.local/shot/tlm-max-c.png' })).toBe('tlm-max-c.png');
+    expect(toolPath('Read', { file_path: '/w/.local/shot/tlm-max-c.png' })).toBe('/w/.local/shot/tlm-max-c.png');
+    expect(['Edit', 'Write', 'MultiEdit'].map(n => toolPath(n, { file_path: 'mutate.mjs' }))).toEqual(['mutate.mjs', 'mutate.mjs', 'mutate.mjs']);
+    expect(toolPath('NotebookEdit', { notebook_path: '/n/a.ipynb' })).toBe('/n/a.ipynb');
+    expect(toolPath('Bash', { command: 'cat a.ts' })).toBeUndefined();
+    expect(toolPath('Read', {})).toBeUndefined();
   });
 });

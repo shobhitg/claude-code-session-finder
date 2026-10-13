@@ -488,7 +488,7 @@ export function parseMarkdown(src: string, depth = 0): MdBlock[] {
 
 /** The call in flight — the node's own, else the one its transcript still has open: what the Now card and the Now strip both show. */
 export function nowStep(n: Pick<GraphNode, 'now'>, o: Pick<Overview, 'running'>): NowStep | undefined {
-  return n.now ?? (o.running ? { tool: o.running.tool, summary: o.running.summary, since: o.running.ts } : undefined);
+  return n.now ?? (o.running ? { tool: o.running.tool, summary: o.running.summary, since: o.running.ts, ...(o.running.path ? { path: o.running.path } : {}) } : undefined);
 }
 const flatten = (c: Inline[]): string => c.map(i => i.t === 'text' || i.t === 'code' ? i.v : i.t === 'path' ? i.label : flatten(i.c)).join('');
 const plainBlocks = (bs: MdBlock[]): string[] =>

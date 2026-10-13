@@ -463,7 +463,7 @@ function renderTranscript(n: GraphNode): HTMLElement {
 function stepRow(s: Step, cwd: string | undefined, i = 0, fresh = false): HTMLElement {
   const st = s.status === 'running' ? 'running' : s.status === 'error' ? 'failed' : 'completed'; const hue = toolHue(s.tool);
   return h('li', { class: `step st-${st}${fresh ? ' step--new' : ''}`, style: `--i:${i}`, ...(hue ? { 'data-hue': hue } : {}) }, h('span', { class: 'step__time' }, fmtClock(s.ts).slice(0, 5)), h('span', { class: 'step__dot' }, icon(toolIcon(s.tool))),
-    h('span', { class: 'step__text' }, h('b', {}, s.tool), ' ', ...textWithFiles(s.summary, cwd)),
+    h('span', { class: 'step__text' }, h('b', {}, s.tool), ' ', ...(s.path ? [fileChip(s.summary, s.path, undefined, cwd)] : textWithFiles(s.summary, cwd))),   // a file tool's name is its file: hover it, click it
     h('span', { class: 'step__dur' }, s.status === 'running' ? since(s.ts) : s.ms !== undefined ? fmtDuration(s.ms) : ''));
 }
 function section(title: string, ...body: Array<Node | null>): HTMLElement { return h('section', { class: 'sec' }, h('h3', { class: 'sec__h' }, title), ...body.filter((x): x is Node => !!x)); }
@@ -504,7 +504,7 @@ function renderOverview(n: GraphNode): HTMLElement {
   }
   if (isLive(n.status)) {
     const step = nowStep(n, o);
-    const card = h('div', { class: 'nowcard' }, nowHead(step, s => textWithFiles(s, n.cwd)));
+    const card = h('div', { class: 'nowcard' }, nowHead(step, s => step?.path ? [fileChip(s, step.path, undefined, n.cwd)] : textWithFiles(s, n.cwd)));
     const said = lastSaid.get(n.id); if (o.lastText) lastSaid.set(n.id, o.lastText);
     if (o.lastText) card.append(h('div', { class: `nowcard__said${said !== undefined && said !== o.lastText ? ' nowcard__said--new' : ''}` }, h('span', { class: 'nowcard__label' }, 'Latest'), ...blocks(parseMarkdown(o.lastText.length > 600 ? `${o.lastText.slice(0, 600)}…` : o.lastText), n.cwd)));
     box.append(section('Now', card));

@@ -54,6 +54,11 @@ export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v =
 // ---------------------------------------------------------------- tool calls
 
 /** What a compact tool row says after the tool name. */
+/** The file a file tool works on, in full — its summary is only the base name, which no reader of plain text can tell is a file. */
+export function toolPath(name: string, input: Record<string, unknown> = {}): string | undefined {
+  const v = name === 'NotebookEdit' ? input.notebook_path : /^(Read|Edit|Write|MultiEdit)$/.test(name) ? input.file_path : undefined;
+  return typeof v === 'string' && v ? v : undefined;
+}
 export function toolSummary(name: string, input: Record<string, unknown> = {}): string {
   const s = (k: string): string => { const v = input[k]; return typeof v === 'string' ? v : ''; };
   const base = (v: unknown): string => typeof v === 'string' ? (v.split(/[\\/]/).pop() ?? v) : '';
@@ -345,7 +350,7 @@ export function taskExcerpt(recs: Rec[], max = 320): { text: string; frame?: Fra
 
 // ---------------------------------------------------------------- what an agent is doing, and has done (D20)
 
-export interface NowStep { tool: string; summary: string; since: number }
+export interface NowStep { tool: string; summary: string; since: number; path?: string }   // path: a file tool's file, so the name links to it
 
 /**
  * The call a live transcript is in the middle of: the last tool_use with no result yet, read from the end and
@@ -362,7 +367,7 @@ export function currentStep(recs: Rec[]): NowStep | undefined {
     if (!Array.isArray(c)) continue;
     for (let j = c.length - 1; j >= 0; j--) {
       const b = c[j]!;
-      if (b.type === 'tool_use') { const tu = b as ToolUseBlock; if (!answered.has(tu.id)) return { tool: tu.name, summary: toolSummary(tu.name, tu.input), since: ts(r) }; return undefined; }
+      if (b.type === 'tool_use') { const tu = b as ToolUseBlock; if (!answered.has(tu.id)) { const path = toolPath(tu.name, tu.input); return { tool: tu.name, summary: toolSummary(tu.name, tu.input), since: ts(r), ...(path ? { path } : {}) }; } return undefined; }
       if (b.type === 'thinking') return { tool: 'Think', summary: 'thinking', since: ts(r) };
       if (b.type === 'text') return { tool: 'Text', summary: 'writing', since: ts(r) };
     }
@@ -370,7 +375,7 @@ export function currentStep(recs: Rec[]): NowStep | undefined {
   return undefined;
 }
 
-export interface Step { ts: number; tool: string; summary: string; ms?: number; status: 'ok' | 'error' | 'running' }
+export interface Step { ts: number; tool: string; summary: string; ms?: number; status: 'ok' | 'error' | 'running'; path?: string }   // path: a file tool's file, so the name links to it
 export interface Overview {
   /** what the agent was asked: its first prompt — for a workflow agent the computed task, not the user request every agent of the run is relayed (D25) */
   task?: string;
@@ -394,6 +399,7 @@ export function overview(t: Transcript, max = 14): Overview {
     if (it.kind !== 'tool') continue;
     const c = it.call;
     const st: Step = { ts: c.ts, tool: c.name, summary: c.summary, status: c.result ? (c.result.isError ? 'error' : 'ok') : 'running' };
+    const path = toolPath(c.name, c.input); if (path) st.path = path;
     if (c.result) st.ms = Math.max(0, c.result.ts - c.ts);
     steps.push(st);
   }
