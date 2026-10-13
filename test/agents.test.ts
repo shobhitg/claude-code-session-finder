@@ -162,6 +162,29 @@ describe('buildGraph — labels', () => {
     expect(g.nodes.session!.children.map(id => [g.nodes[id]!.label, g.nodes[id]!.tag])).toEqual([['Same prompt', 'aaaa'], ['Same prompt', 'bbbb']]);
     expect(bars(g).filter(b => b.kind === 'agent').map(b => b.tag)).toEqual(['aaaa', 'bbbb']);
   });
+  it('a workflow agent is named by the label its script gave it — and carries its phase — and, with no label, by its real task (D25)', () => {
+    const frame = (task: string) => `[Workflow harness — computed task] The task text below was computed at runtime by a workflow script. The computed task text follows:\n  ${task}`;
+    const done = (task: string) => [user(3, frame(task)), asst(100, [{ type: 'text', text: 'done' }], 'end_turn')];
+    const g = base([user(1, 'go')], [agentFile('w1', done('Map the matcher. Read every file.'), 150, 'run-9'), agentFile('w2', done('Check the flag. Read it.'), 150, 'run-9')],
+      { 'run-9': [{ type: 'started', agentId: 'w1', label: 'map:matcher', phase: 'Investigate' }, { type: 'result', agentId: 'w1' }, { type: 'started', agentId: 'w2' }, { type: 'result', agentId: 'w2' }] });
+    expect(g.nodes['orphan:w1']).toMatchObject({ label: 'map:matcher', phase: 'Investigate' });
+    expect(g.nodes['orphan:w2']).toMatchObject({ label: 'Check the flag. Read it.' });
+    expect(g.nodes['orphan:w2']).not.toHaveProperty('phase');
+  });
+  it('an agent a call spawned keeps the call\'s description, whatever a journal says; and a label is never an empty string', () => {
+    const main = [user(1, 'go'), spawn(2, 'toolu_1', 'Audit module 1'), result(3, 'toolu_1', { agentId: 'a1', status: 'async_launched' }, 'Async agent launched successfully.')];
+    const g = base(main, [agentFile('a1', [user(4, 'audit'), asst(100, [{ type: 'text', text: 'ok' }], 'end_turn')], 150, 'run-3'), agentFile('a2', [user(4, 'other work here'), asst(100, [{ type: 'text', text: 'ok' }], 'end_turn')], 150, 'run-3')],
+      { 'run-3': [{ type: 'started', agentId: 'a1', label: 'should-not-win', phase: 'P' }, { type: 'started', agentId: 'a2', label: '' }] });
+    expect(g.nodes['spawn:toolu_1']).toMatchObject({ label: 'Audit module 1', phase: 'P' });
+    expect(g.nodes['orphan:a2']!.label).toBe('other work here');
+  });
+  it('a running agent records when its transcript last changed — the file\'s modified time, not a sum — so a stalled one can say how long it has been quiet', () => {
+    const main = [user(1, 'go'), spawn(2, 'toolu_b', 'scan', { run_in_background: true }), result(3, 'toolu_b', { agentId: 'bg1', status: 'async_launched' }, 'Async agent launched successfully.')];
+    const g = base(main, [agentFile('bg1', [user(4, 'scan'), asst(5, [{ type: 'tool_use', id: 'x', name: 'Bash', input: {} }])], 595)]);
+    expect(g.nodes['spawn:toolu_b']).toMatchObject({ status: 'running', lastTs: T0 + 595_000 });
+    const done = base(main, [agentFile('bg1', [user(4, 'scan'), asst(5, [{ type: 'text', text: 'ok' }], 'end_turn')], 595)]);
+    expect(done.nodes['spawn:toolu_b']).not.toHaveProperty('lastTs');
+  });
   it('a unique label is left alone', () => {
     const g = base([user(1, 'go')], [agentFile('aaaa1111', [user(2, 'Only child')], 2)]);
     expect(g.nodes['orphan:aaaa1111']!.label).toBe('Only child');

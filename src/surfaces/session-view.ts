@@ -4,7 +4,7 @@ import { basename, dirname, join, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { discover, defaultRoot } from '../core/discover.js';
-import { parseRecords, buildTranscript, firstPrompt, overview, type Rec } from '../core/transcript.js';
+import { parseRecords, buildTranscript, firstPrompt, overview, taskExcerpt, type Rec } from '../core/transcript.js';
 import { candidates, fileKind, type Via } from '../core/fileref.js';
 import { buildGraph, type AgentFile, type JournalRec, type SessionGraph } from '../core/agents.js';
 import { planOpen } from '../core/resolve.js';
@@ -28,6 +28,7 @@ const TL_VH = 'sessionView.timelineVh';
 type Inbound =
   | { type: 'ready' } | { type: 'refresh' }
   | { type: 'select'; nodeId: string }
+  | { type: 'task'; nodeId: string }
   | { type: 'more'; nodeId: string; from: number }
   | { type: 'open'; where: OpenWhere }
   | { type: 'raw'; nodeId: string }
@@ -53,7 +54,7 @@ function isInbound(m: unknown): m is Inbound {
   const o = m as Record<string, unknown>;
   switch (o.type) {
     case 'ready': case 'refresh': return true;
-    case 'select': case 'raw': return typeof o.nodeId === 'string';
+    case 'select': case 'raw': case 'task': return typeof o.nodeId === 'string';
     case 'more': return typeof o.nodeId === 'string' && typeof o.from === 'number';
     case 'open': return o.where === 'tab' || o.where === 'right';
     case 'fileInfo': return typeof o.key === 'string' && typeof o.path === 'string' && (o.line === undefined || typeof o.line === 'number') && (o.cwd === undefined || typeof o.cwd === 'string');
@@ -274,6 +275,12 @@ class SessionPanel {
         case 'refresh': this.cache.clear(); await this.load(true); return;
         case 'select': this.selected = raw.nodeId; this.post({ type: 'page', page: this.page(raw.nodeId), now: Date.now() }); return;
         case 'more': this.post({ type: 'page', page: this.page(raw.nodeId, raw.from), now: Date.now() }); return;
+        case 'task': {                                                      // a hover card asks what a node was asked: its first prompt, from the cached transcript — nothing is read or scanned
+          const file = this.graph?.nodes[raw.nodeId]?.file; const recs = file ? this.cache.get(file)?.recs : undefined;
+          const t = recs ? taskExcerpt(recs) : undefined;
+          this.post({ type: 'task', nodeId: raw.nodeId, ...(t ? { text: t.text, ...(t.frame ? { frame: t.frame } : {}) } : {}) });
+          return;
+        }
         case 'raw': { const file = this.graph?.nodes[raw.nodeId]?.file ?? this.meta.file; await openTranscript(file); return; }
         case 'fileInfo': this.post({ type: 'fileInfo', key: raw.key, info: await this.fileInfo(raw.path, raw.line, raw.cwd) }); return;
         case 'openFile': await this.openFile(raw.path, raw.line, raw.cwd); return;

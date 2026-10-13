@@ -18,7 +18,8 @@ import { currentStep, firstPrompt, isNotification, isRecord, parseNotification, 
          type NowStep, type Rec, type ToolResultBlock, type ToolUseBlock } from './transcript.js';
 
 export interface AgentFile { path: string; agentId: string; recs: Rec[]; mtimeMs: number; runId?: string }
-export interface JournalRec { type?: string; agentId?: string; key?: string }
+/** A workflow's journal line: the harness records the label and phase its script gave each agent when it starts it (D25). */
+export interface JournalRec { type?: string; agentId?: string; key?: string; label?: string; phase?: string }
 
 export type NodeKind = 'session' | 'agent' | 'workflow' | 'failed-spawn';
 export type NodeStatus = 'running' | 'launched' | 'completed' | 'failed' | 'stopped' | 'unknown';
@@ -26,6 +27,10 @@ export interface GraphNode {
   id: string; kind: NodeKind; parentId: string | null; label: string;
   /** disambiguates siblings that share a label; surfaces show it after the label, outside any truncation */
   tag?: string;
+  /** a workflow agent's phase, as its script named it (the journal) — D25 */
+  phase?: string;
+  /** a running node: when its transcript file last changed (its modified time), so "quiet 40s" needs no scan — D25 */
+  lastTs?: number;
   subagentType?: string; model?: string; background: boolean;
   spawnTs?: number; launchedTs?: number; endTs?: number;
   status: NodeStatus;
@@ -146,6 +151,7 @@ export function buildGraph(input: GraphInput): SessionGraph {
   // pass 2 — agent files: attach to their node, or stand in as orphans; read journals and live tails
   for (const a of input.agents) {
     let n = byAgentId(a.agentId);
+    const orphan = !n;
     if (!n) {
       n = { id: `orphan:${a.agentId}`, kind: 'agent', parentId: null, label: firstPrompt(a.recs) ?? a.agentId.slice(0, 8),
             background: false, status: 'unknown', agentId: a.agentId, children: [] };
@@ -161,10 +167,15 @@ export function buildGraph(input: GraphInput): SessionGraph {
       const mine = journal.filter(j => j.agentId === a.agentId);
       if (mine.some(j => j.type === 'failed')) n.status = 'failed';
       else if (mine.some(j => j.type === 'result')) n.status = 'completed';
+      // the name its script gave it ("map:matcher" in "Investigate") beats the frame around its prompt; an agent a call spawned keeps that call's description (D25)
+      const started = mine.find(j => j.type === 'started' && (j.label || j.phase));
+      if (started?.phase) n.phase = started.phase;
+      if (orphan && started?.label) n.label = started.label;
     }
     if (!n.endTs && (n.status === 'running' || n.status === 'launched' || n.status === 'unknown')) {
       const live = liveStatus(a.recs, a.mtimeMs, input.now, th);
       if (live.status !== 'unknown') { n.status = live.status; if (live.endTs) n.endTs = live.endTs; }
+      if (live.status === 'running') n.lastTs = a.mtimeMs;
     } else if (!n.endTs && (n.status === 'completed' || n.status === 'failed')) {
       const l = lastTs(a.recs); if (l) n.endTs = l;
     }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRecords, buildTranscript, toolSummary, resultText, parseNotification, firstPrompt, RESULT_CAP, currentStep, overview } from '../src/core/transcript.js';
+import { parseRecords, buildTranscript, toolSummary, resultText, parseNotification, firstPrompt, RESULT_CAP, currentStep, overview, parseHarnessFrame, taskExcerpt } from '../src/core/transcript.js';
 
 const T0 = Date.parse('2026-09-17T00:00:00Z');
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
@@ -117,6 +117,42 @@ describe('firstPrompt', () => {
   });
   it('skips blank lines and markdown headings', () => {
     expect(firstPrompt(parseRecords(user(1, "\n# Question\nAida's forecast for the deal was stale\nWHY?")))).toBe("Aida's forecast for the deal was stale");
+  });
+});
+
+describe('workflow harness frames (D25)', () => {
+  // The harness wraps what it tells a workflow agent: a one-line header, then the text indented two spaces. For a "user request" it sends the
+  // user's request first, relayed — the same for every agent in the run — and the script's computed task in the next message.
+  const REQ = '[Workflow harness — user request] The harness relays, verbatim and indented below, the user request that triggered this workflow run:\n  Make the dividers thinner.\n  \n  Please.';
+  const COMP = '[Workflow harness — computed task] The task text below was computed at runtime by a workflow script. The computed task text follows:\n  Review the rail code.\n    - keep this indent\n  Report findings.';
+  const TASK = 'Review the rail code.\n  - keep this indent\nReport findings.';
+  it('parses the frame: its kind, and the text with the harness\'s two-space indent taken off', () => {
+    expect(parseHarnessFrame(REQ)).toEqual({ kind: 'request', text: 'Make the dividers thinner.\n\nPlease.' });
+    expect(parseHarnessFrame(COMP)).toEqual({ kind: 'computed', text: TASK });
+    expect(parseHarnessFrame('[Workflow harness — something new] ok:\n  body')).toEqual({ kind: 'other', text: 'body' });
+    expect(parseHarnessFrame('[Workflow harness — computed task] header only')).toEqual({ kind: 'computed', text: '' });
+    expect(parseHarnessFrame('Review the rail code.')).toBeUndefined();
+    expect(parseHarnessFrame('see [Workflow harness — user request] here')).toBeUndefined();
+  });
+  it('names an agent by its real task, not by the frame — and when the first message only relays the user\'s request, by the next one', () => {
+    expect(firstPrompt(parseRecords([user(1, REQ), user(2, COMP)].join('\n')))).toBe('Review the rail code.');
+    expect(firstPrompt(parseRecords(user(1, COMP)))).toBe('Review the rail code.');
+    expect(firstPrompt(parseRecords(user(1, REQ)))).toBe('Make the dividers thinner.');          // nothing else to go on
+  });
+  it('excerpts the real task for a hover card: de-framed, blank runs squeezed, cut with an ellipsis', () => {
+    expect(taskExcerpt(parseRecords([user(1, REQ), user(2, COMP)].join('\n')))).toEqual({ text: TASK, frame: 'computed' });
+    expect(taskExcerpt(parseRecords(user(1, 'plain task\n\n\n\nmore')))).toEqual({ text: 'plain task\n\nmore' });
+    expect(taskExcerpt(parseRecords(user(1, 'x'.repeat(50))), 20)?.text).toBe(`${'x'.repeat(19)}…`);
+    expect(taskExcerpt(parseRecords([user(1, '<task-notification><summary>x</summary></task-notification>')].join('\n')))).toBeUndefined();
+    expect(taskExcerpt([])).toBeUndefined();
+  });
+  it('a framed prompt opens a turn with the frame taken off and its kind recorded; the overview\'s task is the computed one', () => {
+    const t = buildTranscript(parseRecords([user(1, REQ), user(2, COMP), asst(3, [{ type: 'text', text: 'done' }])].join('\n')));
+    expect(t.turns.map(x => [x.frame, x.prompt])).toEqual([['request', 'Make the dividers thinner.\n\nPlease.'], ['computed', TASK]]);
+    expect(overview(t)).toMatchObject({ task: TASK, taskFrame: 'computed' });
+    expect(overview(buildTranscript(parseRecords(user(1, REQ))))).toMatchObject({ task: 'Make the dividers thinner.\n\nPlease.', taskFrame: 'request' });
+    expect(overview(buildTranscript(parseRecords(user(1, 'plain'))))).not.toHaveProperty('taskFrame');
+    expect(buildTranscript(parseRecords(user(1, 'plain'))).turns[0]).not.toHaveProperty('frame');
   });
 });
 

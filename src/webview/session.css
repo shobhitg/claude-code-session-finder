@@ -47,6 +47,10 @@ main:focus-visible { outline: none; }
 .tl-cap { fill: var(--c); }
 .tl-halo { fill: var(--c); transform-box: fill-box; transform-origin: center; animation: halo 1.8s ease-in-out infinite; }
 .tl-end { fill: var(--s-bg-editor); stroke: var(--c); stroke-width: 1.5; }
+/* the workflow's own glyph in its label (an SVG text node: the IDE's codicon font, no CSS class); an idle band takes the pointer so its tooltip answers even when its label found no room (D25) */
+.tl-glyph { fill: var(--s-muted); font: 12px codicon; }
+.tl-gap-hit { fill: transparent; }
+.tl-hit.echo:not(.tl-hit--sel) { fill: color-mix(in srgb, var(--s-fg-editor) 5%, transparent); }
 
 /* ─── body: the agent list is a rail down the left (D23); the timeline over the pane fills the column beside it. Stacked only when very narrow ─── */
 .body { --rail: clamp(180px, 26vw, 320px); position: relative; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); min-height: 0; }
@@ -76,12 +80,21 @@ body.resizing-h { cursor: row-resize; user-select: none; }
 .row__icon { grid-row: span 2; width: 16px; height: 16px; font-size: 15px; color: var(--c); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) 60%, transparent)); }
 .row__name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row__tag { margin-left: 6px; font: var(--size-meta) var(--mono); color: var(--s-muted); }
+/* verb:subject (D25): the shared verb gives way, down to a stub, and only then the part that tells rows apart. The subject never flex-shrinks — any proportional
+   share would cost it its last letters to an ellipsis — and is capped at what the verb's stub leaves. */
+.row__name--split { display: flex; }
+.row__verb { flex: 0 1 auto; min-width: 1.2em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: .72; }
+.row__subject { flex: 0 0 auto; max-width: calc(100% - 1.2em); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row__name--split .row__tag { flex: none; }
 .row__meta { grid-column: 2 / span 2; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--size-meta); color: var(--s-muted); }
 .row__meta-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row__now { grid-column: 2 / span 2; display: flex; align-items: center; gap: 5px; min-width: 0; font-size: var(--size-meta); color: var(--tx-running); }
 .row__now .codicon { font-size: 12px; flex: none; }
 .row__now-what { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row__since { margin-left: auto; flex: none; font-family: var(--mono); }
+.row__since--quiet { color: var(--tx-stalled); }                                       /* its transcript has gone quiet; the hover card says for how long (D25) */
+.row[aria-current="true"] .row__since--quiet { color: inherit; }
+.row.echo:not([aria-current="true"]) { background: var(--s-hover); }                       /* what you point at in the timeline lights its row (D25) */
 .row[aria-current="true"] .row__meta, .row[aria-current="true"] .row__now, .row[aria-current="true"] .row__tag { color: color-mix(in srgb, var(--s-sel-fg) 85%, transparent); }
 .span { position: relative; flex: 1; min-width: 40px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--s-muted) 22%, transparent); }
 .span i { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--c); }
@@ -108,7 +121,7 @@ body.resizing-h { cursor: row-resize; user-select: none; }
 .grp--closed .grp__chev { transform: rotate(-90deg); }
 .grp__icon { color: var(--c); }
 .grp__name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.grp__meta { grid-column: 3; font-weight: 400; font-size: var(--size-meta); color: var(--s-muted); }
+.grp__meta { grid-column: 3; font-weight: 400; font-size: var(--size-meta); color: var(--s-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .grp__strip { display: flex; gap: 1px; height: 4px; margin: 2px var(--sp-2) 4px 34px; border-radius: 2px; overflow: hidden; }
 .grp__strip i { flex: 1; background: var(--c); }
 
@@ -135,6 +148,7 @@ body.resizing-h { cursor: row-resize; user-select: none; }
 
 .sec { display: grid; gap: 6px; }
 .sec__h { margin: 0; font-size: var(--size-meta); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--s-muted); }
+.sec__badge { margin-left: var(--sp-2); padding: 0 7px; border-radius: 8px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--s-muted); background: color-mix(in srgb, var(--s-fg-editor) 8%, transparent); }
 .task { background: var(--s-quote); border-radius: 8px; padding: var(--sp-2) var(--sp-3); }
 .clamp { max-height: 9.5em; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, var(--s-fg-editor) 70%, transparent); mask-image: linear-gradient(180deg, var(--s-fg-editor) 70%, transparent); }
 .more { justify-self: start; color: var(--s-link); font-size: var(--size-meta); padding: 2px 0; }
@@ -299,6 +313,19 @@ body.resizing-h { cursor: row-resize; user-select: none; }
 .btn { font-size: var(--size-meta); padding: 3px 10px; border-radius: 6px; background: color-mix(in srgb, var(--s-tip-fg) 10%, transparent); }
 .btn--primary { color: var(--s-btn-fg); background: var(--s-btn-bg); }
 .btn:focus-visible { outline: 1px solid var(--s-focus); outline-offset: 1px; }
+/* a rail row's hover card (D25): the file card, filled from what was recorded */
+.ncard .fcard__head { align-items: flex-start; }
+.ncard .fcard__head b { white-space: normal; overflow-wrap: anywhere; }
+.ncard__glyph { flex: none; display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; }
+.ncard__glyph .codicon, .ncard__glyph .spark { color: var(--c); }
+.ncard__sub { font-size: var(--size-meta); color: var(--s-muted); }
+.ncard__when { font-size: var(--size-meta); }
+.ncard__when--running { color: var(--tx-running); } .ncard__when--ok { color: var(--tx-ok); } .ncard__when--error { color: var(--tx-error); }
+.ncard__when--stalled { color: var(--tx-stalled); } .ncard__when--idle { color: var(--s-muted); }
+.ncard__quiet { color: var(--tx-stalled); }
+.ncard__task { display: grid; gap: 4px; padding: 6px 9px; border-radius: 7px; background: color-mix(in srgb, var(--s-tip-fg) 7%, transparent); }
+.ncard__label { font-size: var(--size-meta); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--s-muted); }
+.ncard__text { font-size: calc(var(--size) - 0.5px); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9.5em; overflow: hidden; }
 body.vscode-high-contrast .fcard, body.vscode-high-contrast-light .fcard { background: var(--s-tip-bg); backdrop-filter: none; border-color: var(--s-tip-border); }
 
 /* ─── the live layer (D19): running things sparkle and shimmer; halos on live glyphs ─── */

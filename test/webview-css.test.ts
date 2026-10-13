@@ -225,3 +225,52 @@ describe('Session View rail (D23)', () => {
     expect(css).toMatch(/\.row__meta-text \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*white-space: nowrap;[^}]*text-overflow: ellipsis;/);
   });
 });
+
+describe('Session View row details (D25)', () => {
+  const css = sheets[2]![1];
+  const src = readFileSync(join(dir, 'session/main.ts'), 'utf8');
+  it('a running row whose transcript has gone quiet shows its elapsed time in the stalled colour (the card says how long), and pointing at a row or a lane lights the other — without ever repainting the selected one', () => {
+    expect(css).toMatch(/\.row__since--quiet \{ color: var\(--tx-stalled\); \}/);
+    expect(css).toMatch(/\.row\.echo:not\(\[aria-current="true"\]\) \{ background: var\(--s-hover\); \}/);
+    expect(css).toMatch(/\.tl-hit\.echo:not\(\.tl-hit--sel\) \{ fill: color-mix\(in srgb, var\(--s-fg-editor\) 5%, transparent\); \}/);
+  });
+  it('the timeline marks a workflow with the IDE\'s own glyph, and an idle band answers a hover even when its label found no room', () => {
+    expect(css).toMatch(/\.tl-glyph \{[^}]*font: 12px codicon;/);
+    expect(css).toMatch(/\.tl-gap-hit \{ fill: transparent; \}/);
+    expect(src).toContain("gl.textContent = '\\uebb9'");                      // codicon type-hierarchy, as an SVG text node (an SVG cannot use the font's CSS classes)
+  });
+  it('the pane\'s Task heading wears a small badge for who wrote it — the harness frame no longer sits in the text', () => {
+    expect(css).toMatch(/\.sec__badge \{[^}]*text-transform: none;/);
+  });
+  it('a group\'s header line is cut with an ellipsis, not wrapped — the wall-clock is the first thing to go — and the whole of it is the tooltip', () => {
+    expect(css).toMatch(/\.grp__meta \{[^}]*white-space: nowrap;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
+    expect(src).toMatch(/class: 'grp__meta', title: /);
+  });
+  it('a name that is verb:subject shrinks its verb first, so eight rows of "understand:…" stay eight different rows', () => {
+    expect(css).toMatch(/\.row__verb \{[^}]*flex: 0 1 auto;[^}]*min-width: 1\.2em;[^}]*text-overflow: ellipsis;/);
+    // the subject never flex-shrinks — a proportional share, however small, would cost it its last letters to an ellipsis — and is capped at what the verb's stub leaves
+    expect(css).toMatch(/\.row__subject \{[^}]*flex: 0 0 auto;[^}]*max-width: calc\(100% - 1\.2em\);[^}]*text-overflow: ellipsis;/);
+    expect(src).toMatch(/splitLabel\(n\.label\)/);
+    expect(src).toMatch(/fitLabel\(name, max\)/);
+  });
+  it('a click on a row quiets its card until the pointer leaves it, and keyboard focus — not the focus a click leaves — opens it', () => {
+    expect(src).toMatch(/quietRow = row \? row\.dataset\.id/);
+    expect(src).toMatch(/if \(row\) clearTimeout\(showT\);/);                 // the pause that began before the click must not fire after it
+    expect(src).toMatch(/if \(row\.dataset\.id === quietRow\) return;/);       // and no path — a timer, a rebuild, a focus — opens the card of the row you just clicked
+    expect(src).toMatch(/if \(el\) quietRow = null;/);                         // only another row or file name ends the quiet, not the boundary events a rebuild fires
+    expect(src).toMatch(/isRow\(el\) && el\.dataset\.id === quietRow/);
+    expect(src).toMatch(/!isRow\(el\) \|\| el\.matches\(':focus-visible'\)/);
+  });
+  it('a row\'s hover card is the file card with other contents: a status-coloured line, a quiet note, and the task in a block cut at about nine lines', () => {
+    expect(css).toMatch(/\.ncard__when--ok \{ color: var\(--tx-ok\); \}/);
+    expect(css).toMatch(/\.ncard__quiet \{ color: var\(--tx-stalled\); \}/);
+    expect(css).toMatch(/\.ncard__text \{[^}]*white-space: pre-wrap;[^}]*max-height: 9\.5em;[^}]*overflow: hidden;/);
+  });
+  it('the card opens after a short pause on a rail row, beside the rail, and follows the row through a rebuild — a lane tooltip lives on the lane\'s hit area, since its label takes no pointer', () => {
+    expect(src).toMatch(/closest<HTMLElement>\('\.fp, \.list \.row'\)/);
+    expect(src).toMatch(/isRow\(el\) \? 320 : 260/);
+    expect(src).toMatch(/echo\(echoId\); refreshNodeCard\(\);/);
+    expect(src).toMatch(/tip\.textContent = laneTip\(n, now\); hit\.append\(tip\)/);
+    expect(src).not.toMatch(/nodeMeta/);                                      // the native row tooltip the card replaces
+  });
+});

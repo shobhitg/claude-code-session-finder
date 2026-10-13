@@ -4,7 +4,7 @@
  */
 import type { GraphNode, NodeKind, NodeStatus, SessionGraph } from '../../core/agents.js';
 import { IDLE_MS } from '../../core/agents.js';
-import type { NowStep, Overview } from '../../core/transcript.js';
+import type { FrameKind, NowStep, Overview } from '../../core/transcript.js';
 import { fmtDuration } from '../model.js';
 
 export function statusIcon(kind: NodeKind, status: NodeStatus, reducedMotion = false): string {
@@ -111,6 +111,93 @@ export function listModel(g: SessionGraph): ListEntry[] {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------- what a row says (D25): only what was recorded, never a sum
+
+const sameDay = (a: number, b: number): boolean => new Date(a).toDateString() === new Date(b).toDateString();
+const runTime = (n: GraphNode): number | undefined => n.durationMs ?? (n.endTs && n.spawnTs ? n.endTs - n.spawnTs : undefined);
+
+/**
+ * A row's second line: phase or agent type, how long, then tokens and tool calls — only when Claude Code recorded them,
+ * which for a workflow agent it does not — and "background". Most useful first, so a narrow rail's ellipsis cuts the least.
+ */
+export function rowMeta(n: GraphNode): string {
+  const ran = runTime(n);
+  return [
+    n.kind === 'failed-spawn' ? 'spawn failed' : n.phase ?? (n.subagentType && n.subagentType !== 'general-purpose' ? n.subagentType : ''),
+    ran ? fmtDuration(ran) : isLive(n.status) ? 'running' : '',
+    n.totalTokens ? `${fmtTokens(n.totalTokens)} tok` : '',
+    n.toolUses ? `${n.toolUses} ${n.toolUses === 1 ? 'tool' : 'tools'}` : '',
+    n.background ? 'background' : '',
+  ].filter(Boolean).join(' · ');
+}
+
+/** "09:16–09:20", "Oct 8 09:14–now": the day only when it is not today (or the end is on another day). */
+function clockRange(n: GraphNode, now: number): string {
+  if (n.spawnTs === undefined) return '';
+  const live = isLive(n.status), end = n.endTs ?? (live ? now : undefined);
+  const start = fmtWhen(n.spawnTs, !sameDay(n.spawnTs, now));
+  return live || end === undefined ? `${start}–now` : `${start}–${fmtWhen(end, !sameDay(n.spawnTs, end))}`;
+}
+const nameOf = (n: GraphNode): string => n.tag ? `${n.label} · ${n.tag}` : n.label;
+
+/** A timeline lane's tooltip: the real times and duration — the axis is not to scale (D24), so this is where they are. */
+export function laneTip(n: GraphNode, now: number): string {
+  const ran = isLive(n.status) ? (n.spawnTs !== undefined ? `running ${fmtDuration(now - n.spawnTs)}` : '') : (runTime(n) ? fmtDuration(runTime(n)!) : '');
+  return [nameOf(n), n.phase, clockRange(n, now), ran].filter(Boolean).join(' · ');
+}
+
+/** Where a prompt came from, in a few words, for the Task badge and the transcript (the harness frames say it at length). */
+export const frameNote = (k: FrameKind): string => k === 'request' ? 'your request, relayed' : k === 'computed' ? 'computed by the workflow' : 'workflow harness';
+
+/** "review:timeline-model" → verb "review", subject "timeline-model". Workflow scripts name agents verb:subject, and within a group the verb is shared, so the subject is what tells rows apart. */
+export function splitLabel(label: string): { verb: string; subject: string } | undefined {
+  const m = /^([A-Za-z][\w-]{0,15}):(\S.*)$/.exec(label);
+  return m ? { verb: m[1]!, subject: m[2]! } : undefined;
+}
+/** A label cut to `max` characters, the shared verb first — "under…:editor" — so the subject survives; any other label simply ends in an ellipsis. */
+export function fitLabel(label: string, max: number): string {
+  if (label.length <= max) return label;
+  const p = splitLabel(label);
+  if (p && p.subject.length + 3 <= max) return `${p.verb.slice(0, max - p.subject.length - 2)}…:${p.subject}`;
+  return `${label.slice(0, max - 1)}…`;
+}
+
+export interface NodeCard { title: string; sub: string; when: string; counts: string; tone: 'running' | 'ok' | 'error' | 'stalled' | 'idle'; error?: string; quiet?: string }
+/** A running agent whose transcript has not changed for this long is called quiet. */
+export const QUIET_MS = 45_000;
+const STATUS_WORD: Record<NodeStatus, string> = { running: 'running', launched: 'starting', completed: 'completed', failed: 'failed', stopped: 'stopped', unknown: '' };
+const TONE: Record<NodeStatus, NodeCard['tone']> = { running: 'running', launched: 'running', completed: 'ok', failed: 'error', stopped: 'stalled', unknown: 'idle' };
+/** What a rail row's hover card says before its task arrives — every field recorded as it is, nothing summed. */
+export function nodeCard(n: GraphNode, now: number): NodeCard {
+  const live = isLive(n.status), ran = runTime(n);
+  const when = live
+    ? [`${STATUS_WORD[n.status]}${n.spawnTs !== undefined && n.status === 'running' ? ` ${fmtDuration(now - n.spawnTs)}` : ''}`, n.spawnTs !== undefined ? `since ${fmtWhen(n.spawnTs, !sameDay(n.spawnTs, now))}` : ''].filter(Boolean).join(' · ')
+    : [STATUS_WORD[n.status], clockRange(n, now), ran ? fmtDuration(ran) : ''].filter(Boolean).join(' · ');
+  const counts = [n.totalTokens ? `${fmtTokens(n.totalTokens)} tok` : '', n.toolUses ? `${n.toolUses} ${n.toolUses === 1 ? 'tool' : 'tools'}` : ''].filter(Boolean).join(' · ');
+  const sub = [n.phase, n.model && n.kind !== 'session' ? n.model.replace(/^claude-/, '') : '', n.subagentType && n.subagentType !== 'general-purpose' ? n.subagentType : '', n.background ? 'background' : ''].filter(Boolean).join(' · ');
+  const card: NodeCard = { title: nameOf(n), sub, when, counts, tone: TONE[n.status] };
+  if (n.error) card.error = n.error;
+  if (live && n.lastTs !== undefined && now - n.lastTs >= QUIET_MS) card.quiet = `quiet ${fmtDuration(now - n.lastTs)}`;
+  return card;
+}
+
+/** How long a group's run lasted, from its first agent's start to its last one's end (or now, while one still runs). */
+function groupWall(g: SessionGraph, rows: ListRow[], now: number): number | undefined {
+  let lo = Infinity, hi = -Infinity;
+  for (const r of rows) {
+    const n = g.nodes[r.id]; if (!n?.spawnTs) continue;
+    lo = Math.min(lo, n.spawnTs); hi = Math.max(hi, n.endTs ?? (isLive(n.status) ? now : n.spawnTs));
+  }
+  return lo === Infinity ? undefined : Math.max(0, hi - lo);
+}
+/** A group's header line: how many agents, how many are running or failed, how long the whole run took — or that none were recorded. */
+export function groupMeta(g: SessionGraph, e: Extract<ListEntry, { kind: 'group' }>, now: number): string {
+  if (!e.rows.length) return 'no agents recorded';
+  const counts = (['running', 'launched', 'failed', 'stopped'] as NodeStatus[]).filter(s => e.counts[s]).map(s => `${e.counts[s]} ${s === 'launched' ? 'starting' : s}`);
+  const wall = groupWall(g, e.rows, now);
+  return [`${e.rows.length} ${e.rows.length === 1 ? 'agent' : 'agents'}`, ...counts, wall ? fmtDuration(wall) : ''].filter(Boolean).join(' · ');
 }
 
 // ---------------------------------------------------------------- the agent rail's width (D23)

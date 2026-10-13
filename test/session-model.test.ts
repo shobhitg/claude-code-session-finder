@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statusIcon, iconClasses, fmtTokens, nodeMeta, toolIcon, modelChip, listModel, threadLayout, intervalWidth, TICK_CHAR_PX, railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, validRail, validTlVh, findPaths, pathOfCode,
+import { statusIcon, iconClasses, fmtTokens, nodeMeta, toolIcon, modelChip, listModel, threadLayout, intervalWidth, TICK_CHAR_PX, railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, validRail, validTlVh, rowMeta, laneTip, nodeCard, groupMeta, frameNote, QUIET_MS, splitLabel, fitLabel, findPaths, pathOfCode,
          parseInline, parseMarkdown, looksJson, recognise, defaultView, JSON_BIG, nowStep, plainLine } from '../src/webview/session/model.js';
 import { fmtDuration } from '../src/webview/model.js';
 import type { ThreadTick } from '../src/webview/session/model.js';
@@ -257,6 +257,63 @@ describe('what the host will remember of the dividers (D23)', () => {
     for (const v of [NaN, Infinity, -Infinity, '200', null, undefined, {}, 0, -5, 99, 5000]) expect(validRail(v), String(v)).toBe(false);
     for (const v of [NaN, Infinity, '40', null, undefined, 0, -1, 0.2, 100, 250]) expect(validTlVh(v), String(v)).toBe(false);
     expect(validRail(140)).toBe(true); expect(validTlVh(34)).toBe(true);
+  });
+});
+
+describe('what a row says (D25) — only what was recorded, never a sum', () => {
+  it('line 2 of a row: phase or agent type, how long, then tokens and tool calls only when Claude Code recorded them — most useful first, so an ellipsis cuts the least', () => {
+    expect(rowMeta(node({ phase: 'Review', durationMs: 4 * M }))).toBe('Review · 4m');
+    expect(rowMeta(node({ subagentType: 'Explore', durationMs: 144_440, totalTokens: 64_607, toolUses: 22, background: true }))).toBe('Explore · 2m · 65k tok · 22 tools · background');
+    expect(rowMeta(node({ spawnTs: T0, endTs: T0 + 40_000 }))).toBe('40s');                           // no recorded duration: the stamps
+    expect(rowMeta(node({ status: 'running' }))).toBe('running');
+    expect(rowMeta(node({ kind: 'failed-spawn', status: 'failed' }))).toBe('spawn failed');
+    expect(rowMeta(node({ subagentType: 'general-purpose', durationMs: 11_000, toolUses: 1, totalTokens: 0 }))).toBe('11s · 1 tool');   // the default type is not news; zero is not recorded
+  });
+  const now = T0 + 15 * H + 30 * M;
+  it('a timeline lane\'s tooltip gives the real times, since the axis is not to scale', () => {
+    expect(laneTip(node({ label: 'review:copy', phase: 'Review', spawnTs: T0 + 2 * M, endTs: T0 + 6 * M, durationMs: 4 * M }), T0 + 10 * M)).toBe('review:copy · Review · 09:16–09:20 · 4m');
+    expect(laneTip(node({ label: 'x', tag: 'ab12', status: 'running', spawnTs: now - 3 * M }), now)).toBe('x · ab12 · 00:41–now · running 3m');
+    expect(laneTip(node({ label: 'old', status: 'running', spawnTs: T0 }), now)).toBe('old · Oct 8 09:14–now · running 15h 30m');          // not today: the day
+    expect(laneTip(node({ label: 'span', status: 'completed', spawnTs: T0, endTs: now }), now + 3 * H)).toBe('span · Oct 8 09:14–Oct 9 00:44 · 15h 30m');
+    expect(laneTip(node({ label: 'bare', status: 'launched' }), now)).toBe('bare');
+  });
+  it('a row\'s hover card before the task arrives: title, what kind, when, what was recorded — and how long a running one has been quiet', () => {
+    const c = nodeCard(node({ label: 'review:copy', tag: 'ab12', phase: 'Review', model: 'claude-sonnet-5-5', subagentType: 'Explore', background: true, status: 'completed',
+                              spawnTs: T0 + 2 * M, endTs: T0 + 6 * M, durationMs: 4 * M, totalTokens: 64_607, toolUses: 22 }), T0 + 10 * M);
+    expect(c).toEqual({ title: 'review:copy · ab12', sub: 'Review · sonnet-5-5 · Explore · background', when: 'completed · 09:16–09:20 · 4m', counts: '65k tok · 22 tools', tone: 'ok' });
+    const live = nodeCard(node({ label: 'w', status: 'running', spawnTs: now - 3 * M, lastTs: now - 70_000 }), now);
+    expect(live).toMatchObject({ tone: 'running', when: 'running 3m · since 00:41', quiet: 'quiet 1m' });
+    expect(nodeCard(node({ label: 'w', status: 'running', spawnTs: now - 3 * M, lastTs: now - 5_000 }), now)).not.toHaveProperty('quiet');   // under 45 s is not worth saying
+    expect(nodeCard(node({ label: 'dead', kind: 'failed-spawn', status: 'failed', error: 'denied by a hook' }), now)).toMatchObject({ tone: 'error', error: 'denied by a hook', counts: '' });
+    expect(nodeCard(node({ label: 'halt', status: 'stopped', spawnTs: T0, endTs: T0 + 5 * M }), now).tone).toBe('stalled');
+  });
+  it('says in a few words where a harness-framed prompt came from, and when a running agent counts as quiet', () => {
+    expect([frameNote('request'), frameNote('computed'), frameNote('other')]).toEqual(['your request, relayed', 'computed by the workflow', 'workflow harness']);
+    expect(QUIET_MS).toBe(45_000);
+  });
+  it('splits the harness\'s verb:subject names — and nothing else — so a row can keep the part that tells it apart', () => {
+    expect(splitLabel('review:timeline-model')).toEqual({ verb: 'review', subject: 'timeline-model' });
+    expect(splitLabel('owners:#20618')).toEqual({ verb: 'owners', subject: '#20618' });
+    expect(splitLabel('impl:A-storage companions')).toEqual({ verb: 'impl', subject: 'A-storage companions' });
+    for (const no of ['Audit module 1', 'Fix: the bug', ':lonely', 'verb:', 'a very long verb name:x', 'wf_cd097ed8-75f', '[Workflow harness — user request] The harness relays']) expect(splitLabel(no), no).toBeUndefined();
+  });
+  it('fits a label to a width by cutting the shared verb first, so the subject survives — and an ordinary label simply ends in an ellipsis', () => {
+    expect(fitLabel('understand:editor', 20)).toBe('understand:editor');
+    expect(fitLabel('understand:editor', 13)).toBe('under…:editor');
+    expect(fitLabel('understand:editor', 13).length).toBe(13);
+    expect(fitLabel('review:a-very-long-subject-name', 12)).toBe('review:a-ve…');      // no room even for a stub of the verb: plain truncation
+    expect(fitLabel('Audit module 1 for the deck', 10)).toBe('Audit mod…');
+    expect(fitLabel('x', 1)).toBe('x');
+  });
+  it('a group\'s header: how many agents, how many are running or failed, how long the whole run took — or that none were recorded', () => {
+    const g = graph();
+    const group = listModel(g)[2]!;
+    expect(group.kind === 'group' && groupMeta(g, group, now)).toBe('2 agents · 1 failed · 14m');
+    expect(groupMeta(g, { kind: 'group', id: 'w', rows: [], counts: {} }, now)).toBe('no agents recorded');
+    const w1: GraphNode = { ...g.nodes.w1!, status: 'running' }; delete w1.endTs;               // still going: the run lasts until now
+    const live: SessionGraph = { ...g, nodes: { ...g.nodes, w1 } };
+    const running = listModel(live)[2]!;
+    expect(running.kind === 'group' && groupMeta(live, running, T0 + 62 * M)).toBe('2 agents · 1 running · 1 failed · 16m');
   });
 });
 

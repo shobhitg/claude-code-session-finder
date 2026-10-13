@@ -4,9 +4,10 @@
 // messages. A live session is re-sent every 2 s: the view is rebuilt but keeps what you had open, where you
 // had scrolled and which tab you were on; between snapshots only the elapsed times tick.
 import type { SessionGraph, GraphNode, NodeStatus } from '../../core/agents.js';
-import type { Turn, Item, ToolCall, Overview, Step, NowStep } from '../../core/transcript.js';
+import type { Turn, Item, ToolCall, Overview, Step, NowStep, FrameKind } from '../../core/transcript.js';
 import { fmtDuration } from '../model.js';
-import { iconClasses, statusIcon, fmtClock, fmtTokens, toolIcon, modelChip, listModel, threadLayout, nodeMeta, isLive, nowStep, plainLine,
+import { iconClasses, statusIcon, fmtClock, fmtTokens, toolIcon, modelChip, listModel, threadLayout, isLive, nowStep, plainLine,
+         rowMeta, laneTip, nodeCard, groupMeta, frameNote, QUIET_MS, splitLabel, fitLabel,
          railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, parseMarkdown, parseInline, findPaths, looksJson, recognise, defaultView,
          type MdBlock, type Inline, type JsonView, type Findings } from './model.js';
 
@@ -22,6 +23,7 @@ type Inbound =
   | { type: 'init' | 'update'; sessionId: string; title: string; graph: SessionGraph; now: number; live: boolean; page?: Page; jsonViews?: Record<string, JsonView>; rail?: number; tl?: number }
   | { type: 'page'; page: Page; now: number }
   | { type: 'fileInfo'; key: string; info: FileInfo }
+  | { type: 'task'; nodeId: string; text?: string; frame?: FrameKind }
   | { type: 'error'; message: string };
 type Tab = 'overview' | 'transcript';
 interface UiState { tab: Tab; closed: string[]; rail?: number; tl?: number }   // rail: the agent list's width in px, tl: the timeline's height in vh — once you have dragged their dividers (D23)
@@ -139,16 +141,22 @@ function renderTimeline(width: number): SVGSVGElement {
   const charW = 6.4;
   for (const l of L.lanes) {
     const n = g.nodes[l.id]!;
-    const hit = svg('rect', { class: `tl-hit${l.id === selected ? ' tl-hit--sel' : ''}`, x: 0, y: l.y - lane / 2, width, height: lane, tabindex: 0, role: 'button', 'aria-label': n.label });
+    const hit = svg('rect', { class: `tl-hit${l.id === selected ? ' tl-hit--sel' : ''}`, x: 0, y: l.y - lane / 2, width, height: lane, tabindex: 0, role: 'button', 'aria-label': n.label, 'data-id': l.id });
+    const tip = svg('title'); tip.textContent = laneTip(n, now); hit.append(tip);        // the real times — the axis is not to scale (D24); the label text takes no pointer, so the tooltip lives here
     hit.addEventListener('click', () => select(l.id));
     hit.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(l.id); } });
     el.append(hit);
-    const max = Math.max(6, Math.floor((labelW - 16 - l.depth * 12) / charW));
+    const mark = l.kind === 'workflow' ? 13 : 0;                                       // a workflow wears its glyph (D25)
+    const max = Math.max(6, Math.floor((labelW - 16 - l.depth * 12 - mark) / charW));
     const name = n.tag ? `${n.label} · ${n.tag}` : n.label;
-    const t = svg('text', { class: `tl-t${l.depth === 0 ? ' tl-t--root' : ''}`, x: 10 + l.depth * 12, y: l.y + 4 });
-    t.textContent = name.length > max ? `${name.slice(0, max - 1)}…` : name;
-    const tip = svg('title'); tip.textContent = `${name} · ${nodeMeta(n, now) || n.status}`; t.append(tip);
+    if (mark) { const gl = svg('text', { class: 'tl-glyph', x: 10 + l.depth * 12, y: l.y + 4 }); gl.textContent = '\uebb9'; el.append(gl); }
+    const t = svg('text', { class: `tl-t${l.depth === 0 ? ' tl-t--root' : ''}`, x: 10 + l.depth * 12 + mark, y: l.y + 4 });
+    t.textContent = fitLabel(name, max);
     el.append(t);
+  }
+  for (const gp of L.gaps) {                                                           // an idle band says how long, even when its label found no room
+    const gh = svg('rect', { class: 'tl-gap-hit', x: gp.x + 4, y: top - 4, width: gp.w - 8, height: L.height - top + 4 });
+    const tip = svg('title'); tip.textContent = `${fmtDuration(gp.idleMs)} idle`; gh.append(tip); el.append(gh);
   }
   for (const l of L.lanes) {
     if (!l.parent) continue; const p = byId.get(l.parent); if (!p) continue;
@@ -173,21 +181,27 @@ function renderTimeline(width: number): SVGSVGElement {
 
 function nowLine(n: GraphNode): HTMLElement | null {
   if (!n.now) return null;
-  return h('span', { class: 'row__now' }, icon(toolIcon(n.now.tool)), h('span', { class: 'shim row__now-what' }, `${n.now.tool} · ${n.now.summary}`), since(n.now.since, '', 'row__since'));
+  const quiet = n.lastTs !== undefined && hostNow() - n.lastTs >= QUIET_MS;                    // its file's modified time: nothing was scanned to know
+  return h('span', { class: 'row__now' }, icon(toolIcon(n.now.tool)), h('span', { class: 'shim row__now-what' }, `${n.now.tool} · ${n.now.summary}`), since(n.now.since, '', quiet ? 'row__since row__since--quiet' : 'row__since'));
 }
 function spanBar(n: GraphNode): HTMLElement {
   const g = graph!; const r = g.nodes[g.root]!; const t0 = r.spawnTs ?? n.spawnTs ?? 0; const t1 = Math.max(hostNow(), r.endTs ?? 0); const span = Math.max(1, t1 - t0);
   const s = n.spawnTs ?? t0; const e = n.endTs ?? (isLive(n.status) ? hostNow() : s);
   return h('span', { class: 'span', 'aria-hidden': 'true' }, h('i', { class: isLive(n.status) ? 'live' : '', style: `left:${((s - t0) / span * 100).toFixed(1)}%;width:${Math.max(1.5, (e - s) / span * 100).toFixed(1)}%` }));
 }
+/** A row's name. verb:subject names (D25) keep the subject whole and let the shared verb give way — see .row__verb. */
+function rowName(n: GraphNode): HTMLElement {
+  const tag = n.tag ? h('span', { class: 'row__tag' }, n.tag) : null, p = splitLabel(n.label);
+  return p ? h('span', { class: 'row__name row__name--split' }, h('span', { class: 'row__verb' }, p.verb), h('span', { class: 'row__subject' }, `:${p.subject}`), tag)
+           : h('span', { class: 'row__name' }, n.label, tag);
+}
 function listRow(id: string, depth: number): HTMLElement {
   const n = graph!.nodes[id]!;
-  const ran = n.durationMs ?? (n.endTs && n.spawnTs ? n.endTs - n.spawnTs : undefined);
-  const text = [n.kind === 'failed-spawn' ? 'spawn failed' : n.subagentType && n.subagentType !== 'general-purpose' ? n.subagentType : '', ran ? fmtDuration(ran) : isLive(n.status) ? 'running' : '', n.background ? 'background' : ''].filter(Boolean).join(' · ');
+  const text = rowMeta(n);
   const second = isLive(n.status) && n.now ? nowLine(n)
     : h('span', { class: 'row__meta' }, text ? h('span', { class: 'row__meta-text' }, text) : null, n.kind !== 'session' ? spanBar(n) : null);
-  const b = h('button', { class: `row ${statusClass(n.status)} ${n.kind === 'session' ? 'row--root' : 'row--sub'}`, 'data-id': id, style: `--depth:${depth}`, title: `${n.label}${n.tag ? ` · ${n.tag}` : ''} — ${nodeMeta(n, hostNow()) || n.status}`, ...(id === selected ? { 'aria-current': 'true' } : {}) },
-    statusGlyph(n, 'row__icon'), h('span', { class: 'row__name' }, n.label, n.tag ? h('span', { class: 'row__tag' }, n.tag) : null), chip(n.model) ?? h('span'), second);
+  const b = h('button', { class: `row ${statusClass(n.status)} ${n.kind === 'session' ? 'row--root' : 'row--sub'}`, 'data-id': id, style: `--depth:${depth}`, ...(id === selected ? { 'aria-current': 'true' } : {}) },
+    statusGlyph(n, 'row__icon'), rowName(n), chip(n.model) ?? h('span'), second);
   b.addEventListener('click', () => select(id));
   return b;
 }
@@ -196,9 +210,9 @@ function renderList(): HTMLElement {
   for (const e of listModel(g)) {
     if (e.kind === 'row') { nav.append(listRow(e.id, e.depth)); continue; }
     const w = g.nodes[e.id]!; const closed = ui.closed.includes(e.id);
-    const counts = [`${e.rows.length} ${e.rows.length === 1 ? 'agent' : 'agents'}`, ...(['running', 'launched', 'failed', 'stopped'] as NodeStatus[]).filter(s => e.counts[s]).map(s => `${e.counts[s]} ${s === 'launched' ? 'starting' : s}`)];
+    const meta = groupMeta(g, e, hostNow());
     const head = h('button', { class: `grp__head ${statusClass(w.status)}`, 'aria-expanded': String(!closed), 'data-id': e.id }, icon('chevron-down', 'grp__chev'), icon('type-hierarchy', 'grp__icon'),
-      h('span', { class: 'grp__name' }, w.label), h('span', { class: 'grp__meta' }, counts.join(' · ')));
+      h('span', { class: 'grp__name' }, w.label), h('span', { class: 'grp__meta', title: `${w.label} — ${meta}` }, meta));
     head.addEventListener('click', ev => { if ((ev.target as HTMLElement).closest('.grp__chev')) { toggleGroup(e.id); return; } select(e.id); });
     head.addEventListener('dblclick', () => toggleGroup(e.id));
     const strip = h('div', { class: 'grp__strip', 'aria-hidden': 'true' }, ...e.rows.map(r => h('i', { class: statusClass(g.nodes[r.id]!.status) })));
@@ -403,8 +417,8 @@ function renderTurn(t: Turn, cwdFallback: string | undefined): HTMLElement {
   const cwd = t.cwd ?? cwdFallback;
   const art = h('article', { class: `turn turn--${t.promptKind}` });
   const dur = t.durationMs ?? (t.endTs > t.startTs ? t.endTs - t.startTs : 0);
-  const meta = [fmtClock(t.startTs), dur ? fmtDuration(dur) : undefined, t.outputTokens ? `${fmtTokens(t.outputTokens)} out` : undefined].filter(Boolean).join(' · ');
-  const who = t.promptKind === 'notification' ? 'background agent' : t.promptKind === 'meta' ? 'context' : t.promptKind === 'command' ? 'command' : t.index === 0 && selected !== graph?.root ? 'task' : 'you';
+  const meta = [fmtClock(t.startTs), t.frame ? frameNote(t.frame) : undefined, dur ? fmtDuration(dur) : undefined, t.outputTokens ? `${fmtTokens(t.outputTokens)} out` : undefined].filter(Boolean).join(' · ');
+  const who = t.promptKind === 'notification' ? 'background agent' : t.promptKind === 'meta' ? 'context' : t.promptKind === 'command' ? 'command' : t.frame || (t.index === 0 && selected !== graph?.root) ? 'task' : 'you';
   art.append(h('div', { class: 'turn__who' }, who, h('span', {}, meta)));
   if (t.prompt) art.append(t.promptKind === 'command' ? h('div', { class: 'codeblock codeblock--cmd' }, h('pre', {}, t.prompt)) : markdown(t.prompt, cwd, 'prompt'));
   for (const el of renderItems(t.items, cwd, `t${t.index}`)) art.append(el);
@@ -454,7 +468,9 @@ function renderOverview(n: GraphNode): HTMLElement {
     const show = (): void => { const all = taskOpen.has(n.id); task.classList.toggle('clamp', !all); more.textContent = all ? 'Show less' : 'Show all'; };
     more.addEventListener('click', () => { if (!taskOpen.delete(n.id)) taskOpen.add(n.id); show(); });
     show();
-    box.append(section(n.kind === 'session' ? 'First prompt' : 'Task', task, o.task.split('\n').length > 6 || o.task.length > 600 ? more : null));
+    const sec = section(n.kind === 'session' ? 'First prompt' : 'Task', task, o.task.split('\n').length > 6 || o.task.length > 600 ? more : null);
+    if (o.taskFrame) sec.querySelector('.sec__h')?.append(h('span', { class: 'sec__badge' }, frameNote(o.taskFrame)));   // the harness's frame said who wrote it; the text no longer carries the frame (D25)
+    box.append(sec);
   }
   if (isLive(n.status)) {
     const step = nowStep(n, o);
@@ -615,6 +631,7 @@ function render(force = false): void {
   for (const d of Array.from(root.querySelectorAll<HTMLDetailsElement>('details[data-k]'))) if (keep.open.has(d.dataset.k!)) d.open = true;
   (root.querySelector('.timeline') as HTMLElement).scrollTop = keep.tl;
   (root.querySelector('.list') as HTMLElement).scrollTop = keep.list;
+  echo(echoId); refreshNodeCard();
   const body = root.querySelector('.pane__body') as HTMLElement;
   if (keep.pageKey === pane.dataset.page) body.scrollTop = live && stick && ui.tab === 'transcript' ? body.scrollHeight : bodyTop;
   else if (ui.tab === 'transcript') body.scrollTop = body.scrollHeight;
@@ -660,23 +677,86 @@ function place(el: HTMLElement): void {
   card.style.top = `${below + hgt > window.innerHeight - 8 && r.top - hgt - 6 > 8 ? r.top - hgt - 6 : below}px`;
 }
 function openCard(el: HTMLElement): void {
+  card.classList.remove('ncard'); card.setAttribute('aria-label', 'File details');
   cardFor = el; const k = keyOf(el); const info = infos.get(k);
   if (info) { fillCard(el, info); place(el); return; }
   card.replaceChildren(h('div', { class: 'fcard__head' }, icon('file'), h('b', {}, el.dataset.path!.split('/').pop() ?? '')), h('div', { class: 'fcard__why' }, 'Looking…')); place(el);
   post({ type: 'fileInfo', key: k, path: el.dataset.path, ...(el.dataset.line ? { line: Number(el.dataset.line) } : {}), ...(el.dataset.cwd ? { cwd: el.dataset.cwd } : {}) });
 }
-const closeCard = (): void => { card.hidden = true; cardFor = null; };
+const closeCard = (): void => { card.hidden = true; cardFor = null; card.classList.remove('ncard'); card.setAttribute('aria-label', 'File details'); };
+
+// ---------------------------------------------------------------- a rail row's hover card (D25): the same card, filled from what was recorded
+
+const tasks = new Map<string, { text: string; frame?: FrameKind } | null>();   // what each node was asked — asked of the host on first hover, then kept; null: not there (yet)
+const taskAt = new Map<string, number>();
+function fillNodeCard(row: HTMLElement): void {
+  const n = graph?.nodes[row.dataset.id ?? '']; if (!n) { closeCard(); return; }
+  const c = nodeCard(n, hostNow()); const t = tasks.get(n.id);
+  card.classList.add('ncard'); card.setAttribute('aria-label', 'Agent details');
+  const parts: Array<Node | null> = [
+    h('div', { class: 'fcard__head' }, h('span', { class: `ncard__glyph ${statusClass(n.status)}` }, statusGlyph(n, '')), h('b', {}, c.title)),
+    c.sub ? h('div', { class: 'ncard__sub' }, c.sub) : null,
+    h('div', { class: `ncard__when ncard__when--${c.tone}` }, c.when, c.quiet ? h('span', { class: 'ncard__quiet' }, ` · ${c.quiet}`) : null),
+    c.counts ? h('div', { class: 'ncard__sub' }, c.counts) : null,
+    c.error ? h('div', { class: 'fcard__why fcard__why--warn' }, c.error) : null,
+    t === undefined ? h('div', { class: 'fcard__why' }, 'Looking…')
+      : t ? h('div', { class: 'ncard__task' }, h('span', { class: 'ncard__label' }, 'Task', t.frame ? ` · ${frameNote(t.frame)}` : ''), h('div', { class: 'ncard__text' }, t.text)) : null,
+  ];
+  card.replaceChildren(...parts.filter((x): x is Node => x !== null));
+}
+/** Beside the rail, level with the row, so the neighbouring rows stay visible; below the row, like a file card, when the rail leaves no room. */
+function placeBeside(row: HTMLElement): void {
+  const list = root.querySelector<HTMLElement>('.list'); card.hidden = false;
+  const left = (list?.getBoundingClientRect().right ?? 0) + 8, w = Math.min(380, window.innerWidth - left - 8);
+  if (!list || w < 240) { place(row); return; }
+  card.style.width = `${w}px`; card.style.left = `${left}px`;
+  card.style.top = `${Math.max(8, Math.min(row.getBoundingClientRect().top, window.innerHeight - card.offsetHeight - 8))}px`;
+}
+function openNodeCard(row: HTMLElement): void {
+  if (row.dataset.id === quietRow) return;                          // the row you just clicked: no path — a timer, a rebuild, a focus — opens its card
+  cardFor = row; const id = row.dataset.id!, t = tasks.get(id);
+  if (t === undefined || (t === null && Date.now() - (taskAt.get(id) ?? 0) > 5_000)) { taskAt.set(id, Date.now()); post({ type: 'task', nodeId: id }); }
+  fillNodeCard(row); placeBeside(row);
+}
+const isRow = (el: HTMLElement | null): el is HTMLElement => !!el?.classList.contains('row');
+/** The rebuild replaced the row the card is for: follow it, with fresh times. */
+function refreshNodeCard(): void {
+  if (card.hidden || !isRow(cardFor)) return;
+  const row = root.querySelector<HTMLElement>(`.list .row[data-id="${CSS.escape(cardFor!.dataset.id!)}"]`);
+  if (row) { cardFor = row; fillNodeCard(row); placeBeside(row); } else closeCard();
+}
+const openAnchor = (el: HTMLElement): void => { if (isRow(el)) openNodeCard(el); else openCard(el); };
+const sameAnchor = (a: HTMLElement | null, b: HTMLElement): boolean => a === b || (isRow(a) && isRow(b) && a!.dataset.id === b.dataset.id);
+
+// ---------------------------------------------------------------- the other half of what you point at (D25)
+
+let quietRow: string | null = null;                              // the row you just clicked: its card waits until the pointer has left it
+let echoId: string | null = null;
+/** A rail row lights its timeline lane, and a lane its row: a class on whatever shares the id — free, and it survives the rebuild (render() re-applies it). */
+function echo(id: string | null): void {
+  echoId = id;
+  for (const el of Array.from(root.querySelectorAll('.echo'))) el.classList.remove('echo');
+  if (id) for (const el of Array.from(root.querySelectorAll(`[data-id="${CSS.escape(id)}"]`))) el.classList.add('echo');
+}
+document.addEventListener('mouseover', e => { const id = (e.target as Element).closest('[data-id]')?.getAttribute('data-id') ?? null; if (id !== echoId) echo(id); });
+document.documentElement.addEventListener('mouseleave', () => echo(null));
+
 const openEl = (el: HTMLElement): void => post({ type: 'openFile', path: el.dataset.path, ...(el.dataset.line ? { line: Number(el.dataset.line) } : {}), ...(el.dataset.cwd ? { cwd: el.dataset.cwd } : {}) });
 document.addEventListener('mouseover', e => {
-  const el = (e.target as HTMLElement).closest<HTMLElement>('.fp');
-  if (el) { clearTimeout(hideT); if (el !== cardFor) { clearTimeout(showT); showT = window.setTimeout(() => openCard(el), 260); } return; }
+  const el = (e.target as HTMLElement).closest<HTMLElement>('.fp, .list .row');
+  if (isRow(el) && el.dataset.id === quietRow) { clearTimeout(showT); return; }
+  if (el) quietRow = null;                                          // another row or file name ends the quiet; the boundary events a rebuild fires do not
+  if (el) { clearTimeout(hideT); if (!sameAnchor(cardFor, el)) { clearTimeout(showT); showT = window.setTimeout(() => openAnchor(el), isRow(el) ? 320 : 260); } return; }
   if ((e.target as HTMLElement).closest('.fcard')) { clearTimeout(hideT); return; }
   clearTimeout(showT); if (!card.hidden) { clearTimeout(hideT); hideT = window.setTimeout(closeCard, 220); }
 });
-document.addEventListener('focusin', e => { const el = (e.target as HTMLElement).closest<HTMLElement>('.fp'); if (el) openCard(el); });
+document.addEventListener('focusin', e => { const el = (e.target as HTMLElement).closest<HTMLElement>('.fp, .list .row'); if (el && (!isRow(el) || el.matches(':focus-visible'))) openAnchor(el); });   // a row's card opens for the keyboard, not for the focus a click leaves
 document.addEventListener('click', e => {
   const el = (e.target as HTMLElement).closest<HTMLElement>('.fp');
   if (el) { e.preventDefault(); e.stopPropagation(); const info = infos.get(keyOf(el)); if (info && !info.found) openCard(el); else openEl(el); return; }
+  const row = (e.target as HTMLElement).closest<HTMLElement>('.list .row');
+  quietRow = row ? row.dataset.id ?? null : null;                   // you have chosen this row: no card over the pane until the pointer has left it
+  if (row) clearTimeout(showT);                                     // and the pause that began before the click must not fire after it
   if (!(e.target as HTMLElement).closest('.fcard')) closeCard();
 }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCard(); });
@@ -689,6 +769,11 @@ window.addEventListener('message', (e: MessageEvent<Inbound>) => {
   const m = e.data;
   if (!m || typeof m !== 'object') return;
   if (m.type === 'error') { root.replaceChildren(h('div', { class: 'empty' }, m.message)); return; }
+  if (m.type === 'task') {
+    tasks.set(m.nodeId, m.text ? { text: m.text, ...(m.frame ? { frame: m.frame } : {}) } : null);
+    if (!card.hidden && isRow(cardFor) && cardFor!.dataset.id === m.nodeId) { fillNodeCard(cardFor!); placeBeside(cardFor!); }
+    return;
+  }
   if (m.type === 'fileInfo') {
     infos.set(m.key, m.info);
     if (cardFor && keyOf(cardFor) === m.key) { fillCard(cardFor, m.info); place(cardFor); }

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Workflow agents have real names.** Almost every workflow agent's row — in the list and in the
+  timeline — said "[Workflow harness — user re…". They now carry the name the workflow's script gave
+  them ("map:matcher", "review:timeline-model"), with its phase on the second line. The detail pane
+  shows the real task, with a note on who wrote it (your request, relayed, or computed by the
+  workflow), and a long name gives up its shared first word before the part that tells it apart.
+- **A row says more, from what was recorded.** Phase, how long it ran and — when Claude Code
+  recorded them — tokens and tool calls; a running agent's time turns amber when its transcript has
+  gone quiet; a workflow's header says how long the whole run took. Nothing is computed.
+- **Hover a row for a card** with its task, times, model and what was recorded. The timeline's lanes
+  now have tooltips with the real start, end and duration (idle bands say how long), pointing at a
+  row lights its lane and the other way round, and a workflow wears a glyph in the timeline.
 - **The agent list is a rail down the left, and you can drag its width.** In a tab beside the
   sidebar the Session View stacked three sections — timeline, agent list, detail — and the detail
   pane, the part you read, got what was left. The list now runs down the left at any usable width

@@ -152,6 +152,8 @@ export type PromptKind = 'user' | 'notification' | 'meta' | 'command';
 export interface Turn {
   index: number; startTs: number; endTs: number;
   promptKind: PromptKind; prompt: string; promptImages: number;
+  /** a workflow harness frame the prompt came in (D25): `prompt` is already the text with the frame taken off */
+  frame?: FrameKind;
   items: Item[];
   model?: string; outputTokens: number; thinkingTokens: number; durationMs?: number;
   /** the folder the session was in during this turn — where a relative file name in it resolves first (D20) */
@@ -182,7 +184,8 @@ export function buildTranscript(recs: Rec[]): Transcript {
   let model: string | undefined;
 
   const open = (t: number, promptKind: PromptKind, prompt: string, promptImages: number): Turn => {
-    cur = { index: turns.length, startTs: t, endTs: t, promptKind, prompt, promptImages, items: [], outputTokens: 0, thinkingTokens: 0 };
+    const f = promptKind === 'user' ? parseHarnessFrame(prompt) : undefined;
+    cur = { index: turns.length, startTs: t, endTs: t, promptKind, prompt: f ? f.text : prompt, promptImages, ...(f ? { frame: f.kind } : {}), items: [], outputTokens: 0, thinkingTokens: 0 };
     turns.push(cur);
     return cur;
   };
@@ -283,17 +286,61 @@ export function buildTranscript(recs: Rec[]): Transcript {
 }
 
 /** The first human prompt in a file — the label for an agent whose spawner is unknown. */
+// ---------------------------------------------------------------- workflow harness frames (D25)
+
+export type FrameKind = 'request' | 'computed' | 'other';
+export interface HarnessFrame { kind: FrameKind; text: string }
+const FRAME_RE = /^\[Workflow harness — ([^\]\n]+)\][^\n]*(?:\n([\s\S]*))?$/;
+/**
+ * The harness wraps what it tells a workflow agent: a one-line header, then the text, every line indented two spaces. For a
+ * "user request" it first relays the user's request — the same for every agent in the run — and sends the script's computed
+ * task in the next message. Returns the frame's kind and the text with the harness's indent taken off.
+ */
+export function parseHarnessFrame(text: string): HarnessFrame | undefined {
+  const m = FRAME_RE.exec(text.trimStart());
+  if (!m) return undefined;
+  const body = (m[2] ?? '').split('\n').map(l => l.replace(/^ {1,2}/, '')).join('\n').trim();
+  return { kind: m[1]!.startsWith('user request') ? 'request' : m[1]!.startsWith('computed task') ? 'computed' : 'other', text: body };
+}
+
+/** The text of a record that is a prompt — not a notification, a command echo or injected context. */
+function promptText(r: Rec): string | undefined {
+  if (r.type !== 'user' || r.isMeta) return undefined;
+  const c = r.message?.content;
+  const text = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b): b is TextBlock => b.type === 'text').map(b => b.text).join('\n') : '';
+  return !text.trim() || isNotification(text) || isLocalCommand(text) ? undefined : text;
+}
+// skip blank lines and markdown headings ("# Question") — the first substantive line labels the agent
+const labelLine = (text: string): string | undefined => text.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'))?.slice(0, 120);
+
+/**
+ * The first line of what the agent was asked. A workflow agent's own task, not the frame around it: a relayed "user request"
+ * is shared by the whole run, so it is the label only when there is nothing else to go on.
+ */
 export function firstPrompt(recs: Rec[]): string | undefined {
+  let relayed: string | undefined;
   for (const r of recs) {
-    if (r.type !== 'user' || r.isMeta) continue;
-    const c = r.message?.content;
-    const text = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b): b is TextBlock => b.type === 'text').map(b => b.text).join('\n') : '';
-    if (!text.trim() || isNotification(text) || isLocalCommand(text)) continue;
-    // skip blank lines and markdown headings ("# Question") — the first substantive line labels the agent
-    const line = text.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
-    if (line) return line.slice(0, 120);
+    const text = promptText(r); if (text === undefined) continue;
+    const f = parseHarnessFrame(text);
+    if (f?.kind === 'request') { relayed ??= labelLine(f.text); continue; }
+    const line = labelLine(f ? f.text : text);
+    if (line) return line;
   }
-  return undefined;
+  return relayed;
+}
+
+/** What an agent was asked, for a hover card: de-framed like `firstPrompt`, blank runs squeezed, cut at `max` with an ellipsis. Reads up to the first prompt only. */
+export function taskExcerpt(recs: Rec[], max = 320): { text: string; frame?: FrameKind } | undefined {
+  const clip = (text: string): string => { const t = text.replace(/\n{3,}/g, '\n\n').trim(); return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t; };
+  let relayed: { text: string; frame: FrameKind } | undefined;
+  for (const r of recs) {
+    const text = promptText(r); if (text === undefined) continue;
+    const f = parseHarnessFrame(text);
+    if (f?.kind === 'request') { relayed ??= { text: clip(f.text), frame: 'request' }; continue; }
+    const body = clip(f ? f.text : text); if (!body) continue;
+    return f ? { text: body, frame: f.kind } : { text: body };
+  }
+  return relayed;
 }
 
 // ---------------------------------------------------------------- what an agent is doing, and has done (D20)
@@ -325,8 +372,10 @@ export function currentStep(recs: Rec[]): NowStep | undefined {
 
 export interface Step { ts: number; tool: string; summary: string; ms?: number; status: 'ok' | 'error' | 'running' }
 export interface Overview {
-  /** what the agent was asked: its first prompt */
+  /** what the agent was asked: its first prompt — for a workflow agent the computed task, not the user request every agent of the run is relayed (D25) */
   task?: string;
+  /** the harness frame `task` came in, if any */
+  taskFrame?: FrameKind;
   /** the latest steps, oldest first; `steps` holds at most `max`, `totalSteps` counts them all */
   steps: Step[]; totalSteps: number;
   /** the last thing it wrote, and — once it has stopped — its answer */
@@ -337,7 +386,8 @@ export interface Overview {
 
 /** The Overview tab of an agent's pane (D20): its task, its steps (tool calls), and the last thing it said. */
 export function overview(t: Transcript, max = 14): Overview {
-  const firstUser = t.turns.find(x => x.promptKind === 'user' && x.prompt.trim());
+  const users = t.turns.filter(x => x.promptKind === 'user' && x.prompt.trim());
+  const firstUser = users.find(x => x.frame === 'computed') ?? users[0];
   const steps: Step[] = []; let lastText: string | undefined; let running: Step | undefined;
   for (const turn of t.turns) for (const it of turn.items) {
     if (it.kind === 'text' && it.text.trim()) lastText = it.text;
@@ -350,7 +400,7 @@ export function overview(t: Transcript, max = 14): Overview {
   const last = steps[steps.length - 1];
   if (last?.status === 'running') running = last;
   const out: Overview = { steps: steps.slice(-max), totalSteps: steps.length };
-  if (firstUser) out.task = firstUser.prompt;
+  if (firstUser) { out.task = firstUser.prompt; if (firstUser.frame) out.taskFrame = firstUser.frame; }
   if (lastText) out.lastText = lastText;
   if (running) out.running = running;
   return out;
