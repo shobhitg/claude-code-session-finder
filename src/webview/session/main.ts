@@ -116,7 +116,8 @@ function renderHeader(): HTMLElement {
   const running = g.order.filter(id => isLive(g.nodes[id]!.status) && id !== g.root).length;
   const meta = [modelName(n.model), `${agents} ${agents === 1 ? 'agent' : 'agents'}`, running ? `${running} running` : undefined].filter((x): x is string => !!x).join(' · ');
   const el = h('header', { class: `header ${statusClass(n.status)}` }, statusGlyph(n, 'header__icon'), h('span', { class: 'header__title', title }, title), h('span', { class: 'header__meta' }, meta));
-  if (live) el.append(h('span', { class: 'header__live' }, h('i', { class: 'dot', 'aria-hidden': 'true' }), h('span', { class: 'header__live-word' }, 'live')));
+  const busy = isLive(n.status) || running > 0;                                    // live: its process is open; busy: something in it is working — only then the AI colour (D26)
+  if (live) el.append(h('span', { class: `header__live${busy ? ' header__live--busy' : ''}`, title: busy ? 'Live: updating as Claude works' : 'Live: open and waiting — nothing is running' }, h('i', { class: 'dot', 'aria-hidden': 'true' }), h('span', { class: 'header__live-word' }, 'live')));
   el.append(h('span', { class: 'header__actions' },
     action('window', 'Open session in a tab', () => post({ type: 'open', where: 'tab' })),
     action('layout-sidebar-right', 'Open session in the right panel', () => post({ type: 'open', where: 'right' })),
