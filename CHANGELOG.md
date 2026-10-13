@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 - **Light follows Claude.** The Session View now glows and moves where Claude is at work — in an
   AI colour (blue, violet, magenta, from your theme) — and settles when the work stops: a living
@@ -13,6 +13,9 @@
   them ("map:matcher", "review:timeline-model"), with its phase on the second line. The detail pane
   shows the real task, with a note on who wrote it (your request, relayed, or computed by the
   workflow), and a long name gives up its shared first word before the part that tells it apart.
+- **A step's file name opens the file.** In the Steps list and the Now card, "Read model.ts" or
+  "Write mutate.mjs" showed the file's name as plain text. It is now a link like every other file
+  name in the view: hover it for its card, click it to open the file.
 - **A row says more, from what was recorded.** Phase, how long it ran and — when Claude Code
   recorded them — tokens and tool calls; a running agent's time turns amber when its transcript has
   gone quiet; a workflow's header says how long the whole run took. Nothing is computed.
