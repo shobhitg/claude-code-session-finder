@@ -110,7 +110,10 @@ describe('webview stylesheets (spec §10, D7)', () => {
     // full purple means "a machine started this" and nothing else; a merged PR is a soft violet — purple mixed with blue (D21)
     expect(tokens.match(/--(?:s|st)-(?!headless)[a-z-]+:\s*var\(--vscode-charts-purple\)/)).toBeNull();
     expect(tokens).toMatch(/--pr-merged:\s*color-mix\(in oklab, var\(--vscode-charts-purple\) \d+%, var\(--vscode-charts-blue\)\);/);
-    for (const [name, css] of sheets) expect(css.replace(/--st-headless:[^;]*;/, '').replace(/--pr-merged:[^;]*;/, ''), name).not.toMatch(/charts-purple/);
+    // …and the AI colour's middle stop (D26): purple inside the gradient that lights Claude at work, never a flat state colour
+    expect(tokens).toMatch(/--ai-2:\s*var\(--vscode-charts-purple\);/);
+    expect(tokens).toMatch(/--ai-3:\s*var\(--vscode-terminal-ansiMagenta, var\(--vscode-charts-purple\)\);/);
+    for (const [name, css] of sheets) expect(css.replace(/--st-headless:[^;]*;/, '').replace(/--pr-merged:[^;]*;/, '').replace(/--ai-[23]:[^;]*;/g, ''), name).not.toMatch(/charts-purple/);
     for (const g of ['running', 'done', 'failed', 'waiting', 'stalled', 'closed']) expect(style, g).toContain(`.ghost__dot[data-ghost="${g}"]`);
     expect(style).toMatch(/\.ghost__dot\[data-ghost="running"\] \{[^}]*animation: ghost-pulse/);
   });

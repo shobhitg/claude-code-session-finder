@@ -59,7 +59,7 @@ main:focus-visible { outline: none; }
 .main { display: grid; grid-template-rows: auto 0 minmax(0, 1fr); min-width: 0; min-height: 0; }
 .main[data-tl] { grid-template-rows: clamp(60px, var(--tl), calc(100vh - 240px)) 0 minmax(0, 1fr); }
 .main[data-tl] .timeline { max-height: none; }
-.list { background: var(--s-bg); color: var(--s-fg); border-right: 1px solid var(--s-border); overflow: auto; padding: var(--sp-1) 0 var(--sp-3); }
+.list { background: radial-gradient(160px circle at var(--mx, -999px) var(--my, -999px), color-mix(in srgb, var(--ai-2) 11%, transparent), transparent 70%), var(--s-bg); color: var(--s-fg); border-right: 1px solid var(--s-border); overflow: auto; padding: var(--sp-1) 0 var(--sp-3); }
 /* The dividers you drag to resize (D23): hit areas laid over a border, so they take no room of their own; the line shows only when you aim at one. --v: the rail's width (--rail); --h: the timeline's height. */
 .sash { z-index: 6; touch-action: none; }
 .sash::before { content: ""; position: absolute; background: transparent; transition: background var(--dur) var(--ease); }
@@ -72,11 +72,12 @@ main:focus-visible { outline: none; }
 body.resizing-v { cursor: col-resize; user-select: none; }
 body.resizing-h { cursor: row-resize; user-select: none; }
 
-.row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: var(--sp-2); row-gap: 1px; align-items: center; width: 100%; text-align: left;
+.row { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: var(--sp-2); row-gap: 1px; align-items: center; width: 100%; text-align: left;
   padding: 5px var(--sp-2) 5px calc(var(--sp-2) + var(--depth, 0) * 14px); transition: background var(--dur) var(--ease); }
 .row:hover { background: var(--s-hover); }
 .row:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
-.row[aria-current="true"] { background: var(--s-sel); color: var(--s-sel-fg); box-shadow: inset 2px 0 0 var(--s-focus); }
+.row[aria-current="true"] { color: var(--s-sel-fg);                         /* the selection's edge is the AI colour, its tint leaning that way (D26) */
+  background: linear-gradient(var(--ai-1), var(--ai-3)) left / 2px 100% no-repeat, linear-gradient(90deg, color-mix(in srgb, var(--ai-1) 22%, var(--s-sel)), var(--s-sel) 65%); }
 .row__icon { grid-row: span 2; width: 16px; height: 16px; font-size: 15px; color: var(--c); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) 60%, transparent)); }
 .row__name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row__tag { margin-left: 6px; font: var(--size-meta) var(--mono); color: var(--s-muted); }
@@ -127,7 +128,7 @@ body.resizing-h { cursor: row-resize; user-select: none; }
 
 /* ─── the pane ─── */
 .pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
-.pane__head { display: grid; gap: 6px; padding: var(--sp-3) var(--sp-4) 0; border-bottom: 1px solid var(--s-border); }
+.pane__head { position: relative; display: grid; gap: 6px; padding: var(--sp-3) var(--sp-4) 0; border-bottom: 1px solid var(--s-border); }
 .crumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: var(--size-meta); color: var(--s-muted); }
 .crumbs button { color: var(--s-link); }
 .crumbs button:hover { text-decoration: underline; }
@@ -139,10 +140,13 @@ body.resizing-h { cursor: row-resize; user-select: none; }
   color: color-mix(in oklab, var(--c) 70%, var(--s-fg-editor)); background: color-mix(in srgb, var(--c) 14%, transparent); }
 .stats { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--size-meta); color: var(--s-muted); }
 .stats b { color: var(--s-fg-editor); font-weight: 500; font-family: var(--mono); }
-.tabs { display: flex; gap: 2px; margin-top: 2px; }
-.tabs button { padding: 6px 12px; font-size: calc(var(--size) - 0.5px); color: var(--s-muted); border-bottom: 2px solid transparent; }
-.tabs button.on { color: var(--s-fg-editor); border-color: var(--st-running); }
+/* the tabs are a segmented control: a thumb with a faint AI edge slides behind the open one (placeThumb, D26) */
+.tabs { position: relative; display: flex; width: fit-content; padding: 2px; margin: 4px 0 10px; border-radius: 8px; background: color-mix(in srgb, var(--s-fg-editor) 6%, transparent); }
+.tabs button { position: relative; z-index: 1; padding: 3px 14px; border-radius: 6px; font-size: calc(var(--size) - 0.5px); color: var(--s-muted); }
+.tabs button.on { color: var(--s-fg-editor); }
 .tabs button:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
+.tabs__thumb { position: absolute; top: 2px; bottom: 2px; left: 0; width: 0; border-radius: 6px; pointer-events: none; background: color-mix(in srgb, var(--s-fg-editor) 10%, var(--s-bg-editor));
+  box-shadow: 0 1px 3px var(--s-shadow), inset 0 0 0 1px color-mix(in srgb, var(--ai-1) 40%, transparent), 0 0 12px -4px var(--ai-glow); }
 .pane__body { overflow: auto; padding: var(--sp-4) var(--sp-4) var(--sp-6); }
 .overview, .transcript { display: grid; gap: var(--sp-4); max-width: 920px; }
 
@@ -342,6 +346,156 @@ body.vscode-high-contrast .row__icon, body.vscode-high-contrast .pane__icon { fi
 @media (prefers-reduced-motion: reduce) {
   .spark, .shim, .tl-halo, .header__live .dot, .nowcard::before { animation: none; }
   .nowcard::before { display: none; }
+}
+
+/* ─── the AI layer (D26): light follows Claude. Where Claude is working or speaking the AI colour (--ai-*, Spectrum) glows and moves, and it settles
+   when the work stops; your words and finished work stay calm. Loops are locked to the clock (lockLoops), so the rebuild every snapshot does not restart
+   them; one-time effects are classes the render adds only when something changed since the last snapshot. High contrast flattens it all (tokens.css). ─── */
+@property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes spin { to { --spin: 360deg; } }
+@keyframes drift { from { background-position: 0% 0; } to { background-position: 300% 0; } }
+@keyframes breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(4px); } }
+@keyframes pop { from { opacity: 0; transform: scale(.6); } }
+@keyframes rise { from { opacity: 0; transform: translateY(3px); } }
+@keyframes fade-out { to { opacity: 0; } }
+/* a ring of the AI colour turning round a live box: a masked border */
+.pill.st-running::after, .pill.st-launched::after, .nowcard::after, .step.st-running .step__dot::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: conic-gradient(from var(--spin), var(--ai-1), var(--ai-2), var(--ai-3), var(--ai-1));
+  -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0); animation: spin var(--lap, 6s) linear infinite; }
+
+/* the pane's header: a running node's title glows; a breathing wash behind it; a hairline under it that drifts, or holds still in its status colour */
+.pane__head > * { position: relative; z-index: 1; }
+.pane__head::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(45% 80% at 14% 30%, color-mix(in srgb, var(--ai-1) 16%, transparent), transparent 70%), radial-gradient(35% 70% at 55% 10%, color-mix(in srgb, var(--ai-3) 10%, transparent), transparent 70%); }
+.pane__head.st-running::before, .pane__head.st-launched::before { opacity: 1; animation: breathe 6s ease-in-out infinite; }
+.pane__head::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; z-index: 1; pointer-events: none; background: var(--c, var(--s-border)); opacity: .5; }
+.pane__head.st-running::after, .pane__head.st-launched::after { opacity: 1; background: linear-gradient(90deg, var(--ai-1), var(--ai-2), var(--ai-3), var(--ai-2), var(--ai-1)) 0 0 / 300% 100%; animation: drift 9s linear infinite; }
+.pane__title h2 { transition: text-shadow .6s var(--ease); }
+.pane__title.st-running h2, .pane__title.st-launched h2 { text-shadow: 0 0 18px var(--ai-glow), 0 0 2px color-mix(in srgb, var(--ai-1) 35%, transparent); }
+.pane__title.st-running .pane__icon, .pane__title.st-launched .pane__icon { filter: drop-shadow(0 0 5px var(--ai-glow)); }
+.pill { position: relative; }
+/* the numbers are chips; one that changed rolls up to its new value and its chip glows once */
+.stats { gap: 6px; }
+.stats > span { padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--s-fg-editor) 6%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--s-fg-editor) 9%, transparent); }
+.stats b { display: inline-block; }
+.stats b.roll { animation: roll .45s cubic-bezier(.16, 1, .3, 1); }
+.stats > span.lit { animation: lit 1.2s cubic-bezier(.16, 1, .3, 1); }
+@keyframes roll { from { transform: translateY(70%); opacity: 0; filter: blur(2px); } }
+@keyframes lit { from { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ai-2) 60%, transparent), 0 0 12px -2px var(--ai-glow); } }
+/* another node or tab: the pane's content crossfades in */
+.pane__body--in > * { animation: fade-up .2s cubic-bezier(.16, 1, .3, 1); }
+/* a state change: the glyph and pill blend from running blue into their new colour */
+.row--ended .row__icon, .pane__head--ended .pane__icon { animation: morph-glyph .5s ease both; }
+.pane__head--ended .pill { animation: morph-pill .5s ease both; }
+@keyframes morph-glyph { from { color: var(--st-running); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--st-running) 60%, transparent)); } }
+@keyframes morph-pill { from { color: var(--tx-running); background-color: color-mix(in srgb, var(--st-running) 14%, transparent); } }
+
+/* the Now card: an AI edge laps it, its glow breathes with the sparkle, the sweep runs in the AI colour; new words are written in from the left */
+.nowcard { --lap: 8s; animation: now-breathe 2.6s ease-in-out infinite; }
+@keyframes now-breathe { 0%, 100% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ai-1) 22%, transparent), 0 0 0 0 transparent; }
+  50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ai-1) 40%, transparent), 0 0 22px -4px var(--ai-glow); } }
+.nowcard::before { background: linear-gradient(90deg, transparent, var(--ai-1), var(--ai-2), var(--ai-3), transparent) 0 0 / 50% 100% no-repeat; animation-duration: 2.2s; }
+.nowcard__said--new > :not(.nowcard__label) { animation: write-in .8s cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes write-in { from { mask: linear-gradient(90deg, black 45%, transparent 55%) 100% 0 / 250% 100% no-repeat; } to { mask: linear-gradient(90deg, black 45%, transparent 55%) 0 0 / 250% 100% no-repeat; } }
+.dots { display: inline-flex; gap: 4px; align-items: center; margin-left: 2px; }
+.dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--ai-1); animation: dot 1.4s ease-in-out infinite; }
+.dots i:nth-child(2) { background: var(--ai-2); animation-delay: .18s; } .dots i:nth-child(3) { background: var(--ai-3); animation-delay: .36s; }
+@keyframes dot { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1.15); } }
+.nowpin .dots { display: none; }
+
+/* the task: who wrote it — the workflow's words wear the AI colour and a sparkle, a relayed request a person */
+.sec__badge { display: inline-flex; gap: 5px; align-items: center; vertical-align: 1px; }
+.sec__badge-icon { flex: none; width: 12px; height: 12px; font-size: 12px; }
+.sec__badge--computed { color: var(--s-fg-editor); border: 1px solid transparent; background: linear-gradient(var(--s-bg-editor), var(--s-bg-editor)) padding-box, var(--ai-grad) border-box; }
+.sec__badge--computed .sec__badge-icon { color: var(--ai-2); }
+.task--computed { background: var(--ai-grad) top / 100% 1px no-repeat, var(--s-quote); }
+
+/* steps: opening a node draws them in, top to bottom, the spine first; the call in flight wears a turning ring; a finished call's icon says what it did */
+.step::before { background: color-mix(in srgb, var(--ai-1) 30%, var(--s-border)); transform-origin: top; }
+.steps--in .step::before { animation: line-in .45s cubic-bezier(.16, 1, .3, 1) both; animation-delay: calc(min(var(--i), 8) * 50ms); }
+.steps--in .step__dot { animation: pop .35s cubic-bezier(.16, 1, .3, 1) both; animation-delay: calc(min(var(--i), 8) * 50ms + 40ms); }
+.steps--in .step__time, .steps--in .step__text, .steps--in .step__dur { animation: rise .35s cubic-bezier(.16, 1, .3, 1) both; animation-delay: calc(min(var(--i), 8) * 50ms + 60ms); }
+@keyframes line-in { from { transform: scaleY(0); } }
+.step.st-running .step__dot { --lap: 2.6s; color: var(--ai-1); background: color-mix(in srgb, var(--ai-1) 10%, var(--s-bg-editor)); box-shadow: 0 0 10px -2px var(--ai-glow); }
+.step.st-completed[data-hue="read"] .step__dot { color: var(--st-cost); }
+.step.st-completed[data-hue="edit"] .step__dot { color: var(--st-warm); }
+.step.st-completed[data-hue="shell"] .step__dot { color: var(--s-fg-editor); }
+.step.st-completed[data-hue="agent"] .step__dot { color: var(--ai-2); }
+.step--new { animation: arrive 1.2s cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes arrive { 0% { opacity: 0; transform: translateY(-6px); background: color-mix(in srgb, var(--ai-1) 22%, transparent); } 25% { opacity: 1; transform: none; } 100% { background: transparent; } }
+
+/* the result: it lands with a green glow, a check seal on its corner throws the sidebar's sparks; a failure glows red once and keeps a red edge */
+.result--land { animation: land 1.3s cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes land { 0% { opacity: 0; transform: translateY(6px); }
+  30% { opacity: 1; transform: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--st-ok) 55%, transparent), 0 0 26px -2px color-mix(in srgb, var(--st-ok) 45%, transparent); } }
+.result--failed { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st-error) 45%, transparent); }
+.result--fail-in { animation: fail 1.4s cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes fail { 25% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st-error) 70%, transparent), 0 0 24px -2px color-mix(in srgb, var(--st-error) 45%, transparent); } }
+.seal { position: absolute; top: -9px; right: -9px; z-index: 3; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--s-bg-editor); color: var(--st-ok);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--st-ok) 55%, transparent); }
+.seal .codicon { font-size: 13px; }
+.seal--in { animation: pop .45s cubic-bezier(.16, 1, .3, 1) both; }
+.sparks { position: absolute; inset: 0; pointer-events: none; }
+.sparks i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%; background: var(--st-ok); opacity: 0; animation: sparks 900ms ease-out .25s forwards; }
+@keyframes sparks { from { transform: translate(0, 0) scale(.4); opacity: 1; } to { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; } }
+
+/* the transcript: Claude's words carry its name and a rule of the AI colour; a tool card unfolds and lifts; a running agent's newest turn glows */
+.md.reply { padding-left: 12px; background: linear-gradient(var(--ai-1), var(--ai-2), var(--ai-3)) left / 1.5px 100% no-repeat; }
+.md.reply:not(.md.reply ~ .md.reply)::before { content: "✦ Claude"; font-size: var(--size-meta); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ai-text); }
+.tool { interpolate-size: allow-keywords; transition: box-shadow .2s cubic-bezier(.16, 1, .3, 1), transform .2s cubic-bezier(.16, 1, .3, 1); }
+.tool:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -8px var(--s-shadow); }
+.tool::details-content { block-size: 0; overflow: hidden; transition: block-size .3s cubic-bezier(.16, 1, .3, 1), content-visibility .3s allow-discrete; }
+.tool[open]::details-content { block-size: auto; }
+.tool__chev { flex: none; color: var(--s-muted); transition: transform .25s cubic-bezier(.16, 1, .3, 1); }
+.tool[open] > summary .tool__chev { transform: rotate(180deg); }
+.turn { position: relative; }
+.turn--live::before, .turn--ending::before { content: ""; position: absolute; inset: -6px -8px; border-radius: 10px; pointer-events: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ai-1) 30%, transparent), 0 0 24px -10px var(--ai-glow); }
+.turn--ending::before { animation: fade-out .8s ease forwards; }
+
+/* the rail: the selection's glyph glows; a running row streams along its foot; a group's running segments shimmer, and flash as they finish */
+.row[aria-current="true"] .row__icon { filter: drop-shadow(0 0 6px var(--ai-glow)) drop-shadow(0 0 2px var(--ai-glow)); }
+.row.st-running::after, .row.st-launched::after { content: ""; position: absolute; left: calc(var(--sp-2) + var(--depth, 0) * 14px); right: var(--sp-2); bottom: 0; height: 1.5px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--ai-1), var(--ai-2), transparent) 0 0 / 40% 100% no-repeat; animation: sweep 2.2s ease-in-out infinite; }
+.grp__strip i.st-running, .grp__strip i.st-launched { background: linear-gradient(90deg, var(--ai-1), var(--ai-2), var(--ai-3), var(--ai-1)) 0 0 / 300% 100%; animation: drift 2.6s linear infinite; }
+.grp__strip i.flash { animation: flash 1s cubic-bezier(.16, 1, .3, 1); }
+@keyframes flash { from { filter: brightness(1.9); } }
+
+/* the timeline: a running bar in the AI colour with a glint along it; what you point at lights its bar and thread; now is a breathing beam */
+.stop-ai1 { stop-color: var(--ai-1); } .stop-ai2 { stop-color: var(--ai-2); } .stop-ai3 { stop-color: var(--ai-3); }
+.stop-glint { stop-color: var(--s-fg-editor); }
+body.vscode-light .stop-glint { stop-color: var(--s-bg-editor); }
+.tl-glint { animation: glint 2.2s linear infinite; }
+@keyframes glint { from { transform: translateX(0); } to { transform: translateX(var(--run)); } }
+.tl-bar .tl-r--live ~ .tl-halo, .tl-bar .tl-r--live ~ .tl-cap { fill: var(--ai-3); }
+.tl-r, .tl-wf, .tl-thread path { transition: filter .2s ease, stroke .2s ease; }
+.tl-bar.echo .tl-r, .tl-bar.echo .tl-wf { filter: drop-shadow(0 0 4px var(--ai-glow)) brightness(1.12); }
+.tl-thread.echo path { stroke: var(--ai-2); stroke-width: 1.8; filter: drop-shadow(0 0 3px var(--ai-glow)); }
+.tl-now { stroke: none; filter: drop-shadow(0 0 4px var(--ai-glow)); animation: breathe 2.6s ease-in-out infinite; }
+.tl-m--now { fill: var(--ai-text); }
+
+/* everywhere: the hover card grows in (and leaves at once); a divider lights in the AI colour; the header's live dot pings it and the word carries a sheen */
+.fcard { transform-origin: top left; }
+.fcard:not([hidden]) { transition: opacity .16s cubic-bezier(.16, 1, .3, 1), transform .16s cubic-bezier(.16, 1, .3, 1); }
+@starting-style { .fcard:not([hidden]) { opacity: 0; transform: scale(.98) translateY(3px); } }
+.sash--v:hover::before, .sash--v:focus-visible::before, .sash--v.sash--drag::before { background: linear-gradient(var(--ai-1), var(--ai-2), var(--ai-3)); box-shadow: 0 0 10px var(--ai-glow); }
+.sash--h:hover::before, .sash--h:focus-visible::before, .sash--h.sash--drag::before { background: var(--ai-grad); box-shadow: 0 0 10px var(--ai-glow); }
+.header__live .dot { background: var(--ai-1); animation: ping-ai 1.8s ease-out infinite; }
+@keyframes ping-ai { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ai-2) 65%, transparent); } 100% { box-shadow: 0 0 0 8px transparent; } }
+.header__live-word { color: transparent; -webkit-background-clip: text; background-clip: text; background-size: 250% 100%; animation: shimmer 3s linear infinite;
+  background-image: linear-gradient(100deg, var(--ai-1) 30%, var(--ai-text) 50%, var(--ai-3) 70%); }
+
+/* reduced motion: loops stop and one-time moves finish at once; colour and glow still say what changed */
+@media (prefers-reduced-motion: reduce) {
+  .pill::after, .nowcard::after, .step__dot::after, .pane__head::before, .pane__head::after, .nowcard, .dots i, .row::after, .grp__strip i, .tl-glint, .tl-now,
+  .header__live-word, .stats b, .stats > span, .pane__body--in > *, .nowcard__said--new > *, .step::before, .step__dot, .step__time, .step__text, .step__dur, .step,
+  .result, .seal, .sparks i, .turn::before, .row__icon, .pane__icon, .pill { animation: none !important; }
+  .tl-glints, .sparks, .turn--ending::before { display: none; }
+  .tool, .tool::details-content, .tool__chev, .fcard:not([hidden]), .pane__title h2 { transition: none; }
+  .tool:hover { transform: none; }
 }
 
 /* ─── very narrow (a small split): the list over the rest ─── */

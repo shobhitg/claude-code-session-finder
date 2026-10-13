@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Light follows Claude.** The Session View now glows and moves where Claude is at work — in an
+  AI colour (blue, violet, magenta, from your theme) — and settles when the work stops: a living
+  status pill and title, a breathing Now card with an AI edge, steps that draw in, a result that
+  lands with a seal, Claude's words marked in the transcript, a streaming rail, a flowing timeline
+  bar, and smooth tabs, cards and dividers. Live updates no longer restart running animations;
+  reduced motion and high-contrast themes get a calm, flat version.
 - **Workflow agents have real names.** Almost every workflow agent's row — in the list and in the
   timeline — said "[Workflow harness — user re…". They now carry the name the workflow's script gave
   them ("map:matcher", "review:timeline-model"), with its phase on the second line. The detail pane

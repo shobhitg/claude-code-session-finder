@@ -8,8 +8,8 @@ import type { Turn, Item, ToolCall, Overview, Step, NowStep, FrameKind } from '.
 import { fmtDuration } from '../model.js';
 import { iconClasses, statusIcon, fmtClock, fmtTokens, toolIcon, modelChip, listModel, threadLayout, isLive, nowStep, plainLine,
          rowMeta, laneTip, nodeCard, groupMeta, frameNote, QUIET_MS, splitLabel, fitLabel,
-         railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, parseMarkdown, parseInline, findPaths, looksJson, recognise, defaultView,
-         type MdBlock, type Inline, type JsonView, type Findings } from './model.js';
+         railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, statusChanges, statusMap, toolHue, parseMarkdown, parseInline, findPaths, looksJson, recognise, defaultView,
+         type MdBlock, type Inline, type JsonView, type Findings, type StatusChange } from './model.js';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
 const api = acquireVsCodeApi();
@@ -39,6 +39,19 @@ const taskOpen = new Set<string>();                               // nodes whose
 const ui: UiState = { tab: 'overview', closed: [], ...(api.getState() as Partial<UiState> | undefined) };
 const save = (): void => api.setState(ui);
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// The AI layer (D26): a one-time effect plays when something changed since the last snapshot — never on the rebuild every snapshot does.
+let prevStatus: Record<string, NodeStatus> | undefined;
+let changed = new Map<string, StatusChange>();                   // this snapshot's status changes; emptied once it is drawn
+const seenSteps = new Map<string, Set<string>>();                // each node's steps as last drawn: a step not among them has just arrived
+let stepsFor = '';                                               // the node whose steps the Overview last drew: opening another draws them in
+const lastSaid = new Map<string, string>();                      // each node's latest words as last drawn
+const lastStats = new Map<string, Record<string, string>>();     // each node's numbers as last drawn: a changed one rolls
+let lastContent = '';                                            // node · tab · loaded: a new one crossfades in
+let lastThumb: { x: number; w: number } | undefined;             // where the tabs' thumb was: it slides from there
+let spot: { x: number; y: number } | undefined;                  // the pointer over the rail, for its spotlight
+const justEnded = (id: string): StatusChange | undefined => { const c = changed.get(id); return c && isLive(c.from) && !isLive(c.to) ? c : undefined; };
+/** Loops keep the clock's phase (D26): the rebuild every snapshot makes new elements, which would start their breath, sweep or ring over. */
+function lockLoops(): void { for (const a of document.getAnimations()) if (a instanceof CSSAnimation && a.effect?.getTiming().iterations === Infinity && a.startTime !== 0) a.startTime = 0; }
 const root = document.getElementById('app') as HTMLElement;
 const post = (m: unknown): void => api.postMessage(m);
 const hostNow = (): number => Date.now() + clockOffset;
@@ -103,7 +116,7 @@ function renderHeader(): HTMLElement {
   const running = g.order.filter(id => isLive(g.nodes[id]!.status) && id !== g.root).length;
   const meta = [modelName(n.model), `${agents} ${agents === 1 ? 'agent' : 'agents'}`, running ? `${running} running` : undefined].filter((x): x is string => !!x).join(' · ');
   const el = h('header', { class: `header ${statusClass(n.status)}` }, statusGlyph(n, 'header__icon'), h('span', { class: 'header__title', title }, title), h('span', { class: 'header__meta' }, meta));
-  if (live) el.append(h('span', { class: 'header__live' }, h('i', { class: 'dot', 'aria-hidden': 'true' }), 'live'));
+  if (live) el.append(h('span', { class: 'header__live' }, h('i', { class: 'dot', 'aria-hidden': 'true' }), h('span', { class: 'header__live-word' }, 'live')));
   el.append(h('span', { class: 'header__actions' },
     action('window', 'Open session in a tab', () => post({ type: 'open', where: 'tab' })),
     action('layout-sidebar-right', 'Open session in the right panel', () => post({ type: 'open', where: 'right' })),
@@ -128,6 +141,9 @@ function renderTimeline(width: number): SVGSVGElement {
   };
   grad('tl-live', [[0, 'stop-run', 0.3], [1, 'stop-run', 1]]);
   grad('tl-aurora', [[0, 'stop-run', 1], [0.6, 'stop-cost', 1], [1, 'stop-ok', 1]]);
+  grad('tl-ai', [[0, 'stop-ai1', 1], [0.55, 'stop-ai2', 1], [1, 'stop-ai3', 1]]);               // a running agent's bar, in the AI colour (D26)
+  grad('tl-glint', [[0, 'stop-glint', 0], [0.5, 'stop-glint', 0.8], [1, 'stop-glint', 0]]);
+  grad('tl-beam', [[0, 'stop-ai1', 0], [0.2, 'stop-ai1', 1], [0.85, 'stop-ai2', 1], [1, 'stop-ai2', 0]], true);
   el.append(defs);
   for (const gp of L.gaps) {
     el.append(svg('rect', { class: 'tl-gap', x: gp.x + 4, y: top - 4, width: gp.w - 8, height: L.height - top + 4, rx: 5 }));
@@ -136,7 +152,7 @@ function renderTimeline(width: number): SVGSVGElement {
     if (gp.label) { const t = svg('text', { class: 'tl-m', x: gp.x + gp.w / 2, y: H - 4, 'text-anchor': 'middle' }); t.textContent = gp.label; el.append(t); }
   }
   for (const tk of L.ticks) { const t = svg('text', { class: `tl-m${tk.now ? ' tl-m--now' : ''}`, x: tk.x, y: 12, 'text-anchor': tk.anchor }); t.textContent = tk.label; el.append(t); }
-  if (L.nowX !== undefined) el.append(svg('line', { class: 'tl-now', x1: L.nowX, x2: L.nowX, y1: top - 4, y2: L.height }));
+  if (L.nowX !== undefined) el.append(svg('rect', { class: 'tl-now', x: L.nowX - 1, y: top - 4, width: 2, height: L.height - top + 4, style: 'fill:url(#tl-beam)' }));   // a beam of the AI colour that breathes (D26)
   const byId = new Map(L.lanes.map(l => [l.id, l]));
   const charW = 6.4;
   for (const l of L.lanes) {
@@ -160,16 +176,23 @@ function renderTimeline(width: number): SVGSVGElement {
   }
   for (const l of L.lanes) {
     if (!l.parent) continue; const p = byId.get(l.parent); if (!p) continue;
-    const gEl = svg('g', { class: `${statusClass(l.status)} tl-thread` });
+    const gEl = svg('g', { class: `${statusClass(l.status)} tl-thread`, 'data-id': l.id });   // data-id: pointing at its row or lane lights it (echo)
     gEl.append(svg('path', { d: `M${l.x0},${p.y} V${l.y - 3} q0,3 3,3` }), svg('circle', { cx: l.x0, cy: p.y, r: 2, class: 'tl-knot' }));
     el.append(gEl);
   }
   for (const l of L.lanes) {
-    const n = g.nodes[l.id]!; const gEl = svg('g', { class: `${statusClass(l.status)} tl-bar` });
+    const n = g.nodes[l.id]!; const gEl = svg('g', { class: `${statusClass(l.status)} tl-bar`, 'data-id': l.id });
     if (l.kind === 'session') {
       for (const sg of L.segs) gEl.append(svg('rect', { x: sg.x0, y: l.y - 2.5, width: Math.max(2, sg.x1 - sg.x0), height: 5, rx: 2.5, fill: 'url(#tl-aurora)' }));
     } else if (l.kind === 'workflow') gEl.append(svg('rect', { class: 'tl-wf', x: l.x0, y: l.y - 5, width: l.x1 - l.x0, height: 10, rx: 5 }));
-    else gEl.append(svg('rect', { class: `tl-r${l.open ? ' tl-r--live' : ''}`, x: l.x0, y: l.y - 4.5, width: l.x1 - l.x0, height: 9, rx: 4.5, ...(l.open ? { fill: 'url(#tl-live)' } : {}) }));
+    else if (!l.open) gEl.append(svg('rect', { class: 'tl-r', x: l.x0, y: l.y - 4.5, width: l.x1 - l.x0, height: 9, rx: 4.5 }));
+    else {                                                                              // running: the AI colour with a glint along it (D26); a style, since .tl-r's CSS fill beat the old fill attribute
+      const w = l.x1 - l.x0, clip = `tl-clip-${defs.childElementCount}`;
+      const cp = svg('clipPath', { id: clip }); cp.append(svg('rect', { x: l.x0, y: l.y - 4.5, width: w, height: 9, rx: 4.5 })); defs.append(cp);
+      const glints = svg('g', { class: 'tl-glints', 'clip-path': `url(#${clip})` });
+      glints.append(svg('rect', { class: 'tl-glint', x: l.x0 - 60, y: l.y - 4.5, width: 60, height: 9, style: `fill:url(#tl-glint);--run:${Math.round(w + 60)}px` }));
+      gEl.append(svg('rect', { class: 'tl-r tl-r--live', x: l.x0, y: l.y - 4.5, width: w, height: 9, rx: 4.5, style: 'fill:url(#tl-ai)' }), glints);
+    }
     if (l.open && l.kind !== 'session') { gEl.append(svg('circle', { class: 'tl-halo', cx: l.x1, cy: l.y, r: 5 }), svg('circle', { class: 'tl-cap', cx: l.x1, cy: l.y, r: 3.3 })); }
     else if (l.kind === 'agent' && (n.status === 'failed' || n.status === 'stopped')) gEl.append(svg('circle', { class: 'tl-end', cx: l.x1, cy: l.y, r: 3.6 }));
     el.append(gEl);
@@ -200,13 +223,17 @@ function listRow(id: string, depth: number): HTMLElement {
   const text = rowMeta(n);
   const second = isLive(n.status) && n.now ? nowLine(n)
     : h('span', { class: 'row__meta' }, text ? h('span', { class: 'row__meta-text' }, text) : null, n.kind !== 'session' ? spanBar(n) : null);
-  const b = h('button', { class: `row ${statusClass(n.status)} ${n.kind === 'session' ? 'row--root' : 'row--sub'}`, 'data-id': id, style: `--depth:${depth}`, ...(id === selected ? { 'aria-current': 'true' } : {}) },
+  const b = h('button', { class: `row ${statusClass(n.status)} ${n.kind === 'session' ? 'row--root' : 'row--sub'}${justEnded(id) ? ' row--ended' : ''}`, 'data-id': id, style: `--depth:${depth}`, ...(id === selected ? { 'aria-current': 'true' } : {}) },
     statusGlyph(n, 'row__icon'), rowName(n), chip(n.model) ?? h('span'), second);
   b.addEventListener('click', () => select(id));
   return b;
 }
 function renderList(): HTMLElement {
   const g = graph!; const nav = h('nav', { class: 'list', 'aria-label': 'Agents' });
+  const light = (): void => { if (spot) { nav.style.setProperty('--mx', `${spot.x}px`); nav.style.setProperty('--my', `${spot.y}px`); } else { nav.style.removeProperty('--mx'); nav.style.removeProperty('--my'); } };
+  nav.addEventListener('pointermove', e => { const r = nav.getBoundingClientRect(); spot = { x: Math.round(e.clientX - r.left), y: Math.round(e.clientY - r.top) }; light(); });   // a soft light follows the pointer (D26)
+  nav.addEventListener('pointerleave', () => { spot = undefined; light(); });
+  light();
   for (const e of listModel(g)) {
     if (e.kind === 'row') { nav.append(listRow(e.id, e.depth)); continue; }
     const w = g.nodes[e.id]!; const closed = ui.closed.includes(e.id);
@@ -215,7 +242,7 @@ function renderList(): HTMLElement {
       h('span', { class: 'grp__name' }, w.label), h('span', { class: 'grp__meta', title: `${w.label} — ${meta}` }, meta));
     head.addEventListener('click', ev => { if ((ev.target as HTMLElement).closest('.grp__chev')) { toggleGroup(e.id); return; } select(e.id); });
     head.addEventListener('dblclick', () => toggleGroup(e.id));
-    const strip = h('div', { class: 'grp__strip', 'aria-hidden': 'true' }, ...e.rows.map(r => h('i', { class: statusClass(g.nodes[r.id]!.status) })));
+    const strip = h('div', { class: 'grp__strip', 'aria-hidden': 'true' }, ...e.rows.map(r => h('i', { class: `${statusClass(g.nodes[r.id]!.status)}${justEnded(r.id) ? ' flash' : ''}` })));
     const grp = h('div', { class: `grp${closed ? ' grp--closed' : ''}${e.id === selected ? ' grp--sel' : ''}` }, head, strip);
     if (!closed) for (const r of e.rows) grp.append(listRow(r.id, r.depth));
     nav.append(grp);
@@ -368,6 +395,7 @@ function renderTool(c: ToolCall, cwd: string | undefined, key: string): HTMLElem
   const sum = h('summary', {}, icon(toolIcon(c.name), 'tool__icon'), h('span', { class: 'tool__name' }, c.name),
     fp ? h('span', { class: 'tool__what' }, fileChip(fp.split('/').pop() ?? fp, fp, undefined, cwd)) : h('span', { class: 'tool__what' }, c.summary),
     h('span', { class: 'tool__meta' }, c.result ? `${fmtDuration(c.result.ts - c.ts)}${c.result.isError ? ' · error' : ''}${c.result.images ? ` · ${c.result.images} image${c.result.images > 1 ? 's' : ''}` : ''}` : '', c.result ? '' : since(c.ts, 'running · ')));
+  sum.append(icon('chevron-down', 'tool__chev'));
   if (target) { const link = h('button', { class: 'tool__link' }, 'open agent →'); link.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); select(target.id); }); sum.append(link); }
   d.append(sum);
   const body = h('div', { class: 'tool__body' });
@@ -430,14 +458,16 @@ function renderTranscript(n: GraphNode): HTMLElement {
   if (page.from > 0) { const more = h('button', { class: 'more' }, `Show earlier turns (${page.from} more)`); more.addEventListener('click', () => post({ type: 'more', nodeId: page!.nodeId, from: Math.max(0, page!.from - 40) })); sec.append(more); }
   if (!page.turns.length) sec.append(h('div', { class: 'empty' }, n.file ? 'Nothing conversational in this transcript yet.' : 'This node has no transcript file — a denied spawn, or a workflow shell.'));
   for (const t of page.turns) sec.append(renderTurn(t, n.cwd));
+  const tail = sec.lastElementChild;                                // the newest turn of a running agent glows; it fades when the agent stops (D26)
+  if (tail?.classList.contains('turn')) tail.classList.toggle(isLive(n.status) ? 'turn--live' : 'turn--ending', isLive(n.status) || !!justEnded(n.id));
   return sec;
 }
 
 // ---------------------------------------------------------------- the overview tab
 
-function stepRow(s: Step, cwd: string | undefined): HTMLElement {
-  const st = s.status === 'running' ? 'running' : s.status === 'error' ? 'failed' : 'completed';
-  return h('li', { class: `step st-${st}` }, h('span', { class: 'step__time' }, fmtClock(s.ts).slice(0, 5)), h('span', { class: 'step__dot' }, icon(toolIcon(s.tool))),
+function stepRow(s: Step, cwd: string | undefined, i = 0, fresh = false): HTMLElement {
+  const st = s.status === 'running' ? 'running' : s.status === 'error' ? 'failed' : 'completed'; const hue = toolHue(s.tool);
+  return h('li', { class: `step st-${st}${fresh ? ' step--new' : ''}`, style: `--i:${i}`, ...(hue ? { 'data-hue': hue } : {}) }, h('span', { class: 'step__time' }, fmtClock(s.ts).slice(0, 5)), h('span', { class: 'step__dot' }, icon(toolIcon(s.tool))),
     h('span', { class: 'step__text' }, h('b', {}, s.tool), ' ', ...textWithFiles(s.summary, cwd)),
     h('span', { class: 'step__dur' }, s.status === 'running' ? since(s.ts) : s.ms !== undefined ? fmtDuration(s.ms) : ''));
 }
@@ -446,7 +476,7 @@ function section(title: string, ...body: Array<Node | null>): HTMLElement { retu
 function nowHead(step: NowStep | undefined, summary: (text: string) => Array<Node | string>): HTMLElement {
   return h('div', { class: 'nowcard__head' }, ...(step
     ? [icon(toolIcon(step.tool)), h('b', {}, step.tool), h('span', { class: 'nowcard__what' }, ...summary(step.summary)), since(step.since, '', 'nowcard__since')]
-    : [spark('spark'), h('span', { class: 'shim' }, 'working')]));
+    : [spark('spark'), h('span', { class: 'shim' }, 'working'), h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))]));
 }
 /** The card again, kept in view: the CSS slides it in once the card has scrolled off the top. A line for the call, a line for the latest words. */
 function nowStrip(step: NowStep | undefined, lastText: string | undefined): HTMLElement {
@@ -464,35 +494,53 @@ function renderOverview(n: GraphNode): HTMLElement {
   }
   if (!o) { box.append(h('div', { class: 'empty' }, 'Loading…')); return box; }
   if (o.task) {
-    const task = markdown(o.task, n.cwd, 'task'); const more = h('button', { class: 'more more--inline' });
+    const task = markdown(o.task, n.cwd, `task${o.taskFrame === 'computed' ? ' task--computed' : ''}`); const more = h('button', { class: 'more more--inline' });
     const show = (): void => { const all = taskOpen.has(n.id); task.classList.toggle('clamp', !all); more.textContent = all ? 'Show less' : 'Show all'; };
-    more.addEventListener('click', () => { if (!taskOpen.delete(n.id)) taskOpen.add(n.id); show(); });
+    more.addEventListener('click', () => {
+      const opening = !taskOpen.has(n.id), from = task.offsetHeight;
+      if (!taskOpen.delete(n.id)) taskOpen.add(n.id); show();
+      if (opening && !reducedMotion) task.animate([{ height: `${from}px`, overflow: 'hidden' }, { height: `${task.scrollHeight}px`, overflow: 'hidden' }], { duration: 420, easing: 'cubic-bezier(.16, 1, .3, 1)' });   // it unfolds (D26)
+    });
     show();
     const sec = section(n.kind === 'session' ? 'First prompt' : 'Task', task, o.task.split('\n').length > 6 || o.task.length > 600 ? more : null);
-    if (o.taskFrame) sec.querySelector('.sec__h')?.append(h('span', { class: 'sec__badge' }, frameNote(o.taskFrame)));   // the harness's frame said who wrote it; the text no longer carries the frame (D25)
+    if (o.taskFrame) sec.querySelector('.sec__h')?.append(h('span', { class: `sec__badge sec__badge--${o.taskFrame}` },   // the workflow's words wear the AI colour, yours a person (D26)
+      o.taskFrame === 'computed' ? spark('sec__badge-icon') : o.taskFrame === 'request' ? icon('person', 'sec__badge-icon') : null, frameNote(o.taskFrame)));   // the harness's frame said who wrote it; the text no longer carries the frame (D25)
     box.append(sec);
   }
   if (isLive(n.status)) {
     const step = nowStep(n, o);
     const card = h('div', { class: 'nowcard' }, nowHead(step, s => textWithFiles(s, n.cwd)));
-    if (o.lastText) card.append(h('div', { class: 'nowcard__said' }, h('span', { class: 'nowcard__label' }, 'Latest'), ...blocks(parseMarkdown(o.lastText.length > 600 ? `${o.lastText.slice(0, 600)}…` : o.lastText), n.cwd)));
+    const said = lastSaid.get(n.id); if (o.lastText) lastSaid.set(n.id, o.lastText);
+    if (o.lastText) card.append(h('div', { class: `nowcard__said${said !== undefined && said !== o.lastText ? ' nowcard__said--new' : ''}` }, h('span', { class: 'nowcard__label' }, 'Latest'), ...blocks(parseMarkdown(o.lastText.length > 600 ? `${o.lastText.slice(0, 600)}…` : o.lastText), n.cwd)));
     box.append(section('Now', card));
     box.prepend(nowStrip(step, o.lastText));
   }
   if (o.steps.length) {
-    const ul = h('ul', { class: 'steps' }, ...o.steps.map(s => stepRow(s, n.cwd)));
+    const seen = seenSteps.get(n.id), keys = o.steps.map(s => `${s.ts}|${s.tool}`);
+    const ul = h('ul', { class: `steps${stepsFor !== n.id ? ' steps--in' : ''}` }, ...o.steps.map((s, i) => stepRow(s, n.cwd, i, !!seen && !seen.has(keys[i]!))));   // opening a node draws its steps in; a new one arrives (D26)
+    seenSteps.set(n.id, new Set(keys)); stepsFor = n.id;
     const earlier = o.totalSteps - o.steps.length;
     const more = earlier > 0 ? h('button', { class: 'more more--inline' }, `${earlier} earlier ${earlier === 1 ? 'step' : 'steps'} — in the transcript`) : null;
     more?.addEventListener('click', () => setTab('transcript'));
     box.append(section(`Steps · ${o.totalSteps} tool ${o.totalSteps === 1 ? 'call' : 'calls'}`, more, ul));
   }
   if (!isLive(n.status)) {
-    if (n.error) box.append(section('Failed', h('div', { class: 'result result--failed' }, n.error)));
-    else if (o.lastText) box.append(section(n.status === 'failed' ? 'Last words' : n.status === 'stopped' ? 'Where it stopped' : 'Result', markdown(o.lastText, n.cwd, `result result--${n.status}`)));
+    const ended = justEnded(n.id) ? (n.status === 'failed' || n.error ? ' result--fail-in' : ' result--land') : '';   // it finished while you watched (D26)
+    let res: HTMLElement | null = null;
+    if (n.error) box.append(section('Failed', res = h('div', { class: `result result--failed${ended}` }, n.error)));
+    else if (o.lastText) box.append(section(n.status === 'failed' ? 'Last words' : n.status === 'stopped' ? 'Where it stopped' : 'Result', res = markdown(o.lastText, n.cwd, `result result--${n.status}${ended}`)));
+    if (res && n.status === 'completed') res.append(seal(!!ended));
   }
   const kids = n.children.map(id => graph!.nodes[id]!).filter(Boolean);
   if (kids.length && n.kind !== 'session') box.append(section(`Started ${kids.length} ${kids.length === 1 ? 'agent' : 'agents'}`, h('div', { class: 'kids' }, ...kids.map(k => listRow(k.id, 0)))));
   return box;
+}
+
+/** A finished result's check seal (D26); when it has just finished, it lands and throws the sidebar's burst of sparks. */
+function seal(now: boolean): HTMLElement {
+  const s = h('span', { class: `seal${now ? ' seal--in' : ''}`, 'aria-hidden': 'true' }, icon('check'));
+  if (now) s.append(h('span', { class: 'sparks' }, ...Array.from({ length: 8 }, (_, i) => { const a = i * Math.PI / 4 + Math.PI / 8; return h('i', { style: `--dx:${(Math.cos(a) * 15).toFixed(1)}px;--dy:${(Math.sin(a) * 15).toFixed(1)}px` }); })));
+  return s;
 }
 
 // ---------------------------------------------------------------- the pane
@@ -515,12 +563,18 @@ function renderPane(): HTMLElement {
     n.totalTokens ? h('span', {}, 'tokens ', h('b', {}, fmtTokens(n.totalTokens))) : null,
     n.subagentType ? h('span', {}, 'type ', h('b', {}, n.subagentType)) : null,
     n.background ? h('span', {}, h('b', {}, 'background')) : null);
-  const tabs = h('div', { class: 'tabs', role: 'tablist' });
+  const before = lastStats.get(n.id), vals: Record<string, string> = {};             // a number that changed rolls up, its chip glows once (D26)
+  for (const sp of Array.from(stats.children)) {
+    const b = sp.querySelector('b'); if (!b) continue; const k = sp.firstChild?.textContent ?? ''; vals[k] = b.textContent ?? '';
+    if (before?.[k] !== undefined && before[k] !== vals[k]) { b.classList.add('roll'); sp.classList.add('lit'); }
+  }
+  lastStats.set(n.id, vals);
+  const tabs = h('div', { class: 'tabs', role: 'tablist' }, h('span', { class: 'tabs__thumb', 'aria-hidden': 'true' }));
   for (const [t, label] of [['overview', 'Overview'], ['transcript', 'Transcript']] as Array<[Tab, string]>) {
     const b = h('button', { role: 'tab', 'aria-selected': String(ui.tab === t), class: ui.tab === t ? 'on' : '' }, label);
     b.addEventListener('click', () => setTab(t)); tabs.append(b);
   }
-  const head = h('div', { class: 'pane__head' }, crumbs,
+  const head = h('div', { class: `pane__head ${statusClass(n.status)}${justEnded(n.id) ? ' pane__head--ended' : ''}` }, crumbs,
     h('div', { class: `pane__title ${statusClass(n.status)}` }, statusGlyph(n, 'pane__icon'), h('h2', {}, n.label, n.tag ? h('span', { class: 'row__tag' }, n.tag) : null), pill, chip(n.model)),
     stats, tabs);
   const body = h('div', { class: 'pane__body' }, ui.tab === 'overview' ? renderOverview(n) : renderTranscript(n));
@@ -635,6 +689,21 @@ function render(force = false): void {
   const body = root.querySelector('.pane__body') as HTMLElement;
   if (keep.pageKey === pane.dataset.page) body.scrollTop = live && stick && ui.tab === 'transcript' ? body.scrollHeight : bodyTop;
   else if (ui.tab === 'transcript') body.scrollTop = body.scrollHeight;
+  const content = `${pane.dataset.page}:${page?.nodeId === selected ? 'loaded' : 'loading'}`;   // another node or tab crossfades in (D26)
+  if (lastContent && content !== lastContent) body.classList.add('pane__body--in');
+  lastContent = content;
+  if (ui.tab !== 'overview') stepsFor = '';
+  placeThumb(); lockLoops();
+}
+/** The tabs' thumb sits behind the open tab, and slides there from where it was (D26). */
+function placeThumb(): void {
+  const tabs = root.querySelector<HTMLElement>('.tabs'), on = tabs?.querySelector<HTMLElement>('button.on'), th = tabs?.querySelector<HTMLElement>('.tabs__thumb');
+  if (!on || !th) return;
+  const x = on.offsetLeft, w = on.offsetWidth;
+  th.style.transform = `translateX(${x}px)`; th.style.width = `${w}px`;
+  if (lastThumb && (lastThumb.x !== x || lastThumb.w !== w) && !reducedMotion)
+    th.animate([{ transform: `translateX(${lastThumb.x}px)`, width: `${lastThumb.w}px` }, { transform: `translateX(${x}px)`, width: `${w}px` }], { duration: 240, easing: 'cubic-bezier(.16, 1, .3, 1)' });
+  lastThumb = { x, w };
 }
 
 /** Between snapshots only the elapsed times change. */
@@ -790,7 +859,8 @@ window.addEventListener('message', (e: MessageEvent<Inbound>) => {
     if (m.jsonViews) jsonViews = m.jsonViews;
     if (m.page) { page = m.page; selected = m.page.nodeId; }
     if (!graph.nodes[selected]) selected = graph.root;
-    render();
+    changed = statusChanges(prevStatus, graph); prevStatus = statusMap(graph);
+    render(); changed = new Map();
     return;
   }
   if (m.type === 'page') {

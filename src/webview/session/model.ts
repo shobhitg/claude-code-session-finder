@@ -518,3 +518,25 @@ export function defaultView(size: number, formattable: boolean, chosen: JsonView
   if (chosen && (chosen !== 'formatted' || formattable)) return chosen;
   return formattable ? 'formatted' : 'pretty';
 }
+
+// ---------------------------------------------------------------- the AI layer (D26): what changed since the last snapshot
+
+export type StatusChange = { from: NodeStatus; to: NodeStatus };
+/** Every node's status, by id: what the next snapshot is compared against. */
+export const statusMap = (g: SessionGraph): Record<string, NodeStatus> => Object.fromEntries(g.order.flatMap(id => g.nodes[id] ? [[id, g.nodes[id]!.status]] : []));
+/** The nodes whose status changed between two snapshots. A live view is rebuilt on every snapshot, so a one-time effect (a result landing,
+ *  a colour morph, a strip segment's flash) plays on this change, never on the rebuild. No previous snapshot (the view just opened): nothing changed. */
+export function statusChanges(prev: Record<string, NodeStatus> | undefined, g: SessionGraph): Map<string, StatusChange> {
+  const out = new Map<string, StatusChange>();
+  if (!prev) return out;
+  for (const id of g.order) { const from = prev[id], to = g.nodes[id]?.status; if (from && to && from !== to) out.set(id, { from, to }); }
+  return out;
+}
+/** Which way a step's icon is tinted (D26): what it did, at a glance — reads, edits, the shell, other agents; anything else keeps its status colour. */
+export function toolHue(tool: string): 'read' | 'edit' | 'shell' | 'agent' | undefined {
+  if (/^(Read|Grep|Glob|LS|WebFetch|WebSearch|NotebookRead)$/.test(tool)) return 'read';
+  if (/^(Edit|MultiEdit|Write|NotebookEdit)$/.test(tool)) return 'edit';
+  if (/^(Bash|BashOutput|KillShell|PowerShell)$/.test(tool)) return 'shell';
+  if (/^(Agent|Task|Workflow)$/.test(tool)) return 'agent';
+  return undefined;
+}

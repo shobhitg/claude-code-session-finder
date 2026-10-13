@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statusIcon, iconClasses, fmtTokens, nodeMeta, toolIcon, modelChip, listModel, threadLayout, intervalWidth, TICK_CHAR_PX, railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, validRail, validTlVh, rowMeta, laneTip, nodeCard, groupMeta, frameNote, QUIET_MS, splitLabel, fitLabel, findPaths, pathOfCode,
+import { statusIcon, iconClasses, fmtTokens, nodeMeta, toolIcon, modelChip, listModel, threadLayout, intervalWidth, TICK_CHAR_PX, railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, validRail, validTlVh, rowMeta, laneTip, nodeCard, groupMeta, frameNote, QUIET_MS, splitLabel, fitLabel, findPaths, pathOfCode, statusChanges, statusMap, toolHue,
          parseInline, parseMarkdown, looksJson, recognise, defaultView, JSON_BIG, nowStep, plainLine } from '../src/webview/session/model.js';
 import { fmtDuration } from '../src/webview/model.js';
 import type { ThreadTick } from '../src/webview/session/model.js';
@@ -390,5 +390,18 @@ describe('the Now strip: the card, kept in view while the card is scrolled off',
     expect(plainLine('## Plan\n\n- read the file\n- run the tests\n\n```sh\nnpm test\n```\n\nThen report.')).toBe('Plan read the file run the tests Then report.');
     expect(plainLine('> quoted\n\n| a | b |\n| --- | --- |\n| 1 | 2 |')).toBe('quoted');
     expect(plainLine('  \n\n ')).toBe('');
+  });
+});
+
+describe('the AI layer (D26): one-time effects play on a change, not on a rebuild', () => {
+  const g = (st: Record<string, string>): SessionGraph => ({ root: 's', order: Object.keys(st), nodes: Object.fromEntries(Object.entries(st).map(([id, status]) => [id, { id, status } as unknown as GraphNode])) });
+  it('statusChanges: nothing before the first snapshot, then only the nodes whose status moved', () => {
+    const a = g({ s: 'running', x: 'running', y: 'completed' });
+    expect(statusChanges(undefined, a).size).toBe(0);
+    const ch = statusChanges(statusMap(a), g({ s: 'running', x: 'completed', y: 'completed', z: 'running' }));
+    expect([...ch]).toEqual([['x', { from: 'running', to: 'completed' }]]);   // z is new, not changed
+  });
+  it('toolHue: reads, edits, the shell and agents; anything else keeps its status colour', () => {
+    expect(['Read', 'Grep', 'Edit', 'Write', 'Bash', 'Agent', 'Task', 'TodoWrite'].map(toolHue)).toEqual(['read', 'read', 'edit', 'edit', 'shell', 'agent', 'agent', undefined]);
   });
 });

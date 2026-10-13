@@ -80,6 +80,14 @@
   /* merged and draft PRs (D21): mixes of theme colours, so not --st- aliases */
   --pr-merged:  color-mix(in oklab, var(--vscode-charts-purple) 55%, var(--vscode-charts-blue));
   --pr-draft:   color-mix(in oklab, var(--vscode-charts-green) 45%, var(--vscode-descriptionForeground));
+  /* The AI colour (D26): where Claude is working or speaking, light in Spectrum — blue, violet, magenta, the theme's chart and terminal colours.
+     Purple appears only inside this gradient and its glow; as a flat fill it is still the headless ghost's alone (D15). */
+  --ai-1: var(--vscode-charts-blue);
+  --ai-2: var(--vscode-charts-purple);
+  --ai-3: var(--vscode-terminal-ansiMagenta, var(--vscode-charts-purple));
+  --ai-grad: linear-gradient(90deg, var(--ai-1), var(--ai-2), var(--ai-3));
+  --ai-glow: color-mix(in srgb, var(--ai-2) 42%, transparent);
+  --ai-text: color-mix(in oklab, var(--ai-2) 60%, var(--s-fg));
 
   /* type — the IDE's */
   --font:      var(--vscode-font-family);
@@ -95,7 +103,10 @@
   --dur: 120ms; --ease: cubic-bezier(.2, 0, .2, 1);
 }
 /* a light theme's top light is its background, not its (dark) text */
-body.vscode-light { --gloss: color-mix(in srgb, var(--vscode-editor-background) 75%, transparent); }
+body.vscode-light { --gloss: color-mix(in srgb, var(--vscode-editor-background) 75%, transparent); --ai-glow: color-mix(in srgb, var(--ai-2) 30%, transparent); }
+/* High contrast: no glow and no gradient — the AI colour is the theme's focus border, one flat line, and borders carry the state (D26) */
+body.vscode-high-contrast, body.vscode-high-contrast-light { --ai-1: var(--vscode-focusBorder); --ai-2: var(--vscode-focusBorder); --ai-3: var(--vscode-focusBorder);
+  --ai-grad: linear-gradient(var(--vscode-focusBorder), var(--vscode-focusBorder)); --ai-glow: transparent; --ai-text: var(--vscode-foreground); }
 @media (prefers-reduced-motion: reduce) {
   :root { --dur: 0ms; }
   .codicon-modifier-spin { animation: none; }
