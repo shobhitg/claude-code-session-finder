@@ -174,6 +174,9 @@ describe('Session View layout', () => {
     expect(src).not.toMatch(/root\.clientWidth\b.*Math\.max\(360/);
     expect(src).toMatch(/clientWidth \|\| 900/);
   });
+  it('draws an idle gap as a thin divider — 26 px, it was 46: a fold is not worth a wide band of the timeline (D24)', () => {
+    expect(readFileSync(join(dir, 'session/main.ts'), 'utf8')).toMatch(/gapW = 26\b/);
+  });
 });
 
 describe('Session View rail (D23)', () => {

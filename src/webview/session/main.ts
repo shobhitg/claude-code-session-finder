@@ -114,7 +114,7 @@ function renderHeader(): HTMLElement {
 
 function renderTimeline(width: number): SVGSVGElement {
   const g = graph!; const now = hostNow();
-  const labelW = Math.min(220, Math.round(width * 0.24)), lane = 18, top = 20, gapW = 46;
+  const labelW = Math.min(220, Math.round(width * 0.24)), lane = 18, top = 20, gapW = 26;      // a folded idle stretch is a thin divider, not a band (D24)
   const L = threadLayout(g, now, { width, labelW, lane, top, gapW });
   const H = L.height + 16;
   const el = svg('svg', { class: 'tl', width, height: H, viewBox: `0 0 ${width} ${H}`, role: 'img', 'aria-label': 'Timeline: agents as threads off the lane that started them; idle time folded' });
@@ -131,13 +131,10 @@ function renderTimeline(width: number): SVGSVGElement {
     el.append(svg('rect', { class: 'tl-gap', x: gp.x + 4, y: top - 4, width: gp.w - 8, height: L.height - top + 4, rx: 5 }));
     let z = `M${gp.x + gp.w / 2 - 3},${top - 4}`; for (let y = top; y < L.height - 2; y += 8) z += ' l6,4 l-6,4';
     el.append(svg('path', { class: 'tl-zig', d: z }));
-    const t = svg('text', { class: 'tl-m', x: gp.x + gp.w / 2, y: H - 4, 'text-anchor': 'middle' }); t.textContent = `${fmtDuration(gp.idleMs)} idle`; el.append(t);
+    if (gp.label) { const t = svg('text', { class: 'tl-m', x: gp.x + gp.w / 2, y: H - 4, 'text-anchor': 'middle' }); t.textContent = gp.label; el.append(t); }
   }
-  for (const tk of L.ticks) { const t = svg('text', { class: 'tl-m', x: tk.x, y: 12, 'text-anchor': tk.anchor }); t.textContent = tk.label; el.append(t); }
-  if (L.nowX !== undefined) {
-    el.append(svg('line', { class: 'tl-now', x1: L.nowX, x2: L.nowX, y1: top - 4, y2: L.height }));
-    const t = svg('text', { class: 'tl-m tl-m--now', x: L.nowX, y: 12, 'text-anchor': 'end' }); t.textContent = 'now'; el.append(t);
-  }
+  for (const tk of L.ticks) { const t = svg('text', { class: `tl-m${tk.now ? ' tl-m--now' : ''}`, x: tk.x, y: 12, 'text-anchor': tk.anchor }); t.textContent = tk.label; el.append(t); }
+  if (L.nowX !== undefined) el.append(svg('line', { class: 'tl-now', x1: L.nowX, x2: L.nowX, y1: top - 4, y2: L.height }));
   const byId = new Map(L.lanes.map(l => [l.id, l]));
   const charW = 6.4;
   for (const l of L.lanes) {

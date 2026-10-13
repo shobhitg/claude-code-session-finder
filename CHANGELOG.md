@@ -17,6 +17,13 @@
   and a workflow's header — 36 px instead of 47 — the session's row is bold, a workflow's header
   stays at the top while you scroll through its agents, and a row's second line is cut with an
   ellipsis instead of wrapping.
+- **One long wait no longer takes the whole timeline.** Bars grow quickly over the first minute or
+  two and then hardly at all, so an agent that ran for hours is barely wider than one that ran for
+  minutes and everything after it has room. The timeline is no longer to scale — a row's tooltip
+  and the list have the real durations — and it no longer stretches to fill the window; it grows
+  to the right as work goes on.
+- **Idle gaps are thin dividers** (26 px, not 46), and the timeline's time labels — start, end,
+  "now", "3h 36m idle" — no longer print on top of each other or run off the edge.
 - **The timeline no longer grows a horizontal scrollbar** because it grew a vertical one.
 
 ## 0.10.4

@@ -156,10 +156,24 @@ export const validTlVh = (v: unknown): v is number => typeof v === 'number' && N
 
 export interface ThreadLane { id: string; depth: number; y: number; status: NodeStatus; kind: NodeKind; parent?: string; start: number; end: number; open: boolean; x0: number; x1: number }
 export interface ThreadSeg { a: number; b: number; x0: number; x1: number }
-export interface ThreadGap { x: number; w: number; idleMs: number }
-export interface ThreadTick { x: number; label: string; anchor: 'start' | 'end' }
+export interface ThreadGap { x: number; w: number; idleMs: number; label?: string }
+export interface ThreadTick { x: number; label: string; anchor: 'start' | 'end'; now?: true }
 export interface ThreadLayout { lanes: ThreadLane[]; segs: ThreadSeg[]; gaps: ThreadGap[]; ticks: ThreadTick[]; height: number; nowX?: number }
-export interface ThreadOpts { width: number; labelW: number; lane: number; top: number; gapW: number; right?: number; idleMs?: number }
+export interface ThreadOpts { width: number; labelW: number; lane: number; top: number; gapW: number; right?: number; idleMs?: number; minW?: number; maxW?: number; halfLifeMs?: number }
+
+/** The timeline's axis is not to scale (D24): a stretch between two events is at least TL_MIN_W px, and nearly TL_MAX_W after a couple of minutes. */
+export const TL_MIN_W = 6, TL_MAX_W = 56, TL_HALF_LIFE_MS = 30_000;
+/** One character of a tick label (10 px monospace), to tell whether two labels would touch. */
+export const TICK_CHAR_PX = 6.2;
+const TICK_GAP_PX = 4;
+
+/**
+ * How wide to draw the stretch between two moments something happened (D24): `minW` for an instant, then rising fast and flattening
+ * against `maxW` — minW + (maxW − minW)·(1 − 2^(−t/half)), the shape of C − 2^−x — so a long wait is never much wider than a short one.
+ */
+export function intervalWidth(ms: number, minW = TL_MIN_W, maxW = TL_MAX_W, halfLifeMs = TL_HALF_LIFE_MS): number {
+  return minW + (maxW - minW) * (1 - 2 ** (-Math.max(0, ms) / halfLifeMs));
+}
 
 /** When a node ran: from its spawn to its end, or to now while it is live, or an instant. */
 function spanOf(n: GraphNode, now: number): [number, number] | undefined {
@@ -172,9 +186,13 @@ function spanOf(n: GraphNode, now: number): [number, number] | undefined {
  * The threaded timeline (D20): the clock, but with every stretch nobody was working — longer than `idleMs` —
  * folded into a fixed gap labelled with its length, so a two-day session's bursts of work are not slivers.
  * Each node is a lane; its thread leaves its parent's lane at the moment it was started.
+ * Inside a busy stretch the clock is not to scale either (D24): the axis is cut at every moment a node started or ended, and each piece is as
+ * wide as `intervalWidth` says, so an hours-long agent is barely wider than a two-minute one and nothing is crowded out. The whole is
+ * squeezed to fit the window when it is too wide, and never stretched to fill it, so it grows rightwards as work goes on.
  */
 export function threadLayout(g: SessionGraph, now: number, o: ThreadOpts): ThreadLayout {
   const idle = o.idleMs ?? IDLE_MS, right = o.right ?? 12;
+  const minW = o.minW ?? TL_MIN_W, maxW = o.maxW ?? TL_MAX_W, half = o.halfLifeMs ?? TL_HALF_LIFE_MS;
   const root = g.nodes[g.root];
   const busy: Array<[number, number]> = [];
   for (const s of root?.spans ?? []) busy.push([s[0], s[1]]);
@@ -186,20 +204,40 @@ export function threadLayout(g: SessionGraph, now: number, o: ThreadOpts): Threa
   for (const [a, b] of busy) { const last = merged[merged.length - 1]; if (last && a - last[1] <= idle) last[1] = Math.max(last[1], b); else merged.push([a, b]); }
   const lanes: ThreadLane[] = [];
   if (!merged.length) return { lanes, segs: [], gaps: [], ticks: [], height: o.top };
-  // each busy stretch gets width by its length, never less than a couple of minutes' worth
-  const weight = ([a, b]: [number, number]): number => Math.max(b - a, 2 * 60_000);
-  const total = merged.reduce((t, s) => t + weight(s), 0);
+  const spans = g.order.map(id => spanOf(g.nodes[id]!, now)).filter((s): s is [number, number] => !!s);
+  const cuts = merged.map(([a, b]) => [...new Set([a, b, ...spans.flat().filter(t => t >= a && t <= b)])].sort((p, q) => p - q));
+  const pieces = cuts.map(c => c.length > 1 ? c.slice(1).map((t, i) => intervalWidth(t - c[i]!, minW, maxW, half)) : [minW]);   // an instant of a stretch is one minimum piece
+  const natural = pieces.reduce((n, p) => n + p.reduce((s, w) => s + w, 0), 0);
   const avail = Math.max(60, o.width - o.labelW - right - o.gapW * (merged.length - 1));
-  const segs: ThreadSeg[] = []; const gaps: ThreadGap[] = [];
+  const k = Math.min(1, avail / natural);
+  const segs: ThreadSeg[] = []; const gaps: ThreadGap[] = []; const pts: Array<Array<[number, number]>> = [];   // pts: per stretch, [time, x] at each cut
   let x = o.labelW;
   merged.forEach((s, i) => {
-    const w = avail * weight(s) / total; segs.push({ a: s[0], b: s[1], x0: x, x1: x + w }); x += w;
+    const x0 = x, c = cuts[i]!, p: Array<[number, number]> = [[c[0]!, x0]];
+    pieces[i]!.forEach((w, j) => { x += w * k; if (c.length > 1) p.push([c[j + 1]!, x]); });
+    segs.push({ a: s[0], b: s[1], x0, x1: x }); pts.push(p);
     if (i < merged.length - 1) { gaps.push({ x, w: o.gapW, idleMs: merged[i + 1]![0] - s[1] }); x += o.gapW; }
   });
+  // A gap is a thin divider, so its label is wider than it: "3h 36m idle" if that touches nothing, else just "3h 36m", else none.
+  const gapTaken: Array<[number, number]> = [];
+  for (const gp of gaps) {
+    const c = gp.x + gp.w / 2, len = fmtDuration(gp.idleMs);
+    for (const label of [`${len} idle`, len]) {
+      const half = label.length * TICK_CHAR_PX / 2;
+      if (c - half < 2 || c + half > o.width - 2 || gapTaken.some(([a, b]) => c - half < b + TICK_GAP_PX && c + half > a - TICK_GAP_PX)) continue;
+      gapTaken.push([c - half, c + half]); gp.label = label; break;
+    }
+  }
+  const along = (p: Array<[number, number]>, t: number): number => {
+    if (p.length === 1) return p[0]![1];
+    let j = 1; while (j < p.length - 1 && p[j]![0] < t) j++;
+    const [t0, x0] = p[j - 1]!, [t1, x1] = p[j]!;
+    return t1 > t0 ? x0 + (x1 - x0) * Math.min(1, Math.max(0, (t - t0) / (t1 - t0))) : x1;
+  };
   const X = (t: number): number => {
     for (let i = 0; i < segs.length; i++) {
       const s = segs[i]!;
-      if (t <= s.b) return t < s.a ? (i ? gaps[i - 1]!.x + gaps[i - 1]!.w * 0.5 : s.x0) : s.x0 + (s.x1 - s.x0) * (s.b > s.a ? (t - s.a) / weight([s.a, s.b]) : 0);
+      if (t <= s.b) return t < s.a ? (i ? gaps[i - 1]!.x + gaps[i - 1]!.w * 0.5 : s.x0) : along(pts[i]!, t);
     }
     return segs[segs.length - 1]!.x1;
   };
@@ -212,13 +250,20 @@ export function threadLayout(g: SessionGraph, now: number, o: ThreadOpts): Threa
   const depth = new Map<string, number>();
   for (const l of lanes) { const d = l.parent ? (depth.get(l.parent) ?? 0) + 1 : 0; depth.set(l.id, d); l.depth = d; }
   const multiDay = new Date(segs[0]!.a).toDateString() !== new Date(segs[segs.length - 1]!.b).toDateString();
-  const ticks: ThreadTick[] = [];
-  segs.forEach((s, i) => {
-    ticks.push({ x: s.x0, label: fmtWhen(s.a, multiDay), anchor: 'start' });
-    if (i < segs.length - 1 && s.x1 - s.x0 > 110) ticks.push({ x: s.x1, label: fmtWhen(s.b, multiDay), anchor: 'end' });
-  });
+  // Labels never touch: each stretch's start first (moved left until it fits, if it would run off the edge), then "now", then a stretch's end — whichever is left of room.
+  const taken: Array<[number, number]> = [];
+  const take = (t: ThreadTick): boolean => {
+    const len = t.label.length * TICK_CHAR_PX, l = t.anchor === 'start' ? t.x : t.x - len, r = l + len;
+    if (taken.some(([a, b]) => l < b + TICK_GAP_PX && r > a - TICK_GAP_PX)) return false;
+    taken.push([l, r]); return true;
+  };
+  const starts = segs.map((s): ThreadTick => { const label = fmtWhen(s.a, multiDay); return { x: Math.max(0, Math.min(s.x0, o.width - 2 - label.length * TICK_CHAR_PX)), label, anchor: 'start' }; }).filter(take);
+  const live = !!root && isLive(root.status), nowX = segs[segs.length - 1]!.x1;
+  const nows = live ? [{ x: nowX, label: 'now', anchor: 'end', now: true } as ThreadTick].filter(take) : [];
+  const ends = segs.slice(0, -1).map((s): ThreadTick => ({ x: s.x1, label: fmtWhen(s.b, multiDay), anchor: 'end' })).filter(take);
+  const ticks = [...starts, ...nows, ...ends].sort((p, q) => p.x - q.x);
   const out: ThreadLayout = { lanes, segs, gaps, ticks, height: o.top + lanes.length * o.lane + 4 };
-  if (root && isLive(root.status)) out.nowX = segs[segs.length - 1]!.x1;
+  if (live) out.nowX = nowX;
   return out;
 }
 

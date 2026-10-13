@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { statusIcon, iconClasses, fmtTokens, nodeMeta, toolIcon, modelChip, listModel, threadLayout, railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, validRail, validTlVh, findPaths, pathOfCode,
+import { statusIcon, iconClasses, fmtTokens, nodeMeta, toolIcon, modelChip, listModel, threadLayout, intervalWidth, TICK_CHAR_PX, railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, validRail, validTlVh, findPaths, pathOfCode,
          parseInline, parseMarkdown, looksJson, recognise, defaultView, JSON_BIG, nowStep, plainLine } from '../src/webview/session/model.js';
+import { fmtDuration } from '../src/webview/model.js';
+import type { ThreadTick } from '../src/webview/session/model.js';
 import type { GraphNode, SessionGraph } from '../src/core/agents.js';
 
 const T0 = Date.parse('2026-10-08T09:14:00');
@@ -57,9 +59,12 @@ describe('threadLayout (D20)', () => {
   const L = threadLayout(graph(), now, { width: 1000, labelW: 200, lane: 18, top: 20, gapW: 50 });
   it('folds the idle stretch between bursts into one marked gap of fixed width', () => {
     expect(L.segs).toHaveLength(2);
-    expect(L.gaps).toEqual([{ x: L.segs[0]!.x1, w: 50, idleMs: 15 * H - 80 * M }]);
-    expect(L.segs[0]!.x0).toBe(200); expect(L.segs[1]!.x1).toBeCloseTo(988);
-    expect(L.nowX).toBeCloseTo(988);                                   // the session is live: now is the right edge
+    expect(L.gaps).toEqual([{ x: L.segs[0]!.x1, w: 50, idleMs: 15 * H - 80 * M, label: `${fmtDuration(15 * H - 80 * M)} idle` }]);
+    expect(L.segs[0]!.x0).toBe(200); expect(L.segs[1]!.x1).toBeLessThanOrEqual(988);
+    expect(L.nowX).toBeCloseTo(L.segs[1]!.x1);                         // the session is live: now is where its last stretch ends
+  });
+  it('does not stretch a short session to fill the window — the axis grows to the right as work goes on', () => {
+    expect(L.segs[1]!.x1).toBeLessThan(900);
   });
   it('gives each node a lane in graph order, with depth, and puts a thread where its parent started it', () => {
     expect(L.lanes.map(l => [l.id, l.depth])).toEqual([['session', 0], ['a', 1], ['w', 1], ['w1', 2], ['w2', 2], ['b', 1], ['b1', 2]]);
@@ -74,6 +79,132 @@ describe('threadLayout (D20)', () => {
   });
   it('an empty graph lays out nothing', () => {
     expect(threadLayout({ root: 'session', order: ['session'], nodes: { session: node({ id: 'session', kind: 'session', parentId: null }) } }, now, { width: 500, labelW: 100, lane: 18, top: 20, gapW: 40 }).lanes).toEqual([]);
+  });
+});
+
+describe('intervalWidth (D24)', () => {
+  const w = (ms: number): number => intervalWidth(ms, 6, 56, 30_000);
+  it('is the minimum for an instant, halfway after one half-life, and flattens against the maximum', () => {
+    expect(w(0)).toBe(6);
+    expect(w(30_000)).toBeCloseTo(31);
+    expect(w(2 * M)).toBeCloseTo(52.875, 2);                           // a minute or two: already near the top
+    expect(w(3 * H)).toBeCloseTo(56, 6);
+  });
+  it('never narrows as the wait grows, never passes the maximum, and the next hour adds nothing visible', () => {
+    let last = -1;
+    for (const ms of [0, 1, 500, 5_000, 30_000, 90_000, 5 * M, 20 * M, H, 10 * H, 100 * H]) { expect(w(ms)).toBeGreaterThanOrEqual(last); expect(w(ms)).toBeLessThanOrEqual(56); last = w(ms); }
+    expect(w(2 * H) - w(H)).toBeLessThan(0.001);
+  });
+});
+
+describe('threadLayout — a long wait does not crowd out the rest (D24)', () => {
+  const o = { width: 1000, labelW: 200, lane: 18, top: 20, gapW: 50, minW: 6, maxW: 56, halfLifeMs: 30_000 };
+  // one three-hour stretch: a 2-minute agent, a 160-minute one, a 1-second one and a 1-minute one
+  const long = (): SessionGraph => ({ root: 'session', order: ['session', 'a', 'b', 'c', 'd'], nodes: {
+    session: node({ id: 'session', kind: 'session', parentId: null, status: 'completed', spawnTs: T0, endTs: T0 + 3 * H, children: ['a', 'b', 'c', 'd'], spans: [[T0, T0 + 3 * H]] }),
+    a: node({ id: 'a', spawnTs: T0 + M, endTs: T0 + 3 * M }),
+    b: node({ id: 'b', spawnTs: T0 + 10 * M, endTs: T0 + 170 * M }),
+    c: node({ id: 'c', spawnTs: T0 + 171 * M, endTs: T0 + 171 * M + 1000 }),
+    d: node({ id: 'd', spawnTs: T0 + 175 * M, endTs: T0 + 176 * M }),
+  } });
+  const L = threadLayout(long(), T0 + 4 * H, o);
+  const lane = (id: string) => L.lanes.find(l => l.id === id)!;
+  const width = (id: string): number => lane(id).x1 - lane(id).x0;
+
+  it('a bar that ran for hours is no wider than the maximum, and barely wider than one that ran for two minutes', () => {
+    expect(width('b')).toBeLessThanOrEqual(56 + 1e-6);
+    expect(width('b') / width('a')).toBeLessThan(1.2);                 // linear, it was 80 times wider
+  });
+  it('a short bar stays visible — a one-second agent is at least the minimum wide', () => {
+    expect(width('c')).toBeGreaterThanOrEqual(6);
+    expect(width('d')).toBeCloseTo(intervalWidth(M, 6, 56, 30_000));
+  });
+  it('a whole three-hour stretch with nine pieces is at most nine maxima wide', () => {
+    expect(L.segs).toHaveLength(1);
+    expect(L.segs[0]!.x1 - L.segs[0]!.x0).toBeLessThanOrEqual(9 * 56);
+  });
+  it('an instant still has the minimum width', () => {
+    const g: SessionGraph = { root: 'session', order: ['session'], nodes: { session: node({ id: 'session', kind: 'session', parentId: null, status: 'completed', spawnTs: T0, endTs: T0, spans: [[T0, T0]] }) } };
+    const I = threadLayout(g, T0 + M, o);
+    expect(I.segs[0]!.x1 - I.segs[0]!.x0).toBeCloseTo(6);
+  });
+
+  const crowd = (n: number): SessionGraph => {
+    const ids = Array.from({ length: n }, (_, i) => `n${i}`);
+    return { root: 'session', order: ['session', ...ids], nodes: {
+      session: node({ id: 'session', kind: 'session', parentId: null, status: 'completed', spawnTs: T0, endTs: T0 + n * 2 * M, children: ids, spans: [[T0, T0 + n * 2 * M]] }),
+      ...Object.fromEntries(ids.map((id, i) => [id, node({ id, spawnTs: T0 + i * 2 * M, endTs: T0 + i * 2 * M + M })])),
+    } };
+  };
+  it('a crowd of agents is squeezed to fit the window, not run off its edge', () => {
+    const C = threadLayout(crowd(150), T0 + 400 * M, o);
+    expect(C.segs[C.segs.length - 1]!.x1).toBeCloseTo(988);            // 1000 − the label column's 200 → 788 to share, 12 spare on the right
+    for (const l of C.lanes) { expect(l.x0).toBeGreaterThanOrEqual(200); expect(l.x1).toBeLessThanOrEqual(988 + 1e-6); }
+  });
+  it('time still runs left to right: a node that started later never sits to the left, and a thread leaves a lane that is there', () => {
+    for (const [name, G] of [['long', long()], ['crowd', crowd(150)], ['bursts', graph()]] as const) {
+      const C = threadLayout(G, T0 + 16 * H, o);
+      const byStart = [...C.lanes].sort((p, q) => p.start - q.start || p.end - q.end);
+      byStart.forEach((l, i) => { if (i) expect(l.x0, `${name}: ${l.id}`).toBeGreaterThanOrEqual(byStart[i - 1]!.x0 - 1e-9); expect(l.x1, `${name}: ${l.id}`).toBeGreaterThanOrEqual(l.x0); });
+      for (const l of C.lanes) { const p = l.parent && C.lanes.find(x => x.id === l.parent); if (p) { expect(l.x0, `${name}: ${l.id}`).toBeGreaterThanOrEqual(p.x0 - 1e-9); expect(l.x0, `${name}: ${l.id}`).toBeLessThanOrEqual(p.x1 + 1e-9); } }
+    }
+  });
+});
+
+describe('threadLayout — ticks never overlap (D24)', () => {
+  // minW = maxW: every piece is exactly 60 px, so a stretch is as wide as it has pieces and the labels can be made to crowd on purpose
+  const o = { width: 1000, labelW: 200, lane: 18, top: 20, gapW: 50, minW: 60, maxW: 60 };
+  const extent = (t: ThreadTick): [number, number] => { const len = t.label.length * TICK_CHAR_PX; return t.anchor === 'start' ? [t.x, t.x + len] : [t.x - len, t.x]; };
+  const D = 24 * H;
+  // three stretches a day apart: A two pieces (Oct 8 09:14 – 09:16), B four pieces (Oct 9 05:14 – 05:18), C one piece (Oct 10 01:14)
+  const threeStretches = (status: 'completed' | 'running' = 'completed'): SessionGraph => ({ root: 'session', order: ['session', 'p', 'q1', 'q2'], nodes: {
+    session: node({ id: 'session', kind: 'session', parentId: null, status, spawnTs: T0, endTs: T0 + 2 * D - 8 * H + M, children: ['p', 'q1', 'q2'],
+      spans: [[T0, T0 + 2 * M], [T0 + D - 4 * H, T0 + D - 4 * H + 4 * M], [T0 + 2 * D - 8 * H, T0 + 2 * D - 8 * H + M]] }),
+    p: node({ id: 'p', spawnTs: T0 + M, endTs: T0 + 2 * M }),
+    q1: node({ id: 'q1', spawnTs: T0 + D - 4 * H + M, endTs: T0 + D - 4 * H + 2 * M }),
+    q2: node({ id: 'q2', spawnTs: T0 + D - 4 * H + 3 * M, endTs: T0 + D - 4 * H + 4 * M }),
+  } });
+  it('drops an end label that would land on its own start label, and keeps one with room', () => {
+    const L = threadLayout(threeStretches(), T0 + 3 * D, o);
+    expect(L.segs.map(s => Math.round(s.x1 - s.x0))).toEqual([120, 240, 60]);
+    expect(L.ticks.map(t => [t.label, t.anchor])).toEqual([['Oct 8 09:14', 'start'], ['Oct 9 05:14', 'start'], ['Oct 9 05:18', 'end'], ['Oct 10 01:14', 'start']]);
+    const ext = L.ticks.map(extent).sort((p, q) => p[0] - q[0]);
+    ext.forEach((e, i) => { if (i) expect(e[0]).toBeGreaterThanOrEqual(ext[i - 1]![1]); });
+  });
+  it('a start label that would run off the right edge is moved left until it fits, not cut', () => {
+    // two stretches in 420 px, the pieces squeezed to fit: the last ends 12 px short of the edge, but its label is 74 px long
+    const g: SessionGraph = { root: 'session', order: ['session', 'p'], nodes: {
+      session: node({ id: 'session', kind: 'session', parentId: null, status: 'completed', spawnTs: T0, endTs: T0 + 40 * H + M, children: ['p'], spans: [[T0, T0 + 2 * M], [T0 + 40 * H, T0 + 40 * H + M]] }),
+      p: node({ id: 'p', spawnTs: T0 + M, endTs: T0 + 2 * M }) } };
+    const L = threadLayout(g, T0 + 3 * D, { ...o, width: 420 });
+    const c = L.ticks.find(t => t.label === 'Oct 10 01:14')!;
+    expect(c.anchor).toBe('start'); expect(c.x).toBeLessThan(L.segs[1]!.x0);
+    for (const t of L.ticks) { const e = extent(t); expect(e[0], t.label).toBeGreaterThanOrEqual(0); expect(e[1], t.label).toBeLessThanOrEqual(420); }
+  });
+  it('the now label gives way to a start label it would land on, and the dashed line stays', () => {
+    // live, and resumed a piece ago: the last stretch's start label and "now" want the same 60 px
+    const L = threadLayout(threeStretches('running'), T0 + 2 * D - 8 * H + M, o);
+    expect(L.nowX).toBeCloseTo(L.segs[2]!.x1);
+    expect(L.ticks.filter(t => t.now)).toEqual([]);
+    expect(L.ticks.some(t => t.label === 'Oct 10 01:14' && t.anchor === 'start')).toBe(true);
+  });
+  it('shows "now" at the live edge when there is room for it', () => {
+    const L = threadLayout(graph(), T0 + 15 * H + 30 * M, { ...o, minW: 6, maxW: 56, halfLifeMs: 30_000 });
+    expect(L.ticks.filter(t => t.now)).toEqual([{ x: L.nowX, label: 'now', anchor: 'end', now: true }]);
+  });
+});
+
+describe('threadLayout — idle gaps are thin dividers whose labels never touch (D24)', () => {
+  // three one-piece stretches 14 h apart (13h 59m idle between each): minW = maxW sets how far apart the two gap labels sit
+  const bursts = (): SessionGraph => ({ root: 'session', order: ['session'], nodes: { session: node({ id: 'session', kind: 'session', parentId: null, status: 'completed', spawnTs: T0, endTs: T0 + 28 * H + M,
+    spans: [[T0, T0 + M], [T0 + 14 * H, T0 + 14 * H + M], [T0 + 28 * H, T0 + 28 * H + M]] }) } });
+  const labels = (piece: number): Array<string | undefined> => threadLayout(bursts(), T0 + 29 * H, { width: 1000, labelW: 200, lane: 18, top: 20, gapW: 26, minW: piece, maxW: piece }).gaps.map(g => g.label);
+  it('names each gap with how long it was idle, when there is room', () => {
+    expect(labels(60)).toEqual(['13h 59m idle', '13h 59m idle']);
+  });
+  it('writes just the length when "idle" would touch the neighbouring label, and nothing when even that would', () => {
+    expect(labels(44)).toEqual(['13h 59m idle', '13h 59m']);
+    expect(labels(14)).toEqual(['13h 59m idle', undefined]);
   });
 });
 
