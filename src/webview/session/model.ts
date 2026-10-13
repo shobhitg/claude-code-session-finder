@@ -113,6 +113,45 @@ export function listModel(g: SessionGraph): ListEntry[] {
   return out;
 }
 
+// ---------------------------------------------------------------- the agent rail's width (D23)
+
+export const RAIL_MIN = 140, RAIL_MAX = 640, MAIN_MIN = 320;
+/** What the rail may measure in a view `viewW` wide: never so wide that the timeline and the pane beside it lose their room. */
+export const railBounds = (viewW: number): [number, number] => [RAIL_MIN, Math.max(RAIL_MIN, Math.min(RAIL_MAX, viewW - MAIN_MIN))];
+export function clampRail(px: number, viewW: number): number {
+  const [lo, hi] = railBounds(viewW);
+  return Math.round(Math.min(hi, Math.max(lo, px)));
+}
+/** What a key on a divider asks for — `dec` and `inc` move it 16 px (64 with Shift), Home and End go to the two ends — or undefined for any other key. */
+function dividerKey(key: string, dec: string, inc: string, cur: number, shift: boolean, clamp: (px: number) => number): number | undefined {
+  const step = shift ? 64 : 16;
+  switch (key) {
+    case dec: return clamp(cur - step);
+    case inc: return clamp(cur + step);
+    case 'Home': return clamp(-Infinity);
+    case 'End': return clamp(Infinity);
+    default: return undefined;
+  }
+}
+/** The rail's width a key asks for: left and right. */
+export const railKey = (key: string, cur: number, viewW: number, shift: boolean): number | undefined => dividerKey(key, 'ArrowLeft', 'ArrowRight', cur, shift, px => clampRail(px, viewW));
+
+// ---------------------------------------------------------------- the timeline's height (D23)
+
+export const TL_MIN = 60, PANE_MIN = 200, HEADER_H = 40;
+/** What the timeline may measure in a view `viewH` tall: a couple of lanes at least, and never so much that the pane under it loses its room. The stylesheet clamps the same way (60px, 100vh − 240px). */
+export const tlBounds = (viewH: number): [number, number] => [TL_MIN, Math.max(TL_MIN, viewH - HEADER_H - PANE_MIN)];
+export function clampTl(px: number, viewH: number): number {
+  const [lo, hi] = tlBounds(viewH);
+  return Math.round(Math.min(hi, Math.max(lo, px)));
+}
+/** The timeline's height a key asks for: up and down. */
+export const tlKey = (key: string, cur: number, viewH: number, shift: boolean): number | undefined => dividerKey(key, 'ArrowUp', 'ArrowDown', cur, shift, px => clampTl(px, viewH));
+
+/** What the host will remember of the dividers: every size they can produce (at any window, as vh for the height), nothing absurd. */
+export const validRail = (w: unknown): w is number => typeof w === 'number' && Number.isFinite(w) && w >= 100 && w <= 2000;
+export const validTlVh = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0.5 && v <= 99.5;
+
 // ---------------------------------------------------------------- the threaded timeline
 
 export interface ThreadLane { id: string; depth: number; y: number; status: NodeStatus; kind: NodeKind; parent?: string; start: number; end: number; open: boolean; x0: number; x1: number }

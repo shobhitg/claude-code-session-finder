@@ -7,7 +7,7 @@ import type { SessionGraph, GraphNode, NodeStatus } from '../../core/agents.js';
 import type { Turn, Item, ToolCall, Overview, Step, NowStep } from '../../core/transcript.js';
 import { fmtDuration } from '../model.js';
 import { iconClasses, statusIcon, fmtClock, fmtTokens, toolIcon, modelChip, listModel, threadLayout, nodeMeta, isLive, nowStep, plainLine,
-         parseMarkdown, parseInline, findPaths, looksJson, recognise, defaultView,
+         railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, parseMarkdown, parseInline, findPaths, looksJson, recognise, defaultView,
          type MdBlock, type Inline, type JsonView, type Findings } from './model.js';
 
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): unknown; setState(s: unknown): void };
@@ -19,12 +19,12 @@ interface FileInfo {
   size?: number; mtimeMs?: number; kind?: string; lines?: number; preview?: { start: number; lines: string[]; hl?: number }; image?: string;
 }
 type Inbound =
-  | { type: 'init' | 'update'; sessionId: string; title: string; graph: SessionGraph; now: number; live: boolean; page?: Page; jsonViews?: Record<string, JsonView> }
+  | { type: 'init' | 'update'; sessionId: string; title: string; graph: SessionGraph; now: number; live: boolean; page?: Page; jsonViews?: Record<string, JsonView>; rail?: number; tl?: number }
   | { type: 'page'; page: Page; now: number }
   | { type: 'fileInfo'; key: string; info: FileInfo }
   | { type: 'error'; message: string };
 type Tab = 'overview' | 'transcript';
-interface UiState { tab: Tab; closed: string[] }
+interface UiState { tab: Tab; closed: string[]; rail?: number; tl?: number }   // rail: the agent list's width in px, tl: the timeline's height in vh — once you have dragged their dividers (D23)
 
 let graph: SessionGraph | null = null;
 let title = '';
@@ -112,9 +112,8 @@ function renderHeader(): HTMLElement {
 
 // ---------------------------------------------------------------- the threaded timeline (D20)
 
-function renderTimeline(): HTMLElement {
+function renderTimeline(width: number): SVGSVGElement {
   const g = graph!; const now = hostNow();
-  const width = Math.max(480, (root.clientWidth || 900) - 2);
   const labelW = Math.min(220, Math.round(width * 0.24)), lane = 18, top = 20, gapW = 46;
   const L = threadLayout(g, now, { width, labelW, lane, top, gapW });
   const H = L.height + 16;
@@ -170,7 +169,7 @@ function renderTimeline(): HTMLElement {
     else if (l.kind === 'agent' && (n.status === 'failed' || n.status === 'stopped')) gEl.append(svg('circle', { class: 'tl-end', cx: l.x1, cy: l.y, r: 3.6 }));
     el.append(gEl);
   }
-  return h('section', { class: 'timeline' }, el);
+  return el;
 }
 
 // ---------------------------------------------------------------- the agent list (D20)
@@ -187,9 +186,10 @@ function spanBar(n: GraphNode): HTMLElement {
 function listRow(id: string, depth: number): HTMLElement {
   const n = graph!.nodes[id]!;
   const ran = n.durationMs ?? (n.endTs && n.spawnTs ? n.endTs - n.spawnTs : undefined);
+  const text = [n.kind === 'failed-spawn' ? 'spawn failed' : n.subagentType && n.subagentType !== 'general-purpose' ? n.subagentType : '', ran ? fmtDuration(ran) : isLive(n.status) ? 'running' : '', n.background ? 'background' : ''].filter(Boolean).join(' · ');
   const second = isLive(n.status) && n.now ? nowLine(n)
-    : h('span', { class: 'row__meta' }, [n.kind === 'failed-spawn' ? 'spawn failed' : n.subagentType && n.subagentType !== 'general-purpose' ? n.subagentType : '', ran ? fmtDuration(ran) : isLive(n.status) ? 'running' : '', n.background ? 'background' : ''].filter(Boolean).join(' · '), n.kind !== 'session' ? spanBar(n) : null);
-  const b = h('button', { class: `row ${statusClass(n.status)}`, 'data-id': id, style: `--depth:${depth}`, title: `${n.label}${n.tag ? ` · ${n.tag}` : ''} — ${nodeMeta(n, hostNow()) || n.status}`, ...(id === selected ? { 'aria-current': 'true' } : {}) },
+    : h('span', { class: 'row__meta' }, text ? h('span', { class: 'row__meta-text' }, text) : null, n.kind !== 'session' ? spanBar(n) : null);
+  const b = h('button', { class: `row ${statusClass(n.status)} ${n.kind === 'session' ? 'row--root' : 'row--sub'}`, 'data-id': id, style: `--depth:${depth}`, title: `${n.label}${n.tag ? ` · ${n.tag}` : ''} — ${nodeMeta(n, hostNow()) || n.status}`, ...(id === selected ? { 'aria-current': 'true' } : {}) },
     statusGlyph(n, 'row__icon'), h('span', { class: 'row__name' }, n.label, n.tag ? h('span', { class: 'row__tag' }, n.tag) : null), chip(n.model) ?? h('span'), second);
   b.addEventListener('click', () => select(id));
   return b;
@@ -514,10 +514,95 @@ function renderPane(): HTMLElement {
   return h('section', { class: 'pane', 'aria-label': n.label }, head, body);
 }
 
+// ---------------------------------------------------------------- the dividers (D23): the rail's width, the timeline's height
+
+/** The timeline, drawn for the width it has — measured in place, since the rail takes some of the view's and CSS decides how much. */
+const drawTimeline = (tl: HTMLElement): void => tl.replaceChildren(renderTimeline(Math.max(300, (tl.clientWidth || 900) - 2)));   // 300: the narrowest column MAIN_MIN leaves it
+const viewWidth = (): number => root.clientWidth || window.innerWidth || 900;
+const viewHeight = (): number => root.clientHeight || window.innerHeight || 700;
+const box = (sel: string): DOMRect => (root.querySelector(sel) as HTMLElement).getBoundingClientRect();
+const sizeOf = (sel: string, dim: 'width' | 'height'): number => Math.round(root.querySelector<HTMLElement>(sel)?.getBoundingClientRect()[dim] ?? 0);
+
+/** A divider you drag, or move with the keys. `size` is what it sets now, in px; `set(undefined)` puts the default back; `msg` is what the host is told to remember. */
+interface Splitter {
+  name: 'rail' | 'tl'; cls: 'sash--v' | 'sash--h'; label: string; saveT?: number;
+  size(): number; bounds(): [number, number]; set(px: number | undefined): void;
+  key(k: string, shift: boolean): number | undefined;
+  at(e: PointerEvent): number;                                   // the size a pointer at e asks for
+  msg(): unknown;
+}
+let tlFrame = 0;
+/** The width you chose for the agent list, held inside what this view can give; unset, the stylesheet's default. The timeline is redrawn for the room it now has. */
+function applyRail(): void {
+  const body = root.querySelector<HTMLElement>('.body'); if (!body) return;
+  if (ui.rail === undefined) body.style.removeProperty('--rail'); else body.style.setProperty('--rail', `${clampRail(ui.rail, viewWidth())}px`);
+}
+/** The height you chose for the timeline (in vh, so a bigger window keeps the proportion); unset, it is as tall as its lanes. */
+function applyTl(): void {
+  const main = root.querySelector<HTMLElement>('.main'); if (!main) return;
+  if (ui.tl === undefined) { delete main.dataset.tl; main.style.removeProperty('--tl'); } else { main.dataset.tl = ''; main.style.setProperty('--tl', `${ui.tl}vh`); }
+}
+const RAIL: Splitter = {
+  name: 'rail', cls: 'sash--v', label: 'Agent list width',
+  size: () => sizeOf('.list', 'width'), bounds: () => railBounds(viewWidth()), at: e => e.clientX - box('.body').left,
+  set(px) {
+    if (px === undefined) delete ui.rail; else ui.rail = clampRail(px, viewWidth());
+    applyRail(); cancelAnimationFrame(tlFrame);
+    tlFrame = requestAnimationFrame(() => { const tl = root.querySelector<HTMLElement>('.timeline'); if (tl) drawTimeline(tl); });
+  },
+  key: (k, shift) => railKey(k, RAIL.size(), viewWidth(), shift), msg: () => ({ type: 'rail', width: ui.rail ?? null }),
+};
+const TL: Splitter = {
+  name: 'tl', cls: 'sash--h', label: 'Timeline height',
+  size: () => sizeOf('.timeline', 'height'), bounds: () => tlBounds(viewHeight()), at: e => e.clientY - box('.main').top,
+  set(px) { if (px === undefined) delete ui.tl; else ui.tl = Math.round(clampTl(px, viewHeight()) / viewHeight() * 10_000) / 100; applyTl(); },
+  key: (k, shift) => tlKey(k, TL.size(), viewHeight(), shift), msg: () => ({ type: 'tl', vh: ui.tl ?? null }),
+};
+function syncSash(sp: Splitter): void {
+  const s = root.querySelector<HTMLElement>(`.sash[data-sash="${sp.name}"]`); if (!s) return;
+  const [lo, hi] = sp.bounds();
+  s.setAttribute('aria-valuenow', String(sp.size())); s.setAttribute('aria-valuemin', String(lo)); s.setAttribute('aria-valuemax', String(hi));
+}
+/** Remember it — in this view, and (a moment later) for every session you open. */
+function keepLayout(sp: Splitter): void { save(); clearTimeout(sp.saveT); sp.saveT = window.setTimeout(() => post(sp.msg()), 250); }
+let dragEl: HTMLElement | null = null, dragSp: Splitter | null = null, dragMoved = false, renderLater = false;   // the divider being dragged, while it is
+/** The drag is over — however it ended: released, cancelled, capture lost, the window blurred, or a move with no button down (the release came outside the view). */
+function endDrag(): void {
+  if (!dragEl || !dragSp) return;
+  const sp = dragSp;
+  dragEl.classList.remove('sash--drag'); dragEl = null; dragSp = null; document.body.classList.remove('resizing-v', 'resizing-h');
+  if (dragMoved) keepLayout(sp);
+  if (renderLater) { renderLater = false; render(); }            // a snapshot that arrived mid-drag
+}
+function renderSash(sp: Splitter): HTMLElement {
+  const el = h('div', { class: `sash ${sp.cls}`, 'data-sash': sp.name, role: 'separator', 'aria-orientation': sp.cls === 'sash--v' ? 'vertical' : 'horizontal', 'aria-label': sp.label, tabindex: '0', title: 'Drag to resize · double-click to reset' });
+  const reset = (): void => { sp.set(undefined); syncSash(sp); keepLayout(sp); };
+  el.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault(); el.setPointerCapture(e.pointerId);
+    dragEl = el; dragSp = sp; dragMoved = false; el.classList.add('sash--drag'); document.body.classList.add(sp.cls === 'sash--v' ? 'resizing-v' : 'resizing-h');
+  });
+  el.addEventListener('pointermove', e => {
+    if (dragEl !== el) return;
+    if (e.buttons === 0) { endDrag(); return; }
+    dragMoved = true; sp.set(sp.at(e)); syncSash(sp);
+  });
+  el.addEventListener('pointerup', endDrag); el.addEventListener('pointercancel', endDrag); el.addEventListener('lostpointercapture', endDrag);
+  el.addEventListener('dblclick', reset);
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); reset(); return; }
+    const px = sp.key(e.key, e.shiftKey);
+    if (px !== undefined) { e.preventDefault(); sp.set(px); syncSash(sp); keepLayout(sp); }
+  });
+  return el;
+}
+
 // ---------------------------------------------------------------- composition: rebuild, keep what you had open
 
-function render(): void {
+function render(force = false): void {
   if (!graph) return;
+  if (dragEl && !force) { renderLater = true; return; }          // a snapshot now would rebuild the divider out from under the pointer; a resize (force) always draws
+  const focusedSash = (document.activeElement as HTMLElement | null)?.dataset.sash;
   const keep = {
     tl: root.querySelector('.timeline')?.scrollTop ?? 0, list: root.querySelector('.list')?.scrollTop ?? 0,
     body: root.querySelector('.pane__body') as HTMLElement | null, open: new Set(Array.from(root.querySelectorAll<HTMLElement>('details[open][data-k]')).map(d => d.dataset.k!)),
@@ -526,7 +611,10 @@ function render(): void {
   const stick = keep.body ? keep.body.scrollHeight - keep.body.scrollTop - keep.body.clientHeight < 40 : false;
   const bodyTop = keep.body?.scrollTop ?? 0;
   const pane = renderPane(); pane.dataset.page = `${selected}:${ui.tab}`;
-  root.replaceChildren(renderHeader(), renderTimeline(), h('div', { class: 'body' }, renderList(), pane));
+  const timeline = h('section', { class: 'timeline' });
+  root.replaceChildren(renderHeader(), h('div', { class: 'body' }, renderList(), renderSash(RAIL), h('div', { class: 'main' }, timeline, renderSash(TL), pane)));   // the rail's divider is out of the grid (absolute): its place in the DOM is its place in the Tab order
+  applyRail(); applyTl(); drawTimeline(timeline); syncSash(RAIL); syncSash(TL);   // the rail first: the timeline is drawn for the column beside it
+  if (focusedSash) root.querySelector<HTMLElement>(`.sash[data-sash="${focusedSash}"]`)?.focus({ preventScroll: true });
   for (const d of Array.from(root.querySelectorAll<HTMLDetailsElement>('details[data-k]'))) if (keep.open.has(d.dataset.k!)) d.open = true;
   (root.querySelector('.timeline') as HTMLElement).scrollTop = keep.tl;
   (root.querySelector('.list') as HTMLElement).scrollTop = keep.list;
@@ -599,6 +687,7 @@ document.addEventListener('scroll', () => { if (!card.hidden) closeCard(); }, tr
 
 // ---------------------------------------------------------------- messages
 
+let layoutAdopted = false;
 window.addEventListener('message', (e: MessageEvent<Inbound>) => {
   const m = e.data;
   if (!m || typeof m !== 'object') return;
@@ -611,6 +700,11 @@ window.addEventListener('message', (e: MessageEvent<Inbound>) => {
   clockOffset = m.now - Date.now();
   if (m.type === 'init' || m.type === 'update') {
     graph = m.graph; title = m.title; live = m.live;
+    if (!layoutAdopted) {                                          // the sizes you last chose, in any session; this view's own win
+      layoutAdopted = true;
+      if (ui.rail === undefined && typeof m.rail === 'number') ui.rail = m.rail;
+      if (ui.tl === undefined && typeof m.tl === 'number') ui.tl = m.tl;
+    }
     if (m.jsonViews) jsonViews = m.jsonViews;
     if (m.page) { page = m.page; selected = m.page.nodeId; }
     if (!graph.nodes[selected]) selected = graph.root;
@@ -625,5 +719,6 @@ window.addEventListener('message', (e: MessageEvent<Inbound>) => {
 });
 setInterval(tick, 1_000);
 let resizeT = 0;
-window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = window.setTimeout(render, 150); });
+window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = window.setTimeout(() => render(true), 150); });
+window.addEventListener('blur', endDrag);
 post({ type: 'ready' });

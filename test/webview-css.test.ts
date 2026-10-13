@@ -153,7 +153,72 @@ describe('the Now strip — the card, kept in view while it is scrolled off', ()
 });
 
 describe('Session View layout', () => {
+  const css = sheets[2]![1];
   it('is one column that cannot outgrow the window — a long session title (a first prompt) ellipsizes instead of stretching the header, timeline and pane past the edge', () => {
-    expect(sheets[2]![1]).toMatch(/\.app \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+    expect(css).toMatch(/\.app \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+  });
+  it('is a header over a body — the agent list is a rail down the left, and the timeline and the pane stack in the column beside it (D23)', () => {
+    expect(css).toMatch(/\.app \{[^}]*grid-template-rows: auto minmax\(0, 1fr\);/);
+    expect(css).toMatch(/\.body \{[^}]*--rail: clamp\(180px, 26vw, 320px\);[^}]*grid-template-columns: var\(--rail\) minmax\(0, 1fr\);/);   // --rail: the view overrides it once you have dragged the divider
+    expect(css).toMatch(/\.main \{[^}]*grid-template-rows: auto 0 minmax\(0, 1fr\);/);   // timeline · a zero-height row for the divider · pane
+    expect(css).toMatch(/\.main \{[^}]*min-width: 0;/);                // the column may shrink below its content, or a wide timeline widens the whole view
+  });
+  it('keeps the rail at any usable width: it stacks over the rest only in a view narrower than 480 px (it did below 760, which a tab beside the sidebar is)', () => {
+    expect([...css.matchAll(/@media \(max-width: (\d+)px\)/g)].map(m => Number(m[1]))).toEqual([480]);
+  });
+  it('reserves the timeline\'s scrollbar, so the width it was drawn for is the width it has — a vertical scrollbar would otherwise add a horizontal one', () => {
+    expect(css).toMatch(/\.timeline \{[^}]*scrollbar-gutter: stable;/);
+  });
+  it('lays the timeline out for its own column — the rail takes some of the view\'s width — measured once it is in the page', () => {
+    const src = readFileSync(join(dir, 'session/main.ts'), 'utf8');
+    expect(src).not.toMatch(/root\.clientWidth\b.*Math\.max\(360/);
+    expect(src).toMatch(/clientWidth \|\| 900/);
+  });
+});
+
+describe('Session View rail (D23)', () => {
+  const css = sheets[2]![1];
+  it('has a divider to drag: a hit area laid over the rail\'s border, so it takes no width of its own, and it only lights up when you aim at it', () => {
+    expect(css).toMatch(/\.sash \{[^}]*touch-action: none;/);
+    expect(css).toMatch(/\.sash--v \{[^}]*position: absolute;[^}]*left: calc\(var\(--rail\) - 1px\);[^}]*width: 5px;[^}]*cursor: col-resize;/);
+    expect(css).toMatch(/\.sash:hover::before, \.sash:focus-visible::before, \.sash--drag::before \{ background: var\(--s-sash\); \}/);
+    expect(tokens).toMatch(/--s-sash:\s*var\(--vscode-sash-hoverBorder/);
+    expect(/@media \(max-width: 480px\) \{[\s\S]*?\n\}/.exec(css)?.[0] ?? '').toContain('.sash--v { display: none; }');   // stacked, there is no rail beside anything to resize
+  });
+  it('the timeline and the pane have a divider too: a zero-height row between them and a hit area that straddles it, so you can give either more height', () => {
+    expect(css).toMatch(/\.sash--h \{[^}]*position: relative;[^}]*height: 5px;[^}]*margin-top: -2px;[^}]*cursor: row-resize;/);
+    expect(css).toMatch(/\.sash--h::before \{[^}]*left: 0;[^}]*right: 0;/);
+  });
+  it('once you have set the timeline\'s height it is fixed — held, in CSS, between a couple of lanes and what leaves the pane room, so a resized window keeps it in range — and until then it is as tall as its lanes, up to a third of the view', () => {
+    expect(css).toMatch(/\.main\[data-tl\] \{[^}]*grid-template-rows: clamp\(60px, var\(--tl\), calc\(100vh - 240px\)\) 0 minmax\(0, 1fr\);/);
+    expect(css).toMatch(/\.main\[data-tl\] \.timeline \{ max-height: none; \}/);
+    expect(css).toMatch(/\.timeline \{[^}]*max-height: 34vh;/);
+  });
+  it('an agent\'s row is smaller than the session\'s and a group\'s header: a smaller font, tighter lines and padding, a smaller model chip', () => {
+    expect(css).toMatch(/\.row--sub \{[^}]*padding-block: 3px;[^}]*font-size: calc\(var\(--size\) - 1px\);[^}]*line-height: 1\.35;/);
+    expect(css).toMatch(/\.row--sub \.chipm \{[^}]*height: 14px;/);
+    expect(css).toMatch(/\.row--root \.row__name \{ font-weight: 600; \}/);
+  });
+  it('a group\'s header stays in view while its agents scroll under it — opaque, so they cannot show through', () => {
+    expect(css).toMatch(/\.grp__head \{[^}]*position: sticky;[^}]*top: 0;[^}]*background: color-mix\(in srgb, var\(--s-fg\) 4\.5%, var\(--s-bg\)\);/);
+  });
+  it('stacked (narrow), the list takes 30% of the height above the timeline, so a saved timeline height is held lower — the pane must not be squeezed out by a height set in a wider tab', () => {
+    const narrow = /@media \(max-width: 480px\) \{[\s\S]*?\n\}/.exec(css)?.[0] ?? '';
+    expect(narrow).toMatch(/\.main\[data-tl\] \{ grid-template-rows: clamp\(60px, var\(--tl\), calc\(70vh - 240px\)\) 0 minmax\(0, 1fr\); \}/);
+  });
+  it('both dividers are in the page: the timeline\'s between the timeline and the pane, the rail\'s beside the rail — each a keyboard-operable separator', () => {
+    const src = readFileSync(join(dir, 'session/main.ts'), 'utf8');
+    expect(src).toMatch(/renderList\(\), renderSash\(RAIL\), h\('div', \{ class: 'main' \}, timeline, renderSash\(TL\), pane\)/);   // in Tab order: the list, its divider, then the timeline, its divider, the pane
+    expect(src).toMatch(/role: 'separator', 'aria-orientation': sp\.cls === 'sash--v' \? 'vertical' : 'horizontal'/);
+  });
+  it('a drag ends however it ends — released, cancelled, capture lost, the window blurred, or a move with no button down — and a resize redraws even mid-drag', () => {
+    const src = readFileSync(join(dir, 'session/main.ts'), 'utf8');
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) expect(src).toContain(`addEventListener('${ev}', endDrag)`);
+    expect(src).toMatch(/e\.buttons === 0\) \{ endDrag\(\)/);
+    expect(src).toContain("window.addEventListener('blur', endDrag)");
+    expect(src).toMatch(/render\(true\)/);                                   // the resize handler: a snapshot waits for a drag, a resize does not
+  });
+  it('a row\'s second line is cut with an ellipsis rather than wrapped, so a narrow rail keeps two lines a row', () => {
+    expect(css).toMatch(/\.row__meta-text \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*white-space: nowrap;[^}]*text-overflow: ellipsis;/);
   });
 });

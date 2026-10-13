@@ -11,6 +11,7 @@ import { planOpen } from '../core/resolve.js';
 import type { OpenWhere } from '../core/open-args.js';
 import type { SessionMeta } from '../core/types.js';
 import { LiveHost, readThresholds } from '../live-host.js';
+import { validRail, validTlVh } from '../webview/session/model.js';
 import { executePlan, folderUri, openTranscript } from '../open.js';
 
 export const VIEW_TYPE = 'sessionFinder.sessionView';
@@ -19,6 +20,10 @@ const TICK_MS = 2_000;
 /** The JSON view chosen per tool, remembered across sessions and windows (D20). */
 const JSON_VIEWS = 'sessionView.jsonViews';
 const JSON_VIEW_NAMES = new Set(['formatted', 'pretty', 'raw']);
+/** The agent list's width in px, once dragged — the last one chosen, in any session or window (D23). */
+const RAIL = 'sessionView.railWidth';
+/** The timeline's height in vh, once dragged — likewise (D23). */
+const TL_VH = 'sessionView.timelineVh';
 
 type Inbound =
   | { type: 'ready' } | { type: 'refresh' }
@@ -30,7 +35,9 @@ type Inbound =
   | { type: 'openFile'; path: string; line?: number; cwd?: string }
   | { type: 'copy'; text: string }
   | { type: 'openUrl'; href: string }
-  | { type: 'jsonView'; tool: string; view: string };
+  | { type: 'jsonView'; tool: string; view: string }
+  | { type: 'rail'; width: number | null }
+  | { type: 'tl'; vh: number | null };
 
 /** What a file name's hover card shows (D20). */
 export interface FileInfo {
@@ -54,6 +61,8 @@ function isInbound(m: unknown): m is Inbound {
     case 'copy': return typeof o.text === 'string';
     case 'openUrl': return typeof o.href === 'string';
     case 'jsonView': return typeof o.tool === 'string' && typeof o.view === 'string' && JSON_VIEW_NAMES.has(o.view);
+    case 'rail': return o.width === null || validRail(o.width);
+    case 'tl': return o.vh === null || validTlVh(o.vh);
     default: return false;
   }
 }
@@ -191,7 +200,7 @@ class SessionPanel {
       if (!this.graph.nodes[this.selected]) this.selected = this.graph.root;
       this.panel.title = this.graph.nodes[this.graph.root]!.label;
       this.post({ type: force ? 'init' : 'update', sessionId: this.meta.sessionId, title: this.panel.title, graph: this.graph, now,
-                  live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected), jsonViews: this.jsonViews() });
+                  live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected), jsonViews: this.jsonViews(), ...this.layoutPref() });
     } catch (err) {
       this.log.warn(`session view: ${String(err)}`);
     } finally {
@@ -209,6 +218,10 @@ class SessionPanel {
   }
 
   private jsonViews(): Record<string, string> { return this.ctx.globalState.get<Record<string, string>>(JSON_VIEWS) ?? {}; }
+  private layoutPref(): { rail?: number; tl?: number } {
+    const rail = this.ctx.globalState.get<number>(RAIL), tl = this.ctx.globalState.get<number>(TL_VH);
+    return { ...(typeof rail === 'number' ? { rail } : {}), ...(typeof tl === 'number' ? { tl } : {}) };
+  }
 
   /**
    * A file name from the transcript, found on disk (D20): the first of its candidates that exists — absolute, the
@@ -257,7 +270,7 @@ class SessionPanel {
     try {
       switch (raw.type) {
         case 'ready': if (this.graph) this.post({ type: 'init', sessionId: this.meta.sessionId, title: this.panel.title, graph: this.graph, now: Date.now(),
-                                                   live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected), jsonViews: this.jsonViews() }); return;
+                                                   live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected), jsonViews: this.jsonViews(), ...this.layoutPref() }); return;
         case 'refresh': this.cache.clear(); await this.load(true); return;
         case 'select': this.selected = raw.nodeId; this.post({ type: 'page', page: this.page(raw.nodeId), now: Date.now() }); return;
         case 'more': this.post({ type: 'page', page: this.page(raw.nodeId, raw.from), now: Date.now() }); return;
@@ -267,6 +280,8 @@ class SessionPanel {
         case 'copy': await vscode.env.clipboard.writeText(raw.text); vscode.window.setStatusBarMessage('Copied', 1500); return;
         case 'openUrl': if (/^https?:\/\//i.test(raw.href)) await vscode.env.openExternal(vscode.Uri.parse(raw.href, true)); return;
         case 'jsonView': await this.ctx.globalState.update(JSON_VIEWS, { ...this.jsonViews(), [raw.tool]: raw.view }); return;
+        case 'rail': await this.ctx.globalState.update(RAIL, raw.width === null ? undefined : Math.round(raw.width)); return;
+        case 'tl': await this.ctx.globalState.update(TL_VH, raw.vh === null ? undefined : Math.round(raw.vh * 100) / 100); return;
         case 'open': {
           const folders = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.path);
           await executePlan(planOpen(this.meta, folders), this.ctx, raw.where);

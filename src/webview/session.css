@@ -1,4 +1,4 @@
-/* Session View (D20): header · threaded timeline · agent list | the selected node's pane. Tokens come from tokens.css;
+/* Session View (D20, D23): a header over the agent rail | (the threaded timeline over the selected node's pane). Tokens come from tokens.css;
    the live layer (sparkle, shimmer, halos, sweep, glass) is the sidebar's (D19). No colour of its own. */
 
 * { box-sizing: border-box; }
@@ -9,7 +9,7 @@ main:focus-visible { outline: none; }
 .st-running, .st-launched { --c: var(--st-running); } .st-completed { --c: var(--st-ok); } .st-failed { --c: var(--st-error); }
 .st-stopped { --c: var(--st-stalled); } .st-unknown { --c: var(--st-idle); }
 
-.app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); height: 100vh; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100vh; }
 
 /* ─── header ─── */
 .header { display: flex; align-items: center; gap: var(--sp-2); min-height: 38px; padding: 0 var(--sp-3); border-bottom: 1px solid var(--s-border); }
@@ -24,7 +24,8 @@ main:focus-visible { outline: none; }
 .action:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
 
 /* ─── the threaded timeline ─── */
-.timeline { max-height: 34vh; overflow: auto; border-bottom: 1px solid var(--s-border); padding: 4px 0 2px; }
+/* scrollbar-gutter: the drawing is laid out for clientWidth, so a vertical scrollbar must not take width from it afterwards (it would add a horizontal one) */
+.timeline { max-height: 34vh; overflow: auto; scrollbar-gutter: stable; border-bottom: 1px solid var(--s-border); padding: 4px 0 2px; }
 .tl { display: block; font-family: var(--font); }
 .stop-run { stop-color: var(--st-running); } .stop-cost { stop-color: var(--st-cost); } .stop-ok { stop-color: var(--st-ok); }
 .tl-m { fill: var(--s-muted); font: 10px var(--mono); }
@@ -47,9 +48,25 @@ main:focus-visible { outline: none; }
 .tl-halo { fill: var(--c); transform-box: fill-box; transform-origin: center; animation: halo 1.8s ease-in-out infinite; }
 .tl-end { fill: var(--s-bg-editor); stroke: var(--c); stroke-width: 1.5; }
 
-/* ─── body: the agent list beside the pane; stacked when narrow ─── */
-.body { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); min-height: 0; }
+/* ─── body: the agent list is a rail down the left (D23); the timeline over the pane fills the column beside it. Stacked only when very narrow ─── */
+.body { --rail: clamp(180px, 26vw, 320px); position: relative; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); min-height: 0; }
+/* .main: the timeline, a zero-height row for the divider between them, the pane. Until you set the timeline's height (--tl, in vh, on [data-tl]) it is as tall as its lanes, up to a third of the view;
+   once you have, that height — held between a couple of lanes (60px) and what leaves the pane its room (header 40 + pane 200) — and the pane takes the rest. */
+.main { display: grid; grid-template-rows: auto 0 minmax(0, 1fr); min-width: 0; min-height: 0; }
+.main[data-tl] { grid-template-rows: clamp(60px, var(--tl), calc(100vh - 240px)) 0 minmax(0, 1fr); }
+.main[data-tl] .timeline { max-height: none; }
 .list { background: var(--s-bg); color: var(--s-fg); border-right: 1px solid var(--s-border); overflow: auto; padding: var(--sp-1) 0 var(--sp-3); }
+/* The dividers you drag to resize (D23): hit areas laid over a border, so they take no room of their own; the line shows only when you aim at one. --v: the rail's width (--rail); --h: the timeline's height. */
+.sash { z-index: 6; touch-action: none; }
+.sash::before { content: ""; position: absolute; background: transparent; transition: background var(--dur) var(--ease); }
+.sash--v { position: absolute; top: 0; bottom: 0; left: calc(var(--rail) - 1px); width: 5px; cursor: col-resize; }
+.sash--v::before { top: 0; bottom: 0; left: 1px; width: 2px; }
+.sash--h { position: relative; height: 5px; margin-top: -2px; cursor: row-resize; }
+.sash--h::before { left: 0; right: 0; top: 1px; height: 2px; }
+.sash:hover::before, .sash:focus-visible::before, .sash--drag::before { background: var(--s-sash); }
+.sash:focus-visible { outline: none; }
+body.resizing-v { cursor: col-resize; user-select: none; }
+body.resizing-h { cursor: row-resize; user-select: none; }
 
 .row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: var(--sp-2); row-gap: 1px; align-items: center; width: 100%; text-align: left;
   padding: 5px var(--sp-2) 5px calc(var(--sp-2) + var(--depth, 0) * 14px); transition: background var(--dur) var(--ease); }
@@ -60,6 +77,7 @@ main:focus-visible { outline: none; }
 .row__name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row__tag { margin-left: 6px; font: var(--size-meta) var(--mono); color: var(--s-muted); }
 .row__meta { grid-column: 2 / span 2; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--size-meta); color: var(--s-muted); }
+.row__meta-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row__now { grid-column: 2 / span 2; display: flex; align-items: center; gap: 5px; min-width: 0; font-size: var(--size-meta); color: var(--tx-running); }
 .row__now .codicon { font-size: 12px; flex: none; }
 .row__now-what { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -72,10 +90,19 @@ main:focus-visible { outline: none; }
 .chipm { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 8px; font: 11px var(--mono); color: var(--s-fg-editor);
   background-color: color-mix(in srgb, var(--st-cost) var(--m, 38%), transparent); background-image: linear-gradient(180deg, var(--gloss), transparent 75%); }
 .chipm--1 { --m: 20%; } .chipm--2 { --m: 38%; } .chipm--3 { --m: 60%; }
+/* Rank by size (D23): the session's row is the largest and semibold; an agent's row — a workflow's five, say — is a notch smaller, tighter and quieter, so the parent reads as the parent. */
+.row--root .row__name { font-weight: 600; }
+.row--sub { padding-block: 3px; font-size: calc(var(--size) - 1px); line-height: 1.35; row-gap: 0; column-gap: 6px; grid-template-columns: 14px minmax(0, 1fr) auto; }
+.row--sub .row__icon { width: 14px; height: 14px; font-size: 13px; }
+.row--sub .chipm { height: 14px; padding: 0 5px; border-radius: 7px; font-size: 10px; }
+.row--sub .row__meta, .row--sub .row__now, .row--sub .row__tag { font-size: calc(var(--size-meta) - 1px); }
+.row--sub .span { min-width: 28px; }
 
 .grp { margin: 6px 6px 4px; border-radius: 8px; background: color-mix(in srgb, var(--s-fg) 4.5%, transparent); padding-bottom: 2px; }
-.grp--sel { box-shadow: inset 0 0 0 1px var(--s-focus); }
-.grp__head { display: grid; grid-template-columns: 14px 14px minmax(0, 1fr); column-gap: 6px; align-items: center; width: 100%; text-align: left; padding: 5px var(--sp-2) 2px; font-weight: 600; }
+.grp--sel { outline: 1px solid var(--s-focus); outline-offset: -1px; }       /* an outline, not an inset shadow: the sticky header below paints over a shadow */
+/* A group's header stays at the top while its agents scroll under it — opaque (the card's tint over the rail), so nothing shows through, with the card's own corners */
+.grp__head { position: sticky; top: 0; z-index: 2; background: color-mix(in srgb, var(--s-fg) 4.5%, var(--s-bg)); border-radius: 8px 8px 0 0;
+  display: grid; grid-template-columns: 14px 14px minmax(0, 1fr); column-gap: 6px; align-items: center; width: 100%; text-align: left; padding: 5px var(--sp-2) 2px; font-weight: 600; }
 .grp__head:focus-visible { outline: 1px solid var(--s-focus); outline-offset: -1px; }
 .grp__chev { transition: transform var(--dur) var(--ease); color: var(--s-muted); }
 .grp--closed .grp__chev { transform: rotate(-90deg); }
@@ -290,10 +317,12 @@ body.vscode-high-contrast .row__icon, body.vscode-high-contrast .pane__icon { fi
   .nowcard::before { display: none; }
 }
 
-/* ─── narrow: the list over the pane ─── */
-@media (max-width: 760px) {
-  .body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 38%) minmax(0, 1fr); }
+/* ─── very narrow (a small split): the list over the rest ─── */
+@media (max-width: 480px) {
+  .body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 30%) minmax(0, 1fr); }
   .list { border-right: 0; border-bottom: 1px solid var(--s-border); }
+  .sash--v { display: none; }
+  .main[data-tl] { grid-template-rows: clamp(60px, var(--tl), calc(70vh - 240px)) 0 minmax(0, 1fr); }   /* the list above takes 30% of the height: hold a saved timeline height lower, or the pane is squeezed out */
   .pane__body { padding: var(--sp-3); }
   .nowpin { --pad: var(--sp-3); }                              /* the pane's own padding, so the strip meets its edges */
 }

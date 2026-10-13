@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statusIcon, iconClasses, fmtTokens, nodeMeta, toolIcon, modelChip, listModel, threadLayout, findPaths, pathOfCode,
+import { statusIcon, iconClasses, fmtTokens, nodeMeta, toolIcon, modelChip, listModel, threadLayout, railBounds, clampRail, railKey, tlBounds, clampTl, tlKey, validRail, validTlVh, findPaths, pathOfCode,
          parseInline, parseMarkdown, looksJson, recognise, defaultView, JSON_BIG, nowStep, plainLine } from '../src/webview/session/model.js';
 import type { GraphNode, SessionGraph } from '../src/core/agents.js';
 
@@ -74,6 +74,58 @@ describe('threadLayout (D20)', () => {
   });
   it('an empty graph lays out nothing', () => {
     expect(threadLayout({ root: 'session', order: ['session'], nodes: { session: node({ id: 'session', kind: 'session', parentId: null }) } }, now, { width: 500, labelW: 100, lane: 18, top: 20, gapW: 40 }).lanes).toEqual([]);
+  });
+});
+
+describe('the rail width (D23)', () => {
+  it('stays between a narrow-but-usable minimum and what leaves the timeline and pane their room', () => {
+    expect(railBounds(1400)).toEqual([140, 640]);
+    expect(railBounds(750)).toEqual([140, 430]);                       // 750 − 320 for the column beside it
+    expect(railBounds(400)).toEqual([140, 140]);                       // too narrow to resize at all
+    expect(clampRail(50, 1400)).toBe(140); expect(clampRail(900, 1400)).toBe(640); expect(clampRail(251.6, 1400)).toBe(252);
+    expect(clampRail(600, 750)).toBe(430);
+  });
+  it('moves with the arrow keys — 16 px, 64 with Shift — to the ends with Home and End, and ignores every other key', () => {
+    expect(railKey('ArrowRight', 200, 1400, false)).toBe(216);
+    expect(railKey('ArrowLeft', 200, 1400, false)).toBe(184);
+    expect(railKey('ArrowRight', 200, 1400, true)).toBe(264);
+    expect(railKey('ArrowLeft', 200, 1400, true)).toBe(140);          // 136, held at the minimum
+    expect(railKey('Home', 300, 1400, false)).toBe(140);
+    expect(railKey('End', 300, 750, false)).toBe(430);
+    expect(railKey('a', 300, 1400, false)).toBeUndefined();
+    expect(railKey('Enter', 300, 1400, false)).toBeUndefined();         // Enter resets; that is the view's business
+    expect(railKey('ArrowUp', 300, 1400, false)).toBeUndefined();       // up and down are the timeline divider's
+  });
+});
+
+describe('the timeline height (D23)', () => {
+  it('stays between a couple of lanes and what leaves the pane its room', () => {
+    expect(tlBounds(900)).toEqual([60, 660]);                          // 900 − the 40 px header − 200 px for the pane
+    expect(tlBounds(500)).toEqual([60, 260]);
+    expect(tlBounds(200)).toEqual([60, 60]);                           // too short to adjust
+    expect(clampTl(10, 900)).toBe(60); expect(clampTl(2000, 900)).toBe(660); expect(clampTl(300.4, 900)).toBe(300);
+  });
+  it('moves with the up and down arrows — 16 px, 64 with Shift — to the ends with Home and End, and ignores every other key', () => {
+    expect(tlKey('ArrowDown', 200, 900, false)).toBe(216);
+    expect(tlKey('ArrowUp', 200, 900, false)).toBe(184);
+    expect(tlKey('ArrowDown', 200, 900, true)).toBe(264);
+    expect(tlKey('ArrowUp', 100, 900, true)).toBe(60);                 // 36, held at the minimum
+    expect(tlKey('Home', 300, 900, false)).toBe(60);
+    expect(tlKey('End', 300, 900, false)).toBe(660);
+    expect(tlKey('ArrowLeft', 300, 900, false)).toBeUndefined();        // left and right are the rail divider's
+    expect(tlKey('Enter', 300, 900, false)).toBeUndefined();
+  });
+});
+
+describe('what the host will remember of the dividers (D23)', () => {
+  it('accepts every size a divider can produce, at any window from a phone to an 8K screen — or the preference would silently not save on a tall one', () => {
+    for (const W of [320, 480, 600, 750, 1100, 1400, 2560, 7680]) for (const px of railBounds(W)) expect(validRail(px), `rail ${px}px in ${W}px`).toBe(true);
+    for (const H of [300, 500, 700, 900, 1300, 1440, 2160, 4320]) for (const px of tlBounds(H)) expect(validTlVh(px / H * 100), `timeline ${px}px in ${H}px`).toBe(true);
+  });
+  it('refuses what is not a size: NaN, Infinity, strings, null, zero and the absurd', () => {
+    for (const v of [NaN, Infinity, -Infinity, '200', null, undefined, {}, 0, -5, 99, 5000]) expect(validRail(v), String(v)).toBe(false);
+    for (const v of [NaN, Infinity, '40', null, undefined, 0, -1, 0.2, 100, 250]) expect(validTlVh(v), String(v)).toBe(false);
+    expect(validRail(140)).toBe(true); expect(validTlVh(34)).toBe(true);
   });
 });
 

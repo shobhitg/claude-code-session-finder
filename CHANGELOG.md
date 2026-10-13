@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **The agent list is a rail down the left, and you can drag its width.** In a tab beside the
+  sidebar the Session View stacked three sections — timeline, agent list, detail — and the detail
+  pane, the part you read, got what was left. The list now runs down the left at any usable width
+  with the timeline and the detail stacked beside it. Drag the divider (or use the arrow keys on it;
+  double-click or Enter puts it back) and your width is remembered for every session. The view stacks
+  only below 480 px.
+- **You can set the detail pane's height, too.** A second divider, between the timeline and the
+  detail pane on the right, moves up and down (arrow keys work on it too; double-click or Enter puts
+  it back): give the pane almost the whole height to read a transcript, or the timeline most of it
+  to see a crowd of agents. It is remembered for every session, and kept in proportion if you
+  resize the window.
+- **Agents rank below their parent.** An agent's row is smaller and tighter than the session's row
+  and a workflow's header — 36 px instead of 47 — the session's row is bold, a workflow's header
+  stays at the top while you scroll through its agents, and a row's second line is cut with an
+  ellipsis instead of wrapping.
+- **The timeline no longer grows a horizontal scrollbar** because it grew a vertical one.
+
 ## 0.10.4
 
 - **The "working" sparkle is a sparkle again, not a screen-filling shape.** In a running
