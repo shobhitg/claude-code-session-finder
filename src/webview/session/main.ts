@@ -48,7 +48,6 @@ const lastSaid = new Map<string, string>();                      // each node's 
 const lastStats = new Map<string, Record<string, string>>();     // each node's numbers as last drawn: a changed one rolls
 let lastContent = '';                                            // node · tab · loaded: a new one crossfades in
 let lastThumb: { x: number; w: number } | undefined;             // where the tabs' thumb was: it slides from there
-let spot: { x: number; y: number } | undefined;                  // the pointer over the rail, for its spotlight
 const justEnded = (id: string): StatusChange | undefined => { const c = changed.get(id); return c && isLive(c.from) && !isLive(c.to) ? c : undefined; };
 /** Loops keep the clock's phase (D26): the rebuild every snapshot makes new elements, which would start their breath, sweep or ring over. */
 function lockLoops(): void { for (const a of document.getAnimations()) if (a instanceof CSSAnimation && a.effect?.getTiming().iterations === Infinity && a.startTime !== 0) a.startTime = 0; }
@@ -231,10 +230,6 @@ function listRow(id: string, depth: number): HTMLElement {
 }
 function renderList(): HTMLElement {
   const g = graph!; const nav = h('nav', { class: 'list', 'aria-label': 'Agents' });
-  const light = (): void => { if (spot) { nav.style.setProperty('--mx', `${spot.x}px`); nav.style.setProperty('--my', `${spot.y}px`); } else { nav.style.removeProperty('--mx'); nav.style.removeProperty('--my'); } };
-  nav.addEventListener('pointermove', e => { const r = nav.getBoundingClientRect(); spot = { x: Math.round(e.clientX - r.left), y: Math.round(e.clientY - r.top) }; light(); });   // a soft light follows the pointer (D26)
-  nav.addEventListener('pointerleave', () => { spot = undefined; light(); });
-  light();
   for (const e of listModel(g)) {
     if (e.kind === 'row') { nav.append(listRow(e.id, e.depth)); continue; }
     const w = g.nodes[e.id]!; const closed = ui.closed.includes(e.id);

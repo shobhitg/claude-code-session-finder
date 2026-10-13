@@ -59,7 +59,7 @@ main:focus-visible { outline: none; }
 .main { display: grid; grid-template-rows: auto 0 minmax(0, 1fr); min-width: 0; min-height: 0; }
 .main[data-tl] { grid-template-rows: clamp(60px, var(--tl), calc(100vh - 240px)) 0 minmax(0, 1fr); }
 .main[data-tl] .timeline { max-height: none; }
-.list { background: radial-gradient(160px circle at var(--mx, -999px) var(--my, -999px), color-mix(in srgb, var(--ai-2) 11%, transparent), transparent 70%), var(--s-bg); color: var(--s-fg); border-right: 1px solid var(--s-border); overflow: auto; padding: var(--sp-1) 0 var(--sp-3); }
+.list { background: var(--s-bg); color: var(--s-fg); border-right: 1px solid var(--s-border); overflow: auto; padding: var(--sp-1) 0 var(--sp-3); }
 /* The dividers you drag to resize (D23): hit areas laid over a border, so they take no room of their own; the line shows only when you aim at one. --v: the rail's width (--rail); --h: the timeline's height. */
 .sash { z-index: 6; touch-action: none; }
 .sash::before { content: ""; position: absolute; background: transparent; transition: background var(--dur) var(--ease); }
