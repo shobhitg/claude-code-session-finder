@@ -46,7 +46,6 @@ const seenSteps = new Map<string, Set<string>>();                // each node's 
 let stepsFor = '';                                               // the node whose steps the Overview last drew: opening another draws them in
 const lastSaid = new Map<string, string>();                      // each node's latest words as last drawn
 const lastStats = new Map<string, Record<string, string>>();     // each node's numbers as last drawn: a changed one rolls
-let lastContent = '';                                            // node · tab · loaded: a new one crossfades in
 let lastThumb: { x: number; w: number } | undefined;             // where the tabs' thumb was: it slides from there
 const justEnded = (id: string): StatusChange | undefined => { const c = changed.get(id); return c && isLive(c.from) && !isLive(c.to) ? c : undefined; };
 /** Loops keep the clock's phase (D26): the rebuild every snapshot makes new elements, which would start their breath, sweep or ring over. */
@@ -685,9 +684,6 @@ function render(force = false): void {
   const body = root.querySelector('.pane__body') as HTMLElement;
   if (keep.pageKey === pane.dataset.page) body.scrollTop = live && stick && ui.tab === 'transcript' ? body.scrollHeight : bodyTop;
   else if (ui.tab === 'transcript') body.scrollTop = body.scrollHeight;
-  const content = `${pane.dataset.page}:${page?.nodeId === selected ? 'loaded' : 'loading'}`;   // another node or tab crossfades in (D26)
-  if (lastContent && content !== lastContent) body.classList.add('pane__body--in');
-  lastContent = content;
   if (ui.tab !== 'overview') stepsFor = '';
   placeThumb(); lockLoops();
 }

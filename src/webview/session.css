@@ -355,7 +355,6 @@ body.vscode-high-contrast .row__icon, body.vscode-high-contrast .pane__icon { fi
 @keyframes spin { to { --spin: 360deg; } }
 @keyframes drift { from { background-position: 0% 0; } to { background-position: 300% 0; } }
 @keyframes breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
-@keyframes fade-up { from { opacity: 0; transform: translateY(4px); } }
 @keyframes pop { from { opacity: 0; transform: scale(.6); } }
 @keyframes rise { from { opacity: 0; transform: translateY(3px); } }
 @keyframes fade-out { to { opacity: 0; } }
@@ -385,8 +384,6 @@ body.vscode-high-contrast .row__icon, body.vscode-high-contrast .pane__icon { fi
 .stats > span.lit { animation: lit 1.2s cubic-bezier(.16, 1, .3, 1); }
 @keyframes roll { from { transform: translateY(70%); opacity: 0; filter: blur(2px); } }
 @keyframes lit { from { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ai-2) 60%, transparent), 0 0 12px -2px var(--ai-glow); } }
-/* another node or tab: the pane's content crossfades in */
-.pane__body--in > * { animation: fade-up .2s cubic-bezier(.16, 1, .3, 1); }
 /* a state change: the glyph and pill blend from running blue into their new colour */
 .row--ended .row__icon, .pane__head--ended .pane__icon { animation: morph-glyph .5s ease both; }
 .pane__head--ended .pill { animation: morph-pill .5s ease both; }
@@ -491,7 +488,7 @@ body.vscode-light .stop-glint { stop-color: var(--s-bg-editor); }
 /* reduced motion: loops stop and one-time moves finish at once; colour and glow still say what changed */
 @media (prefers-reduced-motion: reduce) {
   .pill::after, .nowcard::after, .step__dot::after, .pane__head::before, .pane__head::after, .nowcard, .dots i, .row::after, .grp__strip i, .tl-glint, .tl-now,
-  .header__live-word, .stats b, .stats > span, .pane__body--in > *, .nowcard__said--new > *, .step::before, .step__dot, .step__time, .step__text, .step__dur, .step,
+  .header__live-word, .stats b, .stats > span, .nowcard__said--new > *, .step::before, .step__dot, .step__time, .step__text, .step__dur, .step,
   .result, .seal, .sparks i, .turn::before, .row__icon, .pane__icon, .pill { animation: none !important; }
   .tl-glints, .sparks, .turn--ending::before { display: none; }
   .tool, .tool::details-content, .tool__chev, .fcard:not([hidden]), .pane__title h2 { transition: none; }
