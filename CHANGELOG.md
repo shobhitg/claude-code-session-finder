@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.1
+
+- **The Session View no longer takes VS Code down while you are away.** With a Session View open on a
+  running workflow, it sent the whole session to the window every 2 seconds, and VS Code holds on to
+  every message your laptop has not received yet. While the laptop slept — or on a slow connection —
+  those piled up until the extension host ran out of memory, and VS Code came back as a fresh window
+  that ended the old window's Claude Code sessions after five minutes. Now the view sends the next
+  update only once it has shown the last one, so a sleeping laptop holds at most one.
+- **Live updates are much cheaper.** The Session View reads only what was added to each transcript
+  since the last update instead of re-reading whole files (a 33 MB transcript took half a second
+  every 2 seconds), finds a session's agents in its own folders instead of scanning every project,
+  and re-sends the transcript pane only when it changed.
+
 ## 0.11.0
 
 - **Light follows Claude.** The Session View now glows and moves where Claude is at work — in an
