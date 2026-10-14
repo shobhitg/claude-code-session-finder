@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { basename, dirname, join, sep } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { discover, defaultRoot } from '../core/discover.js';
-import { parseRecords, buildTranscript, firstPrompt, overview, taskExcerpt, type Rec } from '../core/transcript.js';
+import { buildTranscript, firstPrompt, overview, taskExcerpt } from '../core/transcript.js';
 import { candidates, fileKind, type Via } from '../core/fileref.js';
-import { buildGraph, type AgentFile, type JournalRec, type SessionGraph } from '../core/agents.js';
+import { buildGraph, type SessionGraph } from '../core/agents.js';
+import { SessionFeed, SessionSource, type Loaded } from '../core/session-source.js';
 import { planOpen } from '../core/resolve.js';
 import type { OpenWhere } from '../core/open-args.js';
 import type { SessionMeta } from '../core/types.js';
@@ -26,7 +27,7 @@ const RAIL = 'sessionView.railWidth';
 const TL_VH = 'sessionView.timelineVh';
 
 type Inbound =
-  | { type: 'ready' } | { type: 'refresh' }
+  | { type: 'ready' } | { type: 'refresh' } | { type: 'applied'; seq: number }
   | { type: 'select'; nodeId: string }
   | { type: 'task'; nodeId: string }
   | { type: 'more'; nodeId: string; from: number }
@@ -54,6 +55,7 @@ function isInbound(m: unknown): m is Inbound {
   const o = m as Record<string, unknown>;
   switch (o.type) {
     case 'ready': case 'refresh': return true;
+    case 'applied': return typeof o.seq === 'number';
     case 'select': case 'raw': case 'task': return typeof o.nodeId === 'string';
     case 'more': return typeof o.nodeId === 'string' && typeof o.from === 'number';
     case 'open': return o.where === 'tab' || o.where === 'right';
@@ -68,12 +70,10 @@ function isInbound(m: unknown): m is Inbound {
   }
 }
 
-interface Cached { mtimeMs: number; size: number; recs: Rec[] }
-
 /**
  * One editor panel per session: agent tree · timeline · transcript, read from disk without resuming
- * the session. While the session is ACTIVE (the Stage 1 tracker knows) the panel re-reads changed
- * files every 2 s; a finished session is read once.
+ * the session. While the session is ACTIVE (the Stage 1 tracker knows) the panel reads what was appended
+ * every 2 s and sends it once the webview has applied the last update; a finished session is read once.
  */
 export class SessionViewManager implements vscode.Disposable {
   private readonly panels = new Map<string, SessionPanel>();
@@ -113,21 +113,13 @@ async function fallbackMeta(sessionId: string): Promise<SessionMeta | undefined>
            launchCwd: null, branch: null, branchNow: null, worktree: null, prs: [], slack: [], firstTs: 0, lastTs: 0, lastActTs: 0, headless: false, msgCount: 0, mtimeMs: main.mtimeMs, size: main.size };
 }
 
-const agentIdOf = (p: string): string => basename(p, '.jsonl').replace(/^agent-/, '');
-/** `…/subagents/workflows/<runId>/agent-x.jsonl` → runId */
-function runIdOf(p: string): string | undefined {
-  const parts = p.split(sep);
-  const i = parts.lastIndexOf('workflows');
-  return i >= 0 && i + 2 < parts.length ? parts[i + 1] : undefined;
-}
-
 class SessionPanel {
   private readonly panel: vscode.WebviewPanel;
-  private readonly cache = new Map<string, Cached>();
+  private readonly source: SessionSource;
+  private readonly feed: SessionFeed;
   private graph: SessionGraph | undefined;
   private selected = 'session';
   private timer: ReturnType<typeof setInterval> | undefined;
-  private busy = false;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(private readonly ctx: vscode.ExtensionContext, private readonly host: LiveHost, private readonly log: vscode.LogOutputChannel,
@@ -138,6 +130,12 @@ class SessionPanel {
       { enableScripts: true, localResourceRoots: [dist], retainContextWhenHidden: true });
     this.panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'resources', 'sessions.svg');
     this.panel.webview.html = html(this.panel.webview, dist, meta.title ?? 'Session');
+    this.source = new SessionSource(meta.sessionId, meta.file);
+    this.feed = new SessionFeed(this.source, {
+      live: () => this.host.liveness.has(this.meta.sessionId),
+      send: (loaded, kind, seq) => this.send(loaded, kind, seq),
+      missing: () => this.post({ type: 'error', message: 'This session\'s transcript is no longer on disk.' }),
+    });
     this.disposables.push(
       this.panel.webview.onDidReceiveMessage(m => void this.onMessage(m)),
       this.panel.onDidChangeViewState(() => this.schedule()),
@@ -157,62 +155,32 @@ class SessionPanel {
   }
   private stop(): void { if (this.timer) clearInterval(this.timer); this.timer = undefined; }
   private async tick(): Promise<void> {
-    if (this.busy || !this.host.liveness.has(this.meta.sessionId)) return;    // finished sessions don't change
-    await this.load(false);
+    try { await this.feed.tick(); } catch (err) { this.log.warn(`session view: ${String(err)}`); }
   }
 
-  /** Re-read what changed (by mtime:size), rebuild the graph, push it. `force` also (re)sends the page. */
+  /** Read the session's files and send the webview an init. */
   async load(force: boolean): Promise<void> {
-    if (this.busy) return;
-    this.busy = true;
-    try {
-      let changed = force;
-      const read = async (path: string): Promise<Cached | undefined> => {
-        const s = await stat(path).catch(() => null);
-        if (!s) return undefined;
-        const hit = this.cache.get(path);
-        if (hit && hit.mtimeMs === s.mtimeMs && hit.size === s.size) return hit;
-        const c: Cached = { mtimeMs: s.mtimeMs, size: s.size, recs: parseRecords(await readFile(path, 'utf8')) };
-        this.cache.set(path, c); changed = true;
-        return c;
-      };
-      const main = await read(this.meta.file);
-      if (!main) { this.post({ type: 'error', message: 'This session\'s transcript is no longer on disk.' }); return; }
-      // discover() attributes every subagent transcript to its session across ALL project dirs — after
-      // a worktree move the agents can sit under a different copy of the session than the newest main file.
-      const agents: AgentFile[] = [];
-      const journalPaths = new Map<string, string>();
-      // a workflow's journal.jsonl sits beside its agents' files but is bookkeeping, not an agent (it was listed as one, "journal")
-      for (const f of (await discover(defaultRoot())).filter(f => f.kind === 'subagent' && f.sessionId === this.meta.sessionId && basename(f.path) !== 'journal.jsonl')) {
-        const c = await read(f.path); if (!c) continue;
-        const runId = runIdOf(f.path);
-        agents.push({ path: f.path, agentId: agentIdOf(f.path), recs: c.recs, mtimeMs: c.mtimeMs, ...(runId ? { runId } : {}) });
-        if (runId && !journalPaths.has(runId)) journalPaths.set(runId, join(dirname(f.path), 'journal.jsonl'));
-      }
-      const journals: Record<string, JournalRec[]> = {};
-      for (const [runId, jp] of journalPaths) {
-        const c = await read(jp);
-        if (c) journals[runId] = c.recs as JournalRec[];
-      }
-      if (!changed) return;
-      const now = Date.now();
-      this.graph = buildGraph({ title: this.meta.title ?? firstPrompt(main.recs) ?? this.meta.sessionId.slice(0, 8), mainFile: this.meta.file,
-                                mainRecs: main.recs, mainMtimeMs: main.mtimeMs, agents, journals, now, thresholds: readThresholds() });
-      if (!this.graph.nodes[this.selected]) this.selected = this.graph.root;
-      this.panel.title = this.graph.nodes[this.graph.root]!.label;
-      this.post({ type: force ? 'init' : 'update', sessionId: this.meta.sessionId, title: this.panel.title, graph: this.graph, now,
-                  live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected), jsonViews: this.jsonViews(), ...this.layoutPref() });
-    } catch (err) {
-      this.log.warn(`session view: ${String(err)}`);
-    } finally {
-      this.busy = false;
-    }
+    try { await this.feed.load(force); } catch (err) { this.log.warn(`session view: ${String(err)}`); }
+  }
+
+  /** The graph, rebuilt from what was loaded, and the selected node's page — on an update, only when its file changed. */
+  private send(loaded: Loaded, kind: 'init' | 'update', seq: number): void {
+    const now = Date.now();
+    this.graph = buildGraph({ title: this.meta.title ?? firstPrompt(loaded.main.recs) ?? this.meta.sessionId.slice(0, 8), mainFile: this.meta.file,
+                              mainRecs: loaded.main.recs, mainMtimeMs: loaded.main.mtimeMs, agents: loaded.agents, journals: loaded.journals, now, thresholds: readThresholds() });
+    const was = this.selected;
+    if (!this.graph.nodes[this.selected]) this.selected = this.graph.root;
+    const file = this.graph.nodes[this.selected]?.file;
+    const withPage = kind === 'init' || was !== this.selected || (file !== undefined && loaded.changed.has(file));
+    this.panel.title = this.graph.nodes[this.graph.root]!.label;
+    this.post({ type: kind, seq, sessionId: this.meta.sessionId, title: this.panel.title, graph: this.graph, now,
+                live: this.host.liveness.has(this.meta.sessionId), ...(withPage ? { page: this.page(this.selected) } : {}), jsonViews: this.jsonViews(), ...this.layoutPref() });
   }
 
   /** The transcript of a node's file, windowed — turns [from, total) — with its overview, read from all of it (D20). */
   private page(nodeId: string, from?: number): { nodeId: string; turns: ReturnType<typeof buildTranscript>['turns']; total: number; from: number; overview: ReturnType<typeof overview> } {
     const file = this.graph?.nodes[nodeId]?.file;
-    const recs = file ? this.cache.get(file)?.recs ?? [] : [];
+    const recs = file ? this.source.recs(file) ?? [] : [];
     const t = buildTranscript(recs);
     const start = Math.max(0, Math.min(from ?? t.turns.length - PAGE, t.turns.length));
     return { nodeId, turns: t.turns.slice(start), total: t.turns.length, from: start, overview: overview(t) };
@@ -270,13 +238,13 @@ class SessionPanel {
     if (!isInbound(raw)) return;
     try {
       switch (raw.type) {
-        case 'ready': if (this.graph) this.post({ type: 'init', sessionId: this.meta.sessionId, title: this.panel.title, graph: this.graph, now: Date.now(),
-                                                   live: this.host.liveness.has(this.meta.sessionId), page: this.page(this.selected), jsonViews: this.jsonViews(), ...this.layoutPref() }); return;
-        case 'refresh': this.cache.clear(); await this.load(true); return;
+        case 'ready': this.feed.resend(); return;
+        case 'applied': this.feed.ack(raw.seq); return;
+        case 'refresh': this.source.tails.clear(); await this.load(true); return;
         case 'select': this.selected = raw.nodeId; this.post({ type: 'page', page: this.page(raw.nodeId), now: Date.now() }); return;
         case 'more': this.post({ type: 'page', page: this.page(raw.nodeId, raw.from), now: Date.now() }); return;
         case 'task': {                                                      // a hover card asks what a node was asked: its first prompt, from the cached transcript — nothing is read or scanned
-          const file = this.graph?.nodes[raw.nodeId]?.file; const recs = file ? this.cache.get(file)?.recs : undefined;
+          const file = this.graph?.nodes[raw.nodeId]?.file; const recs = file ? this.source.recs(file) : undefined;
           const t = recs ? taskExcerpt(recs) : undefined;
           this.post({ type: 'task', nodeId: raw.nodeId, ...(t ? { text: t.text, ...(t.frame ? { frame: t.frame } : {}) } : {}) });
           return;

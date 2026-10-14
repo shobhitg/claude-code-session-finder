@@ -53,6 +53,16 @@ async function discoverSubagentsRecursive(
   return out;
 }
 
+/**
+ * One session's subagent transcripts, in every project dir — after a worktree move they can sit under a
+ * different copy of the session than its newest main file. One readdir per project, not a walk of every transcript.
+ */
+export async function discoverSubagents(sessionId: string, root: string = defaultRoot()): Promise<SourceFile[]> {
+  const out: SourceFile[] = [];
+  for (const projectDir of await safeReaddir(root)) await discoverSubagentsRecursive(join(root, projectDir, sessionId, 'subagents'), sessionId, projectDir, 0, out);
+  return out;
+}
+
 export async function discover(root: string = defaultRoot()): Promise<SourceFile[]> {
   const out: SourceFile[] = [];
   for (const projectDir of await safeReaddir(root)) {

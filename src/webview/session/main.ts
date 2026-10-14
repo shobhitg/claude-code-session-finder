@@ -20,7 +20,7 @@ interface FileInfo {
   size?: number; mtimeMs?: number; kind?: string; lines?: number; preview?: { start: number; lines: string[]; hl?: number }; image?: string;
 }
 type Inbound =
-  | { type: 'init' | 'update'; sessionId: string; title: string; graph: SessionGraph; now: number; live: boolean; page?: Page; jsonViews?: Record<string, JsonView>; rail?: number; tl?: number }
+  | { type: 'init' | 'update'; seq: number; sessionId: string; title: string; graph: SessionGraph; now: number; live: boolean; page?: Page; jsonViews?: Record<string, JsonView>; rail?: number; tl?: number }
   | { type: 'page'; page: Page; now: number }
   | { type: 'fileInfo'; key: string; info: FileInfo }
   | { type: 'task'; nodeId: string; text?: string; frame?: FrameKind }
@@ -842,17 +842,7 @@ window.addEventListener('message', (e: MessageEvent<Inbound>) => {
   }
   clockOffset = m.now - Date.now();
   if (m.type === 'init' || m.type === 'update') {
-    graph = m.graph; title = m.title; live = m.live;
-    if (!layoutAdopted) {                                          // the sizes you last chose, in any session; this view's own win
-      layoutAdopted = true;
-      if (ui.rail === undefined && typeof m.rail === 'number') ui.rail = m.rail;
-      if (ui.tl === undefined && typeof m.tl === 'number') ui.tl = m.tl;
-    }
-    if (m.jsonViews) jsonViews = m.jsonViews;
-    if (m.page) { page = m.page; selected = m.page.nodeId; }
-    if (!graph.nodes[selected]) selected = graph.root;
-    changed = statusChanges(prevStatus, graph); prevStatus = statusMap(graph);
-    render(); changed = new Map();
+    try { apply(m); } finally { post({ type: 'applied', seq: m.seq }); }   // the host sends the next update only after this (backpressure)
     return;
   }
   if (m.type === 'page') {
@@ -861,6 +851,20 @@ window.addEventListener('message', (e: MessageEvent<Inbound>) => {
     render();
   }
 });
+/** A snapshot of the session: the graph, and the page when it changed. */
+function apply(m: Extract<Inbound, { type: 'init' | 'update' }>): void {
+  graph = m.graph; title = m.title; live = m.live;
+  if (!layoutAdopted) {                                          // the sizes you last chose, in any session; this view's own win
+    layoutAdopted = true;
+    if (ui.rail === undefined && typeof m.rail === 'number') ui.rail = m.rail;
+    if (ui.tl === undefined && typeof m.tl === 'number') ui.tl = m.tl;
+  }
+  if (m.jsonViews) jsonViews = m.jsonViews;
+  if (m.page) { page = m.page; selected = m.page.nodeId; }
+  if (!graph.nodes[selected]) selected = graph.root;
+  changed = statusChanges(prevStatus, graph); prevStatus = statusMap(graph);
+  render(); changed = new Map();
+}
 setInterval(tick, 1_000);
 let resizeT = 0;
 window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = window.setTimeout(() => render(true), 150); });
